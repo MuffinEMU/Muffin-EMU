@@ -1641,6 +1641,11 @@ struct EmulatorViewOptimized: View {
     /// state, not AppStorage: nobody wants to come back to a game and find the controls
     /// still in edit mode because that is how they last left them.
     @State private var isEditingControlLayout = false
+    @AppStorage(ControllerLayoutSettings.pauseWhileEditingKey)
+    private var pauseWhileEditingLayout = ControllerLayoutSettings.defaultPauseWhileEditing
+    /// The pause in effect was made by starting to move the controls, so Done undoes it. Cleared by
+    /// any other pause or resume (togglePause), so a pause the player chose is never undone by Done.
+    @State private var pausedByLayoutEditing = false
     /// Local, not AppStorage - the same reasoning as isEditingControlLayout above:
     /// nobody wants to come back to a game and find the pad missing because that was
     /// how they last left it. For touching the GamePad screen's own touchscreen
@@ -1911,6 +1916,7 @@ struct EmulatorViewOptimized: View {
     private func togglePause() {
         isPaused.toggle()
         pausedByLifecycle = false
+        pausedByLayoutEditing = false
         cemu_bridge_release_all_buttons()
         setTitlePaused(isPaused)
     }
@@ -1950,6 +1956,19 @@ struct EmulatorViewOptimized: View {
     private func finishEditingLayout() {
         withAnimation(.easeInOut(duration: 0.2)) {
             isEditingControlLayout = false
+        }
+    }
+
+    /// Pauses the game when moving the controls starts (Settings > On-screen Controls > Pause while
+    /// moving the controls) and resumes it at Done, unless the game was already paused some other way.
+    private func layoutEditingChanged(_ editing: Bool) {
+        if editing {
+            guard pauseWhileEditingLayout, gameManager.emulationState == .running, !isPaused else { return }
+            togglePause()
+            pausedByLayoutEditing = true
+        } else if pausedByLayoutEditing {
+            pausedByLayoutEditing = false
+            if isPaused && gameManager.emulationState == .running { togglePause() }
         }
     }
 
@@ -2013,7 +2032,14 @@ struct EmulatorViewOptimized: View {
 
     /// Edit mode is only useful with the game running under the pad, so the menu closes first.
     private func moveControlsFromHomeMenu() {
-        closeHomeMenu()
+        if pauseWhileEditingLayout && isPaused {
+            // Already paused by the menu: keep it paused for the editing instead of resuming for a
+            // moment in between. Done resumes it.
+            withAnimation(.easeInOut(duration: 0.15)) { showHomeMenu = false }
+            pausedByLayoutEditing = true
+        } else {
+            closeHomeMenu()
+        }
         padControlsHidden = false
         padHiddenByController = false
         withAnimation(.easeInOut(duration: 0.2)) { isEditingControlLayout = true }
@@ -2599,7 +2625,9 @@ struct EmulatorViewOptimized: View {
             // Above the pad (which stays on screen and interactive-looking underneath
             // it) so there is no ambiguity about whether input is actually reaching a
             // paused title - the label is the whole point, not just the pause itself.
-            if isPaused && !showHomeMenu {
+            // Not while the controls are being moved: that pause ends at Done, and the label would sit
+            // over the controls and the panel.
+            if isPaused && !showHomeMenu && !isEditingControlLayout {
                 VStack(spacing: 10) {
                     Image(systemName: "pause.circle.fill")
                         .font(.system(size: 40))
@@ -2829,6 +2857,7 @@ struct EmulatorViewOptimized: View {
         }
         // Also on while the controls are being moved: a controller's B only reaches the app while it is captured.
         .modifier(HomeMenuEventsModifier(isOpen: showHomeMenu || isEditingControlLayout, onEvent: handleHomeMenuEvent))
+        .onChange(of: isEditingControlLayout) { layoutEditingChanged($0) }
         .modifier(ControllerAutoHideModifier(apply: setPadHiddenByController))
         .onChange(of: showHomeMenu) { open in
             if open {

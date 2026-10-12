@@ -4,6 +4,7 @@
 
 #include "Cafe/HW/Latte/Renderer/Metal/MetalLayerHandle.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalPerformanceMonitor.h"
+#include "Cafe/HW/Latte/Renderer/Metal/MetalEncoderResidency.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalOutputShaderCache.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalAttachmentsInfo.h"
 #include "Common/DeviceCapabilities.h"
@@ -461,6 +462,8 @@ public:
     void ResetEncoderState()
     {
         m_state.m_encoderState = {};
+        // Residency declared on the previous encoder means nothing to this one
+        m_encoderResidency.Reset();
 
         // TODO: set viewport and scissor to render target dimensions if render commands
 
@@ -711,6 +714,8 @@ private:
 	std::vector<uint32> m_executingQueueGenerations; // command queue generation each executing command buffer was made on, same order
 	MetalEncoderType m_encoderType = MetalEncoderType::None;
 	MTL::CommandEncoder* m_commandEncoder = nullptr;
+	// What the current render encoder has already been told to keep resident (see BindStageResources)
+	MetalEncoderResidency m_encoderResidency;
 
     uint32 m_recordedDrawcalls;
     // Submits recorded work that has sat unsubmitted while the command processor was idle (see NotifyLatteCommandProcessorIdle())

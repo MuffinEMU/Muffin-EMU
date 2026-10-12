@@ -17,6 +17,10 @@ import UIKit
 /// Offsets are stored in points, not layout units, so a cluster doesn't move when the
 /// size slider changes.
 enum ControllerLayoutSettings {
+    /// Whether moving the on-screen controls during a game pauses it until Done. On by default:
+    /// the controls stop working while they are being moved, so the game would play on unattended.
+    static let pauseWhileEditingKey = "muffin.controls.pauseWhileEditing"
+    static let defaultPauseWhileEditing = true
     static let scaleKey = "muffin.controls.scale"
     static let opacityKey = "muffin.controls.opacity"
     static let leftOffsetXKey = "muffin.controls.left.dx"

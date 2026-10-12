@@ -31,6 +31,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
     case resume
     case saveStates
     case screenLayout
+    case externalDisplay
     case moveControls
     case recordAudio
     case scanAmiibo
@@ -57,6 +58,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
         case .resume: return "Resume"
         case .saveStates: return "Save States"
         case .screenLayout: return "Screen layout"
+        case .externalDisplay: return "External display"
         case .moveControls: return "Move controls"
         case .recordAudio: return "Record audio"
         case .scanAmiibo: return "Scan amiibo"
@@ -70,6 +72,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
         case .resume: return "play.fill"
         case .saveStates: return "bookmark.fill"
         case .screenLayout: return "rectangle.split.2x1"
+        case .externalDisplay: return "tv"
         case .moveControls: return "arrow.up.and.down.and.arrow.left.and.right"
         case .recordAudio: return "record.circle"
         case .scanAmiibo: return "wave.3.right"
@@ -83,6 +86,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
         case .resume: return "Closes the menu and carries on with the game."
         case .saveStates: return "Opens the save state slots."
         case .screenLayout: return "Opens the screen layout choices."
+        case .externalDisplay: return "Opens the external display settings, the same ones as in Settings > Display."
         case .moveControls: return "Closes the menu and lets you drag the on-screen controls."
         case .recordAudio: return "Records the game's sound to an M4A file in the Recordings folder in Files. Choose it again to stop."
         case .scanAmiibo: return "Opens a list of amiibo files to scan. The game has to be asking for an amiibo."
@@ -204,7 +208,7 @@ struct HomeMenuOverlay: View {
     let canQuit: Bool
     let actions: HomeMenuActions
 
-    private enum Page { case root, layout, confirmQuit }
+    private enum Page { case root, layout, external, confirmQuit }
     @ObservedObject private var recorder = AudioRecorder.shared
     @State private var page = Page.root
     @State private var focus = 0
@@ -212,6 +216,16 @@ struct HomeMenuOverlay: View {
     /// The highlight is for controller players: shown from the start when one is connected, and once
     /// a controller button is used otherwise, so a touch player is not handed a row that looks chosen.
     @State private var usingController = ControllerPresence.isConnected()
+
+    // The same settings as Settings > Display, so a change in either place shows in the other.
+    @AppStorage(ExternalDisplaySystemSettings.enabledKey)
+    private var externalDisplayEnabled = ExternalDisplaySystemSettings.defaultEnabled
+    @AppStorage(DisplayLayoutSettings.swapKey)
+    private var externalSwap = DisplayLayoutSettings.defaultSwap
+    @AppStorage(DisplayLayoutSettings.deviceShowsKey)
+    private var deviceShows = DisplayLayoutSettings.defaultDeviceShows
+    @AppStorage(DisplayLayoutSettings.showSwapButtonKey)
+    private var showExternalSwapButton = DisplayLayoutSettings.defaultShowSwapButton
 
     var body: some View {
         GeometryReader { proxy in
@@ -281,6 +295,7 @@ struct HomeMenuOverlay: View {
         switch page {
         case .root: return "HOME menu"
         case .layout: return "Screen layout"
+        case .external: return "External display"
         case .confirmQuit: return "Quit game?"
         }
     }
@@ -305,6 +320,14 @@ struct HomeMenuOverlay: View {
                     .fixedSize(horizontal: false, vertical: true)
             case .layout:
                 EmptyView()
+            case .external:
+                Text(externalDisplayEnabled
+                     ? "Changes apply right away. AirPlay mirroring doesn't count as an external display."
+                     : "Experimental. Turn it on, then connect a second screen.")
+                    .font(MuffinTheme.Font.caption)
+                    .foregroundColor(MuffinTheme.brownMid)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.bottom, 2)
@@ -316,6 +339,7 @@ struct HomeMenuOverlay: View {
         switch page {
         case .root: return rootRows
         case .layout: return layoutRows
+        case .external: return externalRows
         case .confirmQuit: return confirmQuitRows
         }
     }
@@ -345,6 +369,7 @@ struct HomeMenuOverlay: View {
         case .resume: return make(primary: true, actions.resume)
         case .saveStates: return make(actions.saveStates)
         case .screenLayout: return make(chevron: true, { show(.layout) })
+        case .externalDisplay: return make(chevron: true, { show(.external) })
         case .moveControls: return make(actions.moveControls)
         case .recordAudio:
             // Stays open, so the checkmark shows it took; Resume carries on with the game.
@@ -385,6 +410,61 @@ struct HomeMenuOverlay: View {
         return result
     }
 
+    /// Settings > Display's external display rows, as menu rows: switches show a checkmark when on, and
+    /// "This device shows" is one row per choice. Each change re-routes at once, as it does in Settings.
+    private var externalRows: [HomeMenuRow] {
+        var result: [HomeMenuRow] = [
+            HomeMenuRow(id: "externalOn", title: "Use an external display", symbol: "tv",
+                        hint: "Experimental. Sends a Wii U screen to a connected second display.",
+                        isSelected: externalDisplayEnabled, action: {
+                            externalDisplayEnabled.toggle()
+                            DisplayRouter.shared.reapplyForExternalDisplaySystemToggle()
+                        })
+        ]
+        if externalDisplayEnabled {
+            result.append(HomeMenuRow(id: "externalSwap", title: "GamePad on the external display", symbol: "rectangle.2.swap",
+                                      hint: externalSwap
+                                        ? "On: the external display shows the GamePad screen."
+                                        : "Off: the external display shows the TV screen.",
+                                      isSelected: externalSwap, action: {
+                                          externalSwap.toggle()
+                                          DisplayRouter.shared.rerouteForScreenLayoutChange()
+                                      }))
+            for mode in DeviceScreenMode.allCases {
+                result.append(HomeMenuRow(id: "deviceShows." + mode.rawValue, title: Self.deviceShowsTitle(for: mode),
+                                          symbol: Self.symbol(for: mode),
+                                          hint: "What this device shows (\"here\") while the external display is connected.",
+                                          isSelected: deviceShows == mode, action: {
+                                              deviceShows = mode
+                                              DisplayRouter.shared.rerouteForScreenLayoutChange()
+                                          }))
+            }
+            result.append(HomeMenuRow(id: "externalSwapButton", title: "Show swap button", symbol: "hand.tap",
+                                      hint: "A small button over the game while an external display is connected.",
+                                      isSelected: showExternalSwapButton, action: { showExternalSwapButton.toggle() }))
+        }
+        result.append(HomeMenuRow(id: "back", title: "Back", symbol: "chevron.left",
+                                  hint: "Returns to the HOME menu.", showsChevron: false, action: { show(.root) }))
+        return result
+    }
+
+    /// Shorter than DeviceScreenMode.string, which is written to follow a label in Settings; menu rows are one line.
+    private static func deviceShowsTitle(for mode: DeviceScreenMode) -> String {
+        switch mode {
+        case .otherScreen: return "Here: the other screen"
+        case .sameScreen: return "Here: the same screen"
+        case .nothing: return "Here: controls only"
+        }
+    }
+
+    private static func symbol(for mode: DeviceScreenMode) -> String {
+        switch mode {
+        case .otherScreen: return "rectangle.on.rectangle"
+        case .sameScreen: return "rectangle.fill.on.rectangle.fill"
+        case .nothing: return "gamecontroller"
+        }
+    }
+
     private static func symbol(for layout: ScreenLayout) -> String {
         switch layout {
         case .singleScreen: return "rectangle"
@@ -402,10 +482,17 @@ struct HomeMenuOverlay: View {
         // "Keep playing" when asked to confirm a quit.
         switch next {
         case .root:
-            let opener: HomeMenuDestination = previous == .confirmQuit ? .quit : .screenLayout
+            let opener: HomeMenuDestination
+            switch previous {
+            case .confirmQuit: opener = .quit
+            case .external: opener = .externalDisplay
+            default: opener = .screenLayout
+            }
             focus = HomeMenuDestination.visible.firstIndex(of: opener) ?? 0
         case .layout:
             focus = layoutRows.firstIndex(where: { $0.isSelected }) ?? 0
+        case .external:
+            focus = 0
         case .confirmQuit:
             focus = 0
         }
