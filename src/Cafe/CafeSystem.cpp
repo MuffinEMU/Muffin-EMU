@@ -173,7 +173,11 @@ void LoadMainExecutable()
 		applicationRPX = RPLLoader_LoadFromMemory(rpxData, rpxSize, (char*)_pathToExecutable.c_str());
 		if (!applicationRPX)
 		{
+			#if BOOST_OS_IOS
+			WindowSystem::ShowErrorDialog(_tr("This game's files look damaged. Try importing it again."));
+			#else
 			WindowSystem::ShowErrorDialog(_tr("Failed to run this title because the executable is damaged"));
+			#endif
 			cemuLog_createLogFile(false);
 			cemuLog_waitForFlush();
 			exit(0);

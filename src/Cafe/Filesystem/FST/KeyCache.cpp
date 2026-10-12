@@ -163,7 +163,11 @@ void KeyCache_Prepare()
 		}
 		else
 		{
+			#if BOOST_OS_IOS
+			WindowSystem::ShowErrorDialog(_tr("MuffinEMU couldn't save your keys. Check that there is free storage."), _tr("Error"), WindowSystem::ErrorCategory::KEYS_TXT_CREATION);
+			#else
 			WindowSystem::ShowErrorDialog(_tr("Unable to create file keys.txt\nThis can happen if Cemu does not have write permission to its own directory, the disk is full or if anti-virus software is blocking Cemu."), _tr("Error"), WindowSystem::ErrorCategory::KEYS_TXT_CREATION);
+			#endif
 		}
 		return;
 	}
