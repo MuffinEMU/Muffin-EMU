@@ -402,6 +402,8 @@ struct TouchLabPadOverlay: View {
     @AppStorage(TouchLabSettings.showcaseStyleKey) private var showcaseStyle = true
     @AppStorage(TouchLabSettings.arcOptionsKey) private var arcOptionsRaw = "{}"
     @ObservedObject private var arcLive = ArcLive.shared
+    /// Zone's moved and resized controls, and whether the player is editing them (TouchLabZoneEditing.swift).
+    @ObservedObject private var zoneEdit = ZoneEditStore.shared
 
     var body: some View {
         pad(upright: ControllerLayoutSettings.isUpright(padSize))
@@ -428,18 +430,23 @@ struct TouchLabPadOverlay: View {
                  revision: revision,
                  // Arc's fine-tune drags buttons and its calibration takes a sweep from each thumb, so the
                  // pad takes touches for both even if the layout panel is still open.
-                 enabled: enabled || arcLive.isFineTuning || arcLive.isCalibrating,
+                 enabled: enabled || arcLive.isFineTuning || arcLive.isCalibrating || zoneEditing,
                  rectSpace: .window,
                  extraInsets: Insets(top: topInset),
                  makeScheme: makeScheme)
         // Settings reach Arc's calibration and fine-tune through the live pad.
         pad.onView = { ArcLive.shared.view = $0 }
+        // Zone's edits, and while the Move controls panel is editing them the pad takes touches to move and resize.
+        pad.edits = zoneEdit.edits
+        pad.editSession = zoneEditing ? zoneEdit.session : nil
         return pad
             .ignoresSafeArea()
             .onAppear {
                 TouchLabSettings.migrateLegacyLargeA()
                 syncGamepadSize()
+                zoneEdit.activate(gameID: gameID)
             }
+            .onChange(of: gameID) { zoneEdit.activate(gameID: $0) }
             // Arc's options change on the live pad, so flipping one never rebuilds it.
             .onChange(of: arcOptionsRaw) { raw in
                 let next = ArcOptions.decode(raw)
@@ -448,6 +455,9 @@ struct TouchLabPadOverlay: View {
             .onChange(of: screens) { _ in syncGamepadSize() }
             .onChange(of: enabled) { _ in syncGamepadSize() }
     }
+
+    /// Zone is live and the panel has it in edit mode.
+    private var zoneEditing: Bool { schemeID == ZonePad.schemeInfo.id && zoneEdit.isEditing }
 
     private var revision: Int {
         var h = Hasher()
@@ -500,7 +510,9 @@ struct TouchLabPadOverlay: View {
             pad.pointsPerInch = DeviceMetrics.current().pointsPerInch
             return pad
         case ZonePad.schemeInfo.id:
-            return ZonePad(aScale: CGFloat(aScale))
+            let pad = ZonePad(aScale: CGFloat(aScale))
+            ZoneEditStore.shared.scheme = pad
+            return pad
         case RacingPad.schemeInfo.id:
             return RacingPad(options: RacingPad.Options(autoAccelerate: racingAuto, tilt: racingTilt,
                                                        itemPlacement: RacingPad.ItemPlacement(rawValue: racingItemPlacement) ?? .centre,
