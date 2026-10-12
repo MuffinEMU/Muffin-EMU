@@ -148,7 +148,7 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCac
     // Make sure a command buffer exists first: the cache is emptied when a new one begins, so an entry
     // made now always belongs to the command buffer that is being recorded
     m_mtlr->GetCommandBuffer();
-    const uint64 lookupStart = PerfTelemetry::NowNs();
+    const uint64 lookupStart = PerfTelemetry::SampleStart();
     auto& cache = m_argumentCaches[stage];
     // Same encoder and same bindings produce an identical buffer, so reuse it. Callers still
     // have to declare residency (useResource) themselves; only the encoding is cached.
@@ -164,13 +164,13 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCac
         {
             entry.lastUse = ++cache.useCounter;
             m_mtlr->GetPerformanceMonitor().m_argumentBufferReuses++;
-            telemetry.gpuArgReuses.fetch_add(1, std::memory_order_relaxed);
-            telemetry.gpuArgReuseNs.fetch_add(PerfTelemetry::NowNs() - lookupStart, std::memory_order_relaxed);
+            PerfTelemetry::SampleCount(telemetry.gpuArgReuses);
+            PerfTelemetry::SampleEnd(telemetry.gpuArgReuseNs, lookupStart);
             return entry.allocation;
         }
     }
 
-    const uint64 encodeStart = PerfTelemetry::NowNs();
+    const uint64 encodeStart = PerfTelemetry::SampleStart();
     const uint32 alignment = std::max<uint32>(256, static_cast<uint32>(encoder->alignment()));
     const uint32 encodedLength = static_cast<uint32>(encoder->encodedLength());
     auto* allocation = m_snapshotAllocator.AllocateBufferMemory(encodedLength, alignment);
@@ -198,24 +198,33 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCac
         {
             if (bindings[index] == base->bindings[index])
                 continue;
-            differingKinds |= 1u << static_cast<uint32>(GetArgumentSlotKind(index));
+            if (PerfTelemetry::IsSampling())
+                differingKinds |= 1u << static_cast<uint32>(GetArgumentSlotKind(index));
             // A slot that goes back to unused cannot be cleared on its own, so that case encodes from scratch
             if (bindings[index].type == MetalArgumentBinding::Type::Unused)
                 canDelta = false;
             else
                 deltaSlots[deltaCount++] = static_cast<uint16>(index);
         }
-        auto kindBit = [&](ArgumentSlotKind kind) { return (differingKinds >> static_cast<uint32>(kind)) & 1u; };
-        telemetry.gpuArgMissSupport.fetch_add(kindBit(ArgumentSlotKind::Support), std::memory_order_relaxed);
-        telemetry.gpuArgMissSupportOnly.fetch_add(differingKinds == (1u << static_cast<uint32>(ArgumentSlotKind::Support)) ? 1 : 0, std::memory_order_relaxed);
-        telemetry.gpuArgMissUniform.fetch_add(kindBit(ArgumentSlotKind::Uniform), std::memory_order_relaxed);
-        telemetry.gpuArgMissTexture.fetch_add(kindBit(ArgumentSlotKind::Texture), std::memory_order_relaxed);
-        telemetry.gpuArgMissSampler.fetch_add(kindBit(ArgumentSlotKind::Sampler), std::memory_order_relaxed);
-        telemetry.gpuArgMissVertexIndex.fetch_add(kindBit(ArgumentSlotKind::VertexIndex), std::memory_order_relaxed);
-        telemetry.gpuArgMissConstant.fetch_add(kindBit(ArgumentSlotKind::Constant), std::memory_order_relaxed);
+        if (PerfTelemetry::IsSampling())
+        {
+            auto countKind = [&](std::atomic<uint32_t>& counter, ArgumentSlotKind kind)
+            {
+                if ((differingKinds >> static_cast<uint32>(kind)) & 1u)
+                    PerfTelemetry::SampleCount(counter);
+            };
+            countKind(telemetry.gpuArgMissSupport, ArgumentSlotKind::Support);
+            if (differingKinds == (1u << static_cast<uint32>(ArgumentSlotKind::Support)))
+                PerfTelemetry::SampleCount(telemetry.gpuArgMissSupportOnly);
+            countKind(telemetry.gpuArgMissUniform, ArgumentSlotKind::Uniform);
+            countKind(telemetry.gpuArgMissTexture, ArgumentSlotKind::Texture);
+            countKind(telemetry.gpuArgMissSampler, ArgumentSlotKind::Sampler);
+            countKind(telemetry.gpuArgMissVertexIndex, ArgumentSlotKind::VertexIndex);
+            countKind(telemetry.gpuArgMissConstant, ArgumentSlotKind::Constant);
+        }
     }
     else
-        telemetry.gpuArgMissNoBase.fetch_add(1, std::memory_order_relaxed);
+        PerfTelemetry::SampleCount(telemetry.gpuArgMissNoBase);
 
     if (canDelta)
     {
@@ -279,8 +288,8 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCac
     {
         for (uint32 i = 0; i < deltaCount; ++i)
             encodeSlot(deltaSlots[i]);
-        telemetry.gpuArgDeltaEncodes.fetch_add(1, std::memory_order_relaxed);
-        telemetry.gpuArgDeltaSlots.fetch_add(deltaCount, std::memory_order_relaxed);
+        PerfTelemetry::SampleCount(telemetry.gpuArgDeltaEncodes);
+        PerfTelemetry::SampleCount(telemetry.gpuArgDeltaSlots, deltaCount);
     }
     else
     {
@@ -290,8 +299,8 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCac
 
     m_snapshotAllocator.FlushReservation(allocation);
     m_mtlr->GetPerformanceMonitor().m_argumentBufferEncodes++;
-    telemetry.gpuArgEncodes.fetch_add(1, std::memory_order_relaxed);
-    telemetry.gpuArgEncodeNs.fetch_add(PerfTelemetry::NowNs() - encodeStart, std::memory_order_relaxed);
+    PerfTelemetry::SampleCount(telemetry.gpuArgEncodes);
+    PerfTelemetry::SampleEnd(telemetry.gpuArgEncodeNs, encodeStart);
     return allocation;
 }
 

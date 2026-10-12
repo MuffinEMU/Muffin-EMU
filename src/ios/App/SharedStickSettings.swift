@@ -138,12 +138,18 @@ enum SharedStick {
             if f.curve != 1 { m = pow(m, f.curve) }
         }
         if f.antiDeadzone > 0 { m = f.antiDeadzone + m * (1 - f.antiDeadzone) }
+        // Only a changed magnitude or a sensitivity can move the value, so only then can it need
+        // pulling back inside the unit circle. Otherwise the input's own numbers go through as they are
+        // (dividing a unit-length value by its own length can move it by an ulp).
+        let reshaped = m != m0 || f.sensitivityX != 1 || f.sensitivityY != 1
         var x = m == m0 ? value.x : ux * m
         var y = m == m0 ? value.y : uy * m
         if f.sensitivityX != 1 { x *= f.sensitivityX }
         if f.sensitivityY != 1 { y *= f.sensitivityY }
-        let len = (x * x + y * y).squareRoot()
-        if len > 1 { x /= len; y /= len }
+        if reshaped {
+            let len = (x * x + y * y).squareRoot()
+            if len > 1 { x /= len; y /= len }
+        }
         if f.invertX { x = -x }
         if f.invertY { y = -y }
         return StickValue(x: x, y: y)

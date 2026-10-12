@@ -1677,9 +1677,9 @@ namespace {
             const double mbPerFrame = frames > 0.0 ? 1.0 / (frames * 1048576.0) : 0.0;
             cemuLog_log(LogType::Force,
                 "perf gpu thread ms/frame {:.1f}: draws {:.0f}/frame | begin {:.1f} (textures {:.1f}, hashing {:.1f} = {} textures {:.1f} MB/frame) | "
-                "execute {:.1f} (index {:.1f}, flush queue {:.1f}, buffers {:.1f} [compared {:.1f} MB/frame, copied {:.1f} MB/frame], render pass {:.1f}, pipeline {:.1f}, resource bind {:.1f} [useResource {:.0f} calls/frame {:.1f} ms, {:.0f} skipped; argument buffers {:.0f} encoded {:.1f} ms, {:.0f} reused {:.1f} ms; sampler lookups {:.0f} {:.1f} ms; texture views {:.0f} {:.1f} ms]) | "
+                "execute {:.1f} (index {:.1f}, flush queue {:.1f}, buffers {:.1f} [compared {:.1f} MB/frame, copied {:.1f} MB/frame], render pass {:.1f}, pipeline {:.1f}, resource bind {:.1f} [sampled 1/8: useResource {:.0f} calls/frame {:.1f} ms, {:.0f} skipped; argument buffers {:.0f} encoded {:.1f} ms, {:.0f} reused {:.1f} ms; sampler lookups {:.0f} {:.1f} ms; texture views {:.0f} {:.1f} ms]) | "
                 "arg misses/frame {:.0f} [no base {:.0f}; differing vs latest: support {:.0f} (only {:.0f}), uniform {:.0f}, texture {:.0f}, sampler {:.0f}, vertex/index {:.0f}, constant {:.0f}; delta encodes {:.0f} writing {:.1f} slots each] | "
-                "bind parts ms/frame [texture loop {:.1f}, support prep {:.1f}, remapped uniforms {:.1f}, support snapshot {:.1f}, uniform loop {:.1f} (shared cache track {:.1f}, breadcrumbs {:.1f}), vertex/index {:.1f}, arg buffer bind {:.1f}, residency lookups {:.1f}, rest {:.1f}] | "
+                "bind parts (sampled 1/8) ms/frame [texture loop {:.1f}, support prep {:.1f}, remapped uniforms {:.1f}, support snapshot {:.1f}, uniform loop {:.1f} (shared cache track {:.1f}, breadcrumbs {:.1f}), vertex/index {:.1f}, arg buffer bind {:.1f}, residency lookups {:.1f}, rest {:.1f}] | "
                 "end/commit {:.1f} | other {:.1f}",
                 busyMs, frames > 0.0 ? draws / frames : 0.0, beginMs, ms(b.gpuTexUpdateNs, a.gpuTexUpdateNs), ms(b.gpuTexHashNs, a.gpuTexHashNs),
                 frames > 0.0 ? (uint32_t)((b.gpuTexHashes - a.gpuTexHashes) / frames) : 0u, (double)(b.gpuTexHashBytes - a.gpuTexHashBytes) * mbPerFrame,

@@ -3,6 +3,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <type_traits>
 
 // Cumulative counters for the performance line the iOS bridge logs every few seconds and for the
 // in-game overlay. Everything is a relaxed atomic bumped from the thread that does the work and
@@ -171,6 +172,44 @@ namespace PerfTelemetry
 	{
 		return (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 	}
+
+	// Sampling for the fine-grained GPU-thread timers. Timing every useResource(), lookup and encode
+	// costs more than a few percent of a heavy frame, so those only run on one frame in kSampleEvery
+	// (chosen once per frame by BeginFrameSampling on the GPU thread, read as a plain bool) and what they
+	// add is multiplied by kSampleEvery, so the totals keep the meaning of an every-frame measurement.
+	// The flag is only touched by the GPU thread.
+	inline constexpr uint32_t kSampleEvery = 8;
+	inline bool g_sampleFrame = false;
+	inline bool IsSampling() { return g_sampleFrame; }
+	inline void BeginFrameSampling()
+	{
+		static uint32_t s_frame = 0;
+		g_sampleFrame = (s_frame++ % kSampleEvery) == 0;
+	}
+	// 0 when this frame is not sampled (NowNs is never 0)
+	inline uint64_t SampleStart() { return g_sampleFrame ? NowNs() : 0; }
+	inline void SampleEnd(std::atomic<uint64_t>& sink, uint64_t start)
+	{
+		if (start)
+			sink.fetch_add((NowNs() - start) * kSampleEvery, std::memory_order_relaxed);
+	}
+	template <typename T>
+	inline void SampleCount(std::atomic<T>& sink, typename std::common_type<T>::type n = 1)
+	{
+		if (g_sampleFrame)
+			sink.fetch_add(n * kSampleEvery, std::memory_order_relaxed);
+	}
+	class SampledTimer
+	{
+	public:
+		explicit SampledTimer(std::atomic<uint64_t>& sink) : m_sink(sink), m_start(SampleStart()) {}
+		~SampledTimer() { SampleEnd(m_sink, m_start); }
+		SampledTimer(const SampledTimer&) = delete;
+		SampledTimer& operator=(const SampledTimer&) = delete;
+	private:
+		std::atomic<uint64_t>& m_sink;
+		uint64_t m_start;
+	};
 
 	// Adds the time between construction and destruction to a counter.
 	class ScopedTimer

@@ -785,6 +785,9 @@ void MetalRenderer::DrawEmptyFrame(bool mainWindow)
 
 void MetalRenderer::SwapBuffers(bool swapTV, bool swapDRC)
 {
+    // One frame in a few gets the fine-grained bind timers
+    if (swapTV || swapDRC)
+        PerfTelemetry::BeginFrameSampling();
     if (LatteWait::Get().gpuError.load(std::memory_order_relaxed))
     {
         // Nothing can be presented any more. Keep retiring command buffers so their memory comes back.
@@ -4547,10 +4550,10 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
         if (computeCommandEncoder)
         {
             // A compute encoder is fresh for each emulated draw, so there is nothing to deduplicate
-            const uint64 start = PerfTelemetry::NowNs();
+            const uint64 start = PerfTelemetry::SampleStart();
             computeCommandEncoder->useResource(resource, usage);
-            telemetry.gpuUseResourceNs.fetch_add(PerfTelemetry::NowNs() - start, std::memory_order_relaxed);
-            telemetry.gpuUseResourceCalls.fetch_add(1, std::memory_order_relaxed);
+            PerfTelemetry::SampleEnd(telemetry.gpuUseResourceNs, start);
+            PerfTelemetry::SampleCount(telemetry.gpuUseResourceCalls);
             return;
         }
         // Residency lasts as long as the encoder, and a pass declares the same resources draw after draw
@@ -4558,19 +4561,19 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
         uint32 declaredStages = static_cast<uint32>(stage);
         if (renderCommandEncoder == m_commandEncoder)
         {
-            const uint64 declareStart = PerfTelemetry::NowNs();
+            const uint64 declareStart = PerfTelemetry::SampleStart();
             const bool needed = m_encoderResidency.Declare(resource, declaredUsage, declaredStages);
-            telemetry.gpuBindResidencyNs.fetch_add(PerfTelemetry::NowNs() - declareStart, std::memory_order_relaxed);
+            PerfTelemetry::SampleEnd(telemetry.gpuBindResidencyNs, declareStart);
             if (!needed)
             {
-                telemetry.gpuUseResourceSkips.fetch_add(1, std::memory_order_relaxed);
+                PerfTelemetry::SampleCount(telemetry.gpuUseResourceSkips);
                 return;
             }
         }
-        const uint64 start = PerfTelemetry::NowNs();
+        const uint64 start = PerfTelemetry::SampleStart();
         renderCommandEncoder->useResource(resource, static_cast<MTL::ResourceUsage>(declaredUsage), static_cast<MTL::RenderStages>(declaredStages));
-        telemetry.gpuUseResourceNs.fetch_add(PerfTelemetry::NowNs() - start, std::memory_order_relaxed);
-        telemetry.gpuUseResourceCalls.fetch_add(1, std::memory_order_relaxed);
+        PerfTelemetry::SampleEnd(telemetry.gpuUseResourceNs, start);
+        PerfTelemetry::SampleCount(telemetry.gpuUseResourceCalls);
     };
     auto bindBuffer = [&](MetalShaderType type, MTL::Buffer* buffer, size_t offset, uint32 index)
     {
@@ -4613,7 +4616,7 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
             UNREACHABLE;
     }
     
-    const uint64 textureLoopStart = PerfTelemetry::NowNs();
+    const uint64 textureLoopStart = PerfTelemetry::SampleStart();
     for (sint32 relative_textureUnit = 0; relative_textureUnit < LATTE_NUM_MAX_TEX_UNITS; relative_textureUnit++)
     {
         if (shader->resourceMapping.textureUnitToBindingPoint[relative_textureUnit] < 0)
@@ -4666,17 +4669,17 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
             _LatteRegisterSetSampler* samplerWords = LatteGPUState.contextNew.SQ_TEX_SAMPLER + samplerIndex;
             if (textureView && textureView->baseTexture->overwriteInfo.anisotropicLevel >= 0)
                 samplerWords->WORD0.set_MAX_ANISO_RATIO(textureView->baseTexture->overwriteInfo.anisotropicLevel);
-            const uint64 samplerStart = PerfTelemetry::NowNs();
+            const uint64 samplerStart = PerfTelemetry::SampleStart();
             sampler = m_samplerCache->GetSamplerState(LatteGPUState.contextNew, shader->shaderType, stageSamplerIndex, samplerWords);
-            telemetry.gpuSamplerLookupNs.fetch_add(PerfTelemetry::NowNs() - samplerStart, std::memory_order_relaxed);
-            telemetry.gpuSamplerLookups.fetch_add(1, std::memory_order_relaxed);
+            PerfTelemetry::SampleEnd(telemetry.gpuSamplerLookupNs, samplerStart);
+            PerfTelemetry::SampleCount(telemetry.gpuSamplerLookups);
         }
         if (samplerBinding >= 0)
         {
             if (!sampler)
             {
                 cemuLog_logOnce(LogType::Force, "Metal shader {:016x} could not allocate a sampler", shader->baseHash);
-                telemetry.gpuBindTextureLoopNs.fetch_add(PerfTelemetry::NowNs() - textureLoopStart, std::memory_order_relaxed);
+                PerfTelemetry::SampleEnd(telemetry.gpuBindTextureLoopNs, textureLoopStart);
                 return false;
             }
             if (argumentEncoder)
@@ -4712,10 +4715,10 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
         {
             // get texture register word 0
             uint32 word4 = LatteGPUState.contextRegister[texUnitRegIndex + 4];
-            const uint64 viewStart = PerfTelemetry::NowNs();
+            const uint64 viewStart = PerfTelemetry::SampleStart();
             mtlTexture = textureView->GetSwizzledView(word4);
-            telemetry.gpuTexViewLookupNs.fetch_add(PerfTelemetry::NowNs() - viewStart, std::memory_order_relaxed);
-            telemetry.gpuTexViewLookups.fetch_add(1, std::memory_order_relaxed);
+            PerfTelemetry::SampleEnd(telemetry.gpuTexViewLookupNs, viewStart);
+            PerfTelemetry::SampleCount(telemetry.gpuTexViewLookups);
             if (!mtlTexture)
             {
                 // The view could not be created (its base texture was replaced by the null texture after an
@@ -4735,7 +4738,7 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
         else
             bindTexture(mtlShaderType, mtlTexture, binding);
     }
-    telemetry.gpuBindTextureLoopNs.fetch_add(PerfTelemetry::NowNs() - textureLoopStart, std::memory_order_relaxed);
+    PerfTelemetry::SampleEnd(telemetry.gpuBindTextureLoopNs, textureLoopStart);
     
     // Support buffer
     auto GET_UNIFORM_DATA_PTR = [&](size_t index) { return supportBufferData + (index / 4); };
@@ -4768,7 +4771,7 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
             cemuLog_logOnce(LogType::Force, "Metal shader {:016x} exceeds the support buffer capacity", shader->baseHash);
             return false;
         }
-        const uint64 supportPrepStart = PerfTelemetry::NowNs();
+        const uint64 supportPrepStart = PerfTelemetry::SampleStart();
         uint64 remappedNs = 0;
         if (shader->uniform.list_ufTexRescale.empty() == false)
         {
@@ -4793,9 +4796,10 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
         }
         if (shader->uniform.loc_remapped >= 0)
         {
-            const uint64 remappedStart = PerfTelemetry::NowNs();
+            const uint64 remappedStart = PerfTelemetry::SampleStart();
             LatteBufferCache_LoadRemappedUniforms(shader, GET_UNIFORM_DATA_PTR(shader->uniform.loc_remapped));
-            remappedNs = PerfTelemetry::NowNs() - remappedStart;
+            if (remappedStart)
+                remappedNs = PerfTelemetry::NowNs() - remappedStart;
         }
         if (shader->uniform.loc_uniformRegister >= 0)
         {
@@ -4833,12 +4837,15 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
             }
         }
         
-        const uint64 snapshotStart = PerfTelemetry::NowNs();
-        telemetry.gpuBindRemappedNs.fetch_add(remappedNs, std::memory_order_relaxed);
-        telemetry.gpuBindSupportPrepNs.fetch_add(snapshotStart - supportPrepStart - remappedNs, std::memory_order_relaxed);
+        const uint64 snapshotStart = PerfTelemetry::SampleStart();
+        if (snapshotStart)
+        {
+            telemetry.gpuBindRemappedNs.fetch_add(remappedNs * PerfTelemetry::kSampleEvery, std::memory_order_relaxed);
+            telemetry.gpuBindSupportPrepNs.fetch_add((snapshotStart - supportPrepStart - remappedNs) * PerfTelemetry::kSampleEvery, std::memory_order_relaxed);
+        }
         size_t size = shader->uniform.uniformRangeSize;
         auto* allocation = m_memoryManager->GetCachedSnapshot(MetalMemoryManager::SupportSnapshotBase + mtlShaderType, supportBufferData, size);
-        telemetry.gpuBindSnapshotNs.fetch_add(PerfTelemetry::NowNs() - snapshotStart, std::memory_order_relaxed);
+        PerfTelemetry::SampleEnd(telemetry.gpuBindSnapshotNs, snapshotStart);
         if (!allocation)
             return false; // out of memory - the caller skips the draw
         if (argumentEncoder)
@@ -4851,7 +4858,7 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
     }
     
     // Uniform buffers
-    const uint64 uniformLoopStart = PerfTelemetry::NowNs();
+    const uint64 uniformLoopStart = PerfTelemetry::SampleStart();
     for (sint32 i = 0; i < LATTE_NUM_MAX_UNIFORM_BUFFERS; i++)
     {
         if (shader->resourceMapping.uniformBuffersBindingPoint[i] >= 0)
@@ -4877,13 +4884,13 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
                 size = std::min(size, buffer->length() - offset);
             }
 
-            const uint64 trackStart = PerfTelemetry::NowNs();
+            const uint64 trackStart = PerfTelemetry::SampleStart();
             m_memoryManager->TrackSharedCache(buffer, offset, size);
-            telemetry.gpuBindTrackNs.fetch_add(PerfTelemetry::NowNs() - trackStart, std::memory_order_relaxed);
+            PerfTelemetry::SampleEnd(telemetry.gpuBindTrackNs, trackStart);
 
             if (m_crumb && m_crumb->numUniformBuffers < MetalDrawBreadcrumb::MAX_UNIFORM_BUFFERS)
             {
-                PerfTelemetry::ScopedTimer crumbTimer(telemetry.gpuBindCrumbNs);
+                PerfTelemetry::SampledTimer crumbTimer(telemetry.gpuBindCrumbNs);
                 uint64 requiredSize = 0;
                 for (const auto& quick : shader->list_quickBufferList)
                     if (quick.index == i)
@@ -4910,7 +4917,7 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
         }
     }
     
-    telemetry.gpuBindUniformLoopNs.fetch_add(PerfTelemetry::NowNs() - uniformLoopStart, std::memory_order_relaxed);
+    PerfTelemetry::SampleEnd(telemetry.gpuBindUniformLoopNs, uniformLoopStart);
     
     // Storage buffer
     if (shader->resourceMapping.tfStorageBindingPoint >= 0)
@@ -4927,7 +4934,7 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
     
     if (argumentEncoder && shader->shaderType == LatteConst::ShaderType::Vertex)
     {
-        PerfTelemetry::ScopedTimer vertexTimer(telemetry.gpuBindVertexNs);
+        PerfTelemetry::SampledTimer vertexTimer(telemetry.gpuBindVertexNs);
         const LatteFetchShader* fetchShader = LatteSHRC_GetActiveFetchShader();
         const bool fetchVertexManually =
         usesGeometryShader ||
@@ -4987,7 +4994,7 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
         // every encoder, precisely because the argument-buffer CONTENTS below may be
         // reused from a previous draw - residency is per-encoder state and is never
         // covered by the cache.
-        PerfTelemetry::ScopedTimer finalTimer(telemetry.gpuBindFinalNs);
+        PerfTelemetry::SampledTimer finalTimer(telemetry.gpuBindFinalNs);
         auto* allocation = m_memoryManager->GetCachedArgumentBuffer(mtlShaderType, argumentEncoder, argumentBindings);
         if (!allocation)
             return false; // out of memory - the caller skips the draw
