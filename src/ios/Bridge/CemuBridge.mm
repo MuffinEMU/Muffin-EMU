@@ -4454,7 +4454,7 @@ void IOSBridge_GPUThreadException(const char* type, const char* what) {
     if (g_crashLogFd >= 0)
         backtrace_symbols_fd(frames, count, g_crashLogFd);
     cemu_bridge_log_checkpoint("=== the title is being stopped ===");
-    IOSSystemImplementation_ReportFatal("The graphics engine hit an error and the game was stopped. The details are in CemuCrashLog.txt.");
+    IOSSystemImplementation_ReportFatal("The graphics engine hit an error and the game was stopped. Use Share diagnostics on the next screen if you report it.");
 }
 
 void cemu_bridge_pause(void) {

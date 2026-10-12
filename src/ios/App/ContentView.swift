@@ -170,15 +170,39 @@ struct BootFailureView: View {
     /// The name the library card shows, not the dump's file name.
     private var name: String { game.displayTitle ?? game.title }
 
-    /// Where the diagnostics actually are. Computed from the bridge rather than written
-    /// down here, because only the bridge knows what $HOME resolved to when it opened the
-    /// file, and that differs between a normal install and a LiveContainer one.
-    private static var crashLogHint: String {
-        let path = String(cString: cemu_bridge_crash_log_path())
-        guard !path.isEmpty else {
-            return "If you report this, include log.txt. No crash log could be opened this run, so there is no CemuCrashLog.txt to send."
+    /// The log files that exist, for the Share diagnostics button. The crash log's path is asked of the bridge rather
+    /// than written down here, because only the bridge knows what $HOME resolved to when it opened the file, and that
+    /// differs between a normal install and a LiveContainer one. log.txt sits in the engine's user-data root.
+    private static var diagnosticFiles: [URL] {
+        var urls: [URL] = []
+        if let log = WiiUMenu.mlcRootURL?.appendingPathComponent("log.txt") { urls.append(log) }
+        let crashPath = String(cString: cemu_bridge_crash_log_path())
+        if !crashPath.isEmpty { urls.append(URL(fileURLWithPath: crashPath)) }
+        return urls.filter { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
+    /// ShareLink where it exists (iOS 16 and later), the same share sheet through UIKit before that.
+    @ViewBuilder
+    private var shareDiagnosticsButton: some View {
+        let files = Self.diagnosticFiles
+        if !files.isEmpty {
+            if #available(iOS 16.0, *) {
+                ShareLink(items: files) { shareDiagnosticsLabel }
+                    .buttonStyle(MuffinBarButtonStyle())
+            } else {
+                Button(action: { DocumentImport.presentShare(files) }) { shareDiagnosticsLabel }
+                    .buttonStyle(MuffinBarButtonStyle())
+            }
         }
-        return "If you report this, include log.txt and CemuCrashLog.txt. They are in:\n\(path)"
+    }
+
+    private var shareDiagnosticsLabel: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "square.and.arrow.up")
+                .font(.system(size: 14, weight: .semibold))
+            Text("Share diagnostics")
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+        }
     }
 
     private var title: String {
@@ -279,19 +303,13 @@ struct BootFailureView: View {
                 .buttonStyle(MuffinPrimaryButtonStyle())
             }
 
-            // The engine's own words and where the logs are, for anyone reporting the problem. Empty message only if
-            // the bridge never set anything, which is itself worth seeing rather than papering over. The path is
-            // asked of the bridge: LiveContainer redirects HOME per hosted app, so a written-down folder is wrong there.
+            // The engine's own words, for anyone reporting the problem. Empty message only if the bridge never set
+            // anything, which is itself worth seeing rather than papering over. The logs go out through Share diagnostics.
             DisclosureGroup("Details") {
                 VStack(spacing: 10) {
                     Text(message.isEmpty ? "The engine didn't report a reason." : message)
                         .font(.system(.footnote, design: .rounded))
                         .foregroundColor(.white.opacity(0.75))
-                        .multilineTextAlignment(.center)
-                        .textSelection(.enabled)
-                    Text(Self.crashLogHint)
-                        .font(.system(.caption2, design: .rounded))
-                        .foregroundColor(.white.opacity(0.6))
                         .multilineTextAlignment(.center)
                         .textSelection(.enabled)
                 }
@@ -302,6 +320,8 @@ struct BootFailureView: View {
             .foregroundColor(.white.opacity(0.75))
             .accentColor(.white.opacity(0.75))
             .frame(maxWidth: 480)
+
+            shareDiagnosticsButton
 
             if needsCleanRestart {
                 // Closing is the player's own tap, never automatic. iOS gives an app no way to relaunch itself, and
