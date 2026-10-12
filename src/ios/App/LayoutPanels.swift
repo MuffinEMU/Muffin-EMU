@@ -36,6 +36,8 @@ struct LayoutPanelCard<Rows: View, Footer: View>: View {
     private let rows: Rows
     private let footer: Footer
     @State private var rowsHeight: CGFloat = 0
+    /// The stick fine-tuning page, over the game (see FineTuneSticksRow).
+    @State private var showingFineTune = false
 
     init(@ViewBuilder rows: () -> Rows, @ViewBuilder footer: () -> Footer) {
         self.rows = rows()
@@ -56,6 +58,7 @@ struct LayoutPanelCard<Rows: View, Footer: View>: View {
                             // their adaptive colours (Toggle/Picker labels, .secondary footers,
                             // segmented text) for dark, or they come out black in light mode.
                             .environment(\.colorScheme, .dark)
+                            .environment(\.openStickFineTune, OpenStickFineTune(action: openFineTune))
                             .background(
                                 GeometryReader { inner in
                                     Color.clear.preference(key: PanelRowsHeightKey.self, value: inner.size.height)
@@ -77,6 +80,19 @@ struct LayoutPanelCard<Rows: View, Footer: View>: View {
         }
         .onPreferenceChange(PanelRowsHeightKey.self) { rowsHeight = $0 }
         .transition(.opacity)
+        // Here, outside the rows, so the page keeps the normal colours rather than the card's dark ones.
+        // The game is not paused for it (editing the controls decides that); the pads are already
+        // inert while a panel is open.
+        .sheet(isPresented: $showingFineTune) {
+            NavigationView { StickFineTuneView(showsDone: true) }
+                .navigationViewStyle(.stack)
+        }
+    }
+
+    /// Lets go of anything held first: the page takes the touches the pad was getting.
+    private func openFineTune() {
+        cemu_bridge_release_all_buttons()
+        showingFineTune = true
     }
 }
 
@@ -311,6 +327,8 @@ struct MuffinPadLayoutPanel: View {
                        range: ControllerLayoutSettings.minDeadzone...ControllerLayoutSettings.maxDeadzone,
                        spokenValue: stickDeadzone <= 0.0005 ? "off" : "\(Int((stickDeadzone * 100).rounded())) percent",
                        readout: stickDeadzone <= 0.0005 ? "off" : "\(Int((stickDeadzone * 100).rounded()))%")
+        // This slider sets both sticks, so a stick's own value is dropped.
+        .onChange(of: stickDeadzone) { _ in SharedStick.clearInnerAndCurveOverrides() }
 
         PanelSliderRow("Fine control", title: "Fine",
                        value: $stickCurve,
@@ -319,6 +337,10 @@ struct MuffinPadLayoutPanel: View {
                            ? "linear" : String(format: "%.1f times", stickCurve),
                        readout: stickCurve <= ControllerLayoutSettings.minStickCurve + 0.005
                            ? "lin" : String(format: "%.1fx", stickCurve))
+        .onChange(of: stickCurve) { _ in SharedStick.clearInnerAndCurveOverrides() }
+
+        // Each stick on its own: deadzones, sensitivity, invert and a test circle.
+        FineTuneSticksRow()
 
         // Hand size: both sticks move together, apart or closer.
         PanelSliderRow("Stick spacing", title: "Sticks",
@@ -384,6 +406,7 @@ struct PreviewLayoutPanel: View {
 
     @ViewBuilder private var rows: some View {
         PanelCaption(text: "Drag a group of buttons to move it, or pinch it to resize it. Nothing here reaches the game.")
+        FineTuneSticksRow()
         PanelCaption(text: "This is the experimental pad. Its size, colours and layout presets are in Settings.", prominent: false)
     }
 }

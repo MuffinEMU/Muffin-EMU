@@ -259,6 +259,20 @@ enum SettingsBackup {
         ControllerLayoutSettings.opacityKey: 0.2...1.0,
     ]
 
+    /// Each stick's own fine-tuning (see SharedStick). Their deadzone and curve take the same range as the shared ones.
+    private static let perStickRanges: [String: ClosedRange<Double>] = {
+        var ranges: [String: ClosedRange<Double>] = [:]
+        for left in [true, false] {
+            ranges[SharedStick.key(.innerDeadzone, left: left)] = ControllerLayoutSettings.minDeadzone...ControllerLayoutSettings.maxDeadzone
+            ranges[SharedStick.key(.curve, left: left)] = ControllerLayoutSettings.minStickCurve...ControllerLayoutSettings.maxStickCurve
+            ranges[SharedStick.key(.outerDeadzone, left: left)] = StickFeel.outerRange
+            ranges[SharedStick.key(.antiDeadzone, left: left)] = StickFeel.antiRange
+            ranges[SharedStick.key(.sensitivityX, left: left)] = StickFeel.sensitivityRange
+            ranges[SharedStick.key(.sensitivityY, left: left)] = StickFeel.sensitivityRange
+        }
+        return ranges
+    }()
+
     /// The value has the type the setting is stored as, and is one it can take.
     private static func isAcceptable(_ value: Any, for key: String) -> Bool {
         if let allowed = allowedStrings[key] {
@@ -270,7 +284,7 @@ enum SettingsBackup {
                   number.doubleValue == number.doubleValue.rounded() else { return false }
             return range.contains(number.intValue)
         }
-        if let range = allowedDoubles[key] {
+        if let range = allowedDoubles[key] ?? Self.perStickRanges[key] {
             guard let number = value as? NSNumber, !isBoolean(number) else { return false }
             return range.contains(number.doubleValue)
         }

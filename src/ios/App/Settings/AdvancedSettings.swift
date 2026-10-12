@@ -222,7 +222,20 @@ enum AdvancedSettings {
         AdvancedSetting(ControllerLayoutSettings.stickGateKey, ControllerLayoutSettings.defaultStickGateRaw),
         AdvancedSetting(ControllerLayoutSettings.deadzoneKey, ControllerLayoutSettings.defaultDeadzone),
         AdvancedSetting(ControllerLayoutSettings.stickCurveKey, ControllerLayoutSettings.defaultStickCurve),
-    ], applyToBridge: nil)
+    ] + perStickSettings, applyToBridge: nil)
+
+    // Each stick's own fine-tuning. A stick's deadzone and curve have no default of their own: absent
+    // means "use the shared one above".
+    private static let perStickSettings: [AdvancedSetting] = [true, false].flatMap { left in
+        SharedStick.Setting.allCases.map { setting -> AdvancedSetting in
+            switch setting {
+            case .innerDeadzone, .curve: return AdvancedSetting(SharedStick.key(setting, left: left), nil)
+            case .outerDeadzone, .antiDeadzone: return AdvancedSetting(SharedStick.key(setting, left: left), 0.0)
+            case .sensitivityX, .sensitivityY: return AdvancedSetting(SharedStick.key(setting, left: left), 1.0)
+            case .invertX, .invertY: return AdvancedSetting(SharedStick.key(setting, left: left), false)
+            }
+        }
+    }
 
     private static let topBar = AdvancedGroup(name: "Top bar", settings: [
         AdvancedSetting(TopBarAutoHide.hideDelayKey, TopBarAutoHide.defaultHideDelaySeconds),
