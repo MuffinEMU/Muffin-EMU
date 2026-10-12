@@ -174,6 +174,7 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCac
     const uint32 alignment = std::max<uint32>(256, static_cast<uint32>(encoder->alignment()));
     const uint32 encodedLength = static_cast<uint32>(encoder->encodedLength());
     auto* allocation = m_snapshotAllocator.AllocateBufferMemory(encodedLength, alignment);
+    PerfTelemetry::SampleEnd(telemetry.gpuArgEncAllocNs, encodeStart);
     if (!allocation)
     {
         // Out of buffer memory; the next call retries the allocation.
@@ -226,6 +227,7 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCac
     else
         PerfTelemetry::SampleCount(telemetry.gpuArgMissNoBase);
 
+    const uint64 copyStart = PerfTelemetry::SampleStart();
     if (canDelta)
     {
         // Copied before the new entry is made below: that can move or evict the entry this reads from
@@ -261,6 +263,8 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCac
     slot->encoder = encoder;
     slot->bindings = bindings;
     slot->allocation = allocation;
+    PerfTelemetry::SampleEnd(telemetry.gpuArgEncCopyNs, copyStart);
+    const uint64 setStart = PerfTelemetry::SampleStart();
     encoder->setArgumentBuffer(allocation->mtlBuffer, allocation->bufferOffset);
     auto encodeSlot = [&](uint32 index)
     {
@@ -297,7 +301,10 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCac
             encodeSlot(index);
     }
 
+    PerfTelemetry::SampleEnd(telemetry.gpuArgEncSetNs, setStart);
+    const uint64 flushStart = PerfTelemetry::SampleStart();
     m_snapshotAllocator.FlushReservation(allocation);
+    PerfTelemetry::SampleEnd(telemetry.gpuArgEncFlushNs, flushStart);
     m_mtlr->GetPerformanceMonitor().m_argumentBufferEncodes++;
     PerfTelemetry::SampleCount(telemetry.gpuArgEncodes);
     PerfTelemetry::SampleEnd(telemetry.gpuArgEncodeNs, encodeStart);

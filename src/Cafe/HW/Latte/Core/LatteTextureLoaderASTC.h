@@ -50,9 +50,10 @@ static uint32 astcEncodeThreadCount()
 }
 
 // Images with fewer blocks than this are decoded and encoded on the calling thread alone. The helpers are
-// persistent (ASTCWorkerPool below), so handing work to them costs a wake-up, not a thread start; 1024 blocks
-// (128x128 texels) is already far more encode time than that.
-static constexpr size_t kAstcThreadedMinBlocks = 32 * 32;
+// persistent (ASTCWorkerPool below), so handing work to them costs a wake-up, not a thread start; 256 blocks
+// (64x64 texels) is already far more encode time than that. A race start in Mario Kart 8 transcodes thousands of
+// images at about 1 ms each, most of them below the 1024 blocks this used to be, on the Latte thread alone.
+static constexpr size_t kAstcThreadedMinBlocks = 16 * 16;
 
 // The threads one decode+encode shares. They are started on first use, live for the rest of the process and
 // sleep between images, so the per-image cost is a condition-variable wake-up instead of creating and joining
@@ -204,7 +205,9 @@ static ASTCEncoderContext* astcGetContext(astcenc_profile profile)
     astcenc_error status = astcenc_config_init(
         profile,
         4, 4, 1,
-        ASTCENC_PRE_FAST,
+        // The source is already BC (4 or 8 bits per texel) and 4x4 ASTC has 8, so the fastest search loses nothing
+        // visible against it, and takes about half the time of the next preset up.
+        ASTCENC_PRE_FASTEST,
         0,
         &config);
     if (status != ASTCENC_SUCCESS)
