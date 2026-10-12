@@ -39,6 +39,14 @@ BASE7=$(printf '%s' "$BASE" | cut -c1-7)
 BASE_VER=$(git describe --tags --match 'v[0-9]*' --abbrev=0 "$BASE" 2>/dev/null || echo "no numbered release")
 AHEAD=$(git rev-list --count "$BASE..$SHA")
 SHA7=$(printf '%s' "$SHA" | cut -c1-7)
+# The version stamped into the app. The Experimental source must list this exact string or SideStore
+# refuses the install ("does not match the version specified by the source").
+APP_VERSION=$(python3 -c '
+import plistlib, sys, zipfile
+z = zipfile.ZipFile(sys.argv[1])
+name = next(n for n in z.namelist() if n.count("/") == 2 and n.startswith("Payload/") and n.endswith(".app/Info.plist"))
+print(plistlib.loads(z.read(name))["CFBundleShortVersionString"])
+' MuffinEMU.ipa)
 
 BODY=$(mktemp)
 {
@@ -46,6 +54,7 @@ BODY=$(mktemp)
   echo
   echo "- **Experiment:** $SHORT_NAME"
   echo "- **Branch:** \`$REF_NAME\` at \`$SHA7\`"
+  echo "- **App version:** $APP_VERSION"
   echo "- **Based on:** main \`$BASE7\` ($BASE_VER), plus $AHEAD commit(s) on the branch"
   echo "- **Installing it replaces** an installed MuffinEMU: it has the same bundle identifier, so your games, saves and settings carry over."
   echo "- **Where it is listed:** only in the Experimental install source, for testers. It is in neither the Stable nor the Nightly source."
