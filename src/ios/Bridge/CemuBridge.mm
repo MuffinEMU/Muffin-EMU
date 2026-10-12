@@ -2944,6 +2944,32 @@ int32_t cemu_bridge_cache_loading(uint32_t* loaded, uint32_t* total) {
     return (int32_t)phase;
 }
 
+// Native dialogs (software keyboard, error viewer). See NativeDialogs.h.
+#include "gui/uikit/NativeDialogs.h"
+
+void cemu_bridge_set_native_dialogs(bool enabled) {
+    NativeDialogs::SetEnabled(enabled);
+}
+
+const char* cemu_bridge_native_dialog_request(void) {
+    static thread_local std::string request;
+    request = NativeDialogs::Describe();
+    return request.c_str();
+}
+
+void cemu_bridge_native_keyboard_answer(uint64_t id, const char* text, int answer) {
+    NativeDialogs::KeyboardAnswer kind = NativeDialogs::KeyboardAnswer::Update;
+    if (answer == 1)
+        kind = NativeDialogs::KeyboardAnswer::Accept;
+    else if (answer == 2)
+        kind = NativeDialogs::KeyboardAnswer::Cancel;
+    NativeDialogs::AnswerKeyboard(id, NativeDialogs::FromUtf8(text), kind);
+}
+
+void cemu_bridge_native_error_answer(uint64_t id, int button) {
+    NativeDialogs::AnswerError(id, button);
+}
+
 // MARK: - Audio
 //
 // tv_audio_enabled/pad_audio_enabled/tv_channels/pad_channels/tv_volume/pad_volume/

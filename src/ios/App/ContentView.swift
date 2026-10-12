@@ -2863,6 +2863,8 @@ struct EmulatorViewOptimized: View {
             RecordingIndicator()
                 .padding(.top, overlayTopInset + 8)
         }
+        // The title's software keyboard and error viewer, as native cards instead of ImGui in the game surface.
+        .overlay { NativeDialogView(active: nativeOverlayActive) }
         // Also on while the controls are being moved: a controller's B only reaches the app while it is captured.
         .modifier(HomeMenuEventsModifier(isOpen: showHomeMenu || isEditingControlLayout, onEvent: handleHomeMenuEvent))
         .onChange(of: isEditingControlLayout) { layoutEditingChanged($0) }

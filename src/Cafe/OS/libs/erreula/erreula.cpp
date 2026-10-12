@@ -10,6 +10,9 @@
 #include "Cafe/OS/libs/coreinit/coreinit_Time.h"
 #include "Cafe/OS/libs/vpad/vpad.h"
 #include "OS/libs/coreinit/coreinit_DynLoad.h"
+#ifndef ENABLE_WXWIDGETS
+#include "gui/uikit/NativeDialogs.h"
+#endif
 
 namespace nn
 {
@@ -229,6 +232,7 @@ namespace erreula
 		std::unique_ptr<ErrEulaInstance> errEulaInstance;
 		AppearError currentDialog;
 		bool homeNixSignVisible{false};
+		uint32 appearSerial{0}; // counts ErrEulaAppearError calls
 	} g_errEula = {};
 	
 	std::wstring GetText(uint16be* text)
@@ -311,6 +315,7 @@ namespace erreula
 	void ErrEulaAppearError(AppearArg* arg)
 	{
 		g_errEula.currentDialog = *arg;
+		g_errEula.appearSerial++;
 		if(g_errEula.errEulaInstance)
 			g_errEula.errEulaInstance->DoAppearError(arg);
 	}
@@ -352,8 +357,95 @@ namespace erreula
 			g_errEula.errEulaInstance->DoCalc();
 	}
 
+#ifndef ENABLE_WXWIDGETS
+	static std::u16string ReadDialogText(const uint16be* text)
+	{
+		std::u16string result;
+		if (!text)
+			return result;
+		for (size_t i = 0; i < 4096 && (uint16)text[i] != 0; i++)
+			result.push_back((char16_t)(uint16)text[i]);
+		return result;
+	}
+
+	// Serial of the dialog currently handed to the app's card; 0 when none.
+	static uint32 s_nativeSerial = 0;
+
+	// Shows the dialog in the app instead of ImGui and feeds its button back through the same
+	// SetButtonSelection the ImGui buttons use. False means the app isn't taking dialogs and
+	// ImGui should draw it.
+	static bool RenderNative()
+	{
+		if (!NativeDialogs::IsEnabled())
+		{
+			s_nativeSerial = 0;
+			return false;
+		}
+		ErrEulaInstance* instance = g_errEula.errEulaInstance.get();
+		const ErrEulaState state = instance ? instance->GetState() : ErrEulaState::Hidden;
+		const bool showing = instance && (state == ErrEulaState::Appearing || state == ErrEulaState::Visible) && !instance->IsDecideSelectButtonError();
+		if (!showing)
+		{
+			if (s_nativeSerial != 0)
+			{
+				NativeDialogs::WithdrawError();
+				s_nativeSerial = 0;
+			}
+			return true;
+		}
+		if (s_nativeSerial != g_errEula.appearSerial)
+		{
+			const AppearError& arg = g_errEula.currentDialog;
+			NativeDialogs::ErrorRequest request;
+			request.title = ReadDialogText(arg.title.GetPtr());
+			const uint32 errorCode = (uint32)arg.errorCode;
+			if (errorCode != 0)
+			{
+				for (char c : fmt::format("Error-Code: {:03}-{:04}\n", errorCode / 10000, errorCode % 10000))
+					request.message.push_back((char16_t)c);
+			}
+			auto toU16 = [](const char* s) { return std::u16string(s, s + strlen(s)); };
+			const ErrorDialogType type = arg.errorType;
+			if (type != ErrorDialogType::Text && type != ErrorDialogType::TextOneButton && type != ErrorDialogType::TextTwoButton)
+			{
+				request.button1 = u"OK";
+			}
+			else
+			{
+				std::u16string body = arg.text ? ReadDialogText(arg.text.GetPtr()) : toU16("Unknown Error");
+				request.message += body;
+				if (type == ErrorDialogType::Text)
+				{
+					request.button1 = u"OK";
+				}
+				else
+				{
+					request.button1 = arg.button1Text ? ReadDialogText(arg.button1Text.GetPtr()) : toU16("Yes");
+					if (type == ErrorDialogType::TextTwoButton)
+						request.button2 = arg.button2Text ? ReadDialogText(arg.button2Text.GetPtr()) : toU16("No");
+				}
+			}
+			if (request.message.empty())
+				request.message = u"An error occurred.";
+			if (request.button1.empty())
+				request.button1 = u"OK";
+			if (!NativeDialogs::PublishError(std::move(request)))
+				return false;
+			s_nativeSerial = g_errEula.appearSerial;
+		}
+		const int choice = NativeDialogs::TakeErrorChoice();
+		if (choice >= 0)
+			instance->SetButtonSelection(choice == 0 ? ErrEulaInstance::BUTTON_SELECTION::LEFT : ErrEulaInstance::BUTTON_SELECTION::RIGHT);
+		return true;
+	}
+#endif
+
 	void render(bool mainWindow)
 	{
+#ifndef ENABLE_WXWIDGETS
+		if (RenderNative())
+			return;
+#endif
 		if(!g_errEula.errEulaInstance)
 			return;
 		if(g_errEula.errEulaInstance->GetState() != ErrEulaState::Visible && g_errEula.errEulaInstance->GetState() != ErrEulaState::Appearing && g_errEula.errEulaInstance->GetState() != ErrEulaState::Disappearing)
