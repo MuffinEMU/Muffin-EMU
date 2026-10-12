@@ -75,7 +75,7 @@ namespace PerfTelemetry
 		std::atomic<uint64_t> gpuArgEncodeNs{0};
 		std::atomic<uint32_t> gpuArgReuses{0};      //     argument buffers found in the cache
 		std::atomic<uint64_t> gpuArgReuseNs{0};
-		std::atomic<uint32_t> gpuArgMissNoBase{0};  //     argument buffer misses with no earlier entry for the layout
+		std::atomic<uint32_t> gpuArgMissNoBase{0};  //     argument buffer misses with no cached entry for the layout (entries now outlive command buffers, so mostly first uses)
 		std::atomic<uint32_t> gpuArgMissSupport{0}; //     misses (this and the next five are not exclusive) where the support buffer differs from the latest entry,
 		std::atomic<uint32_t> gpuArgMissSupportOnly{0}; //   where only it does,
 		std::atomic<uint32_t> gpuArgMissUniform{0}; //     uniform buffers,
@@ -86,7 +86,7 @@ namespace PerfTelemetry
 		std::atomic<uint32_t> gpuArgDeltaEncodes{0};    //  misses encoded by copying the latest entry and writing only the differing slots
 		std::atomic<uint64_t> gpuArgDeltaSlots{0};      //    slots written by those
 		// Parts of gpuArgEncodeNs
-		std::atomic<uint64_t> gpuArgEncAllocNs{0};      //     snapshot allocation for the new argument buffer
+		std::atomic<uint64_t> gpuArgEncAllocNs{0};      //     allocating the new argument buffer (recycled block or heap)
 		std::atomic<uint64_t> gpuArgEncCopyNs{0};       //     copying the base entry (or clearing), retains and taking a cache slot
 		std::atomic<uint64_t> gpuArgEncSetNs{0};        //     setArgumentBuffer and the encoder's per-slot writes
 		std::atomic<uint64_t> gpuArgEncFlushNs{0};      //     flushing the allocation
