@@ -242,7 +242,7 @@ struct OverlaySettingsSection: View {
 
     private var fullText: String {
         """
-        The overlay is the engine's own readout, like desktop Cemu's. Position picks a corner of the TV screen; Off hides it, and the other rows stay dimmed until a corner is chosen.
+        The overlay is the engine's own readout. Position picks a corner of the TV screen; Off hides it, and the other rows stay dimmed until a corner is chosen.
 
         FPS is the frame rate the game is producing. CPU, per-core CPU, RAM and VRAM usage measure MuffinEMU itself, not the whole device. Draw calls counts draw commands in the current frame. Debug info adds a few lines of renderer state.
 
