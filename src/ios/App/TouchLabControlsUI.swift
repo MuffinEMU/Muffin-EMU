@@ -320,6 +320,9 @@ struct TouchLabLayoutPanel: View {
                            spokenValue: ControllerLayoutSettings.stickSpacingLabel(stickSpacing))
         }
 
+        // Each stick on its own: deadzones, sensitivity, invert and a test circle.
+        FineTuneSticksRow()
+
         // L, R, ZL and ZR move up or down together. iPad only: an iPhone has no spare height
         // for it. Only the styles with fixed shoulders have anything to move.
         if ControllerLayoutSettings.supportsShoulderOffset && TouchLabSettings.hasMovableShoulders(scheme) {

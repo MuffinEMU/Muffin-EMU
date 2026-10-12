@@ -268,7 +268,12 @@ final class CemuBridgePadOutput: @preconcurrency PadOutput {
     }
 
     func setStick(_ stick: PadStick, _ value: StickValue) {
-        // StickValue is already the console's convention (+y up) - no negation here.
+        // StickValue is already the console's convention (+y up) - no negation here. The package has
+        // applied the base deadzone and curve; this stick's own fine-tuning is applied here, so the
+        // package stays as it is.
+        let left = stick == .left
+        let value = SharedStick.refine(value, feel: SharedStick.feel(left: left), base: SharedStick.packageBase(),
+                                       calibration: SharedStick.calibration(left: left))
         PadDiagnostics.shared.recordStick(stick.rawValue, CGPoint(x: value.x, y: value.y))
         cemu_bridge_set_stick_axis(stick == .left ? CEMU_BRIDGE_STICK_LEFT : CEMU_BRIDGE_STICK_RIGHT,
                                    Float(value.x), Float(value.y))
@@ -379,8 +384,14 @@ struct TouchLabPadOverlay: View {
     @State private var padSize: CGSize = .zero
     @AppStorage(ControllerLayoutSettings.opacityKey) private var opacity = ControllerLayoutSettings.defaultOpacity
     @AppStorage(ControllerLayoutSettings.hapticsKey) private var haptics = ControllerLayoutSettings.defaultHaptics
-    @AppStorage(ControllerLayoutSettings.deadzoneKey) private var deadzone = ControllerLayoutSettings.defaultDeadzone
-    @AppStorage(ControllerLayoutSettings.stickCurveKey) private var curve = ControllerLayoutSettings.defaultStickCurve
+    // Read only so the pad re-renders when a deadzone or curve changes; the package is given the
+    // base (SharedStick.packageBase) and each stick is taken the rest of the way in CemuBridgePadOutput.
+    @AppStorage(ControllerLayoutSettings.deadzoneKey) private var sharedDeadzone = -1.0
+    @AppStorage(ControllerLayoutSettings.stickCurveKey) private var sharedCurve = -1.0
+    @AppStorage(SharedStick.key(.innerDeadzone, left: true)) private var deadzoneLeft = SharedStick.unset
+    @AppStorage(SharedStick.key(.innerDeadzone, left: false)) private var deadzoneRight = SharedStick.unset
+    @AppStorage(SharedStick.key(.curve, left: true)) private var curveLeft = SharedStick.unset
+    @AppStorage(SharedStick.key(.curve, left: false)) private var curveRight = SharedStick.unset
     @AppStorage(ControllerLayoutSettings.stickGateKey) private var gateRaw = ControllerLayoutSettings.defaultStickGateRaw
     // Read only so the pad re-renders when a calibration is saved; the values come in via SharedStick.
     @AppStorage(ControllerLayoutSettings.stickCalibrationLeftKey) private var calibrationLeft = ""
@@ -408,6 +419,8 @@ struct TouchLabPadOverlay: View {
             .reportsPadSize { padSize = $0 }
     }
 
+    private var stickBase: StickBase { SharedStick.packageBase() }
+
     private func pad(upright: Bool) -> some View {
         var pad = TouchPad(schemeID: schemeID,
                  output: CemuBridgePadOutput.shared,
@@ -415,7 +428,7 @@ struct TouchLabPadOverlay: View {
                  // and orientation reads its own stored shoulder value (ShoulderOffsetStorage).
                  // The layouts ignore a negative value (the shoulders already start at the top edge).
                  settings: SharedStick.padSettings(scale: scale, opacity: opacity, haptics: haptics,
-                                                   deadzone: deadzone, curve: curve, gateRaw: gateRaw,
+                                                   deadzone: stickBase.deadzone, curve: stickBase.curve, gateRaw: gateRaw,
                                                    stickSpacing: stickSpacing,
                                                    shoulderOffset: shoulderStore.value(in: padSize, touchLab: true),
                                                    followsThumb: stickFollow, relativeCentre: stickRelative,

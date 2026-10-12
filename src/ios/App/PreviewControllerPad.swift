@@ -349,10 +349,8 @@ private struct PreviewStickView: View {
     @AppStorage(ControllerLayoutSettings.hapticsKey)
     private var hapticsEnabled = ControllerLayoutSettings.defaultHaptics
     // The shared stick settings, the same keys and maths as the standard pad. This pad has always
-    // had no deadzone, so until the player sets one (the key is absent) it keeps having none;
-    // once set, a value here means what it means everywhere else.
-    @AppStorage(ControllerLayoutSettings.deadzoneKey) private var deadzoneSetting = -1.0
-    @AppStorage(ControllerLayoutSettings.stickCurveKey) private var curveSetting = ControllerLayoutSettings.defaultStickCurve
+    // had no deadzone, so until the player sets one (the shared key and the stick's own are both
+    // absent) it keeps having none; once set, a value here means what it means everywhere else.
     @AppStorage(ControllerLayoutSettings.stickGateKey) private var gateSetting = ControllerLayoutSettings.defaultStickGateRaw
     @AppStorage(ControllerLayoutSettings.stickCalibrationLeftKey) private var calibrationLeft = ""
     @AppStorage(ControllerLayoutSettings.stickCalibrationRightKey) private var calibrationRight = ""
@@ -396,7 +394,8 @@ private struct PreviewStickView: View {
                     if deflection > 0.14 { pushed = true }
                     // Console convention (x right, y UP), through the one shared stick maths.
                     let out = SharedStick.output(dx: dx, dy: dy, travel: travel,
-                                                 deadzone: max(deadzoneSetting, 0), curve: curveSetting, gateRaw: gateSetting,
+                                                 feel: SharedStick.feel(left: id == "stickL", fallbackDeadzone: 0),
+                                                 gateRaw: gateSetting,
                                                  calibrationRaw: id == "stickL" ? calibrationLeft : calibrationRight)
                     onStick(id == "stickL" ? 0 : 1, out)
                 }

@@ -771,7 +771,7 @@ final class PadHaptics {
 /// and one on each diagonal - the eight directions `StickGate.radiusFraction` returns 1
 /// for. Drawing it any other way round would show flats where the full-travel directions
 /// are, which is exactly backwards.
-private struct StickGateShape: InsettableShape {
+struct StickGateShape: InsettableShape {
     let gate: ControllerGeometry.StickGate
     var inset: CGFloat = 0
 
@@ -818,11 +818,8 @@ private struct JoystickControl: View {
     /// Console convention: +x right, +y UP, magnitude at most 1.
     let onStick: (CGPoint) -> Void
 
-    // Same keys SettingsView writes; read here so the defaults live in one place.
-    @AppStorage(ControllerLayoutSettings.deadzoneKey)
-    private var deadzoneSetting = ControllerLayoutSettings.defaultDeadzone
-    @AppStorage(ControllerLayoutSettings.stickCurveKey)
-    private var curveSetting = ControllerLayoutSettings.defaultStickCurve
+    // Same keys SettingsView writes; read here so the defaults live in one place. The deadzone,
+    // curve and the rest of the fine-tuning are per stick and read at each touch (SharedStick.feel).
     @AppStorage(ControllerLayoutSettings.stickGateKey)
     private var gateSetting = ControllerLayoutSettings.defaultStickGateRaw
     @AppStorage(ControllerLayoutSettings.stickCalibrationLeftKey)
@@ -931,9 +928,10 @@ private struct JoystickControl: View {
     /// player's stick calibration mean the same thing here as in every TouchLab style. y is
     /// negated inside it, once: the screen counts downwards and the bridge's contract is the console's.
     private func report(dx: CGFloat, dy: CGFloat) {
-        onStick(SharedStick.output(dx: dx, dy: dy, travel: travel,
-                                   deadzone: deadzoneSetting, curve: curveSetting, gateRaw: gateSetting,
-                                   calibrationRaw: control.id == "stickL" ? calibrationLeft : calibrationRight))
+        let isLeft = control.id == "stickL"
+        onStick(SharedStick.output(dx: dx, dy: dy, travel: travel, feel: SharedStick.feel(left: isLeft),
+                                   gateRaw: gateSetting,
+                                   calibrationRaw: isLeft ? calibrationLeft : calibrationRight))
     }
 
     private func recentre() {
