@@ -800,6 +800,28 @@ bool cemu_bridge_native_overlay(void);
 /// poll. Copy it; the pointer is per-thread. Call from the main thread.
 const char* cemu_bridge_native_overlay_text(void);
 
+/// Progress of the shader and pipeline cache loading screen, which the app draws natively
+/// (while cemu_bridge_native_overlay() is on the core leaves everything but the background
+/// image to it). Returns the phase: 0 not loading, 1 shaders, 2 pipelines. loaded and total
+/// are file counts for that phase (total can be 0). Cheap and thread-safe; either pointer
+/// may be NULL.
+int32_t cemu_bridge_cache_loading(uint32_t* loaded, uint32_t* total);
+
+/// Native dialogs. A title's software keyboard and error viewer are drawn by the app instead
+/// of by ImGui inside the game's render surface while this is on (turn it off when nothing
+/// is polling). Poll cemu_bridge_native_dialog_request() from the main thread; it is cheap
+/// when nothing is pending. The reply is one string, fields separated by 0x1F, or empty:
+///   "K" id maxLength multiline(0/1) text hint   - the keyboard
+///   "E" id buttonCount(1/2) title message button1 button2   - the error viewer
+/// Answer with the id from the request; an answer for an older request is ignored.
+/// cemu_bridge_native_keyboard_answer: answer 0 = text changed (keep open), 1 = OK,
+/// 2 = Cancel (the title gets the text the field started with). The error viewer's button is
+/// 0 (left / only) or 1 (right). Copy the string; the pointer is per-thread.
+void cemu_bridge_set_native_dialogs(bool enabled);
+const char* cemu_bridge_native_dialog_request(void);
+void cemu_bridge_native_keyboard_answer(uint64_t id, const char* text, int answer);
+void cemu_bridge_native_error_answer(uint64_t id, int button);
+
 // MARK: - Audio
 //
 // Eight of CemuConfig's audio fields, plain (not ConfigValue-wrapped) sint32/bool/enum

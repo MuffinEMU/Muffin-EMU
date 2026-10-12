@@ -73,6 +73,13 @@ namespace MetalArgumentBuffer
 #define MTL_GS_OUT_BUFFER 2
 #define MTL_GS_PRIMCOUNT_BUFFER 3
 
+// The support buffer (uniform registers, remapped uniforms, per-draw values) of a shader that uses an argument buffer is
+// bound directly at this slot, not through the argument buffer: it changes on most draws, and as an argument-buffer
+// slot every change forced a new encode of the whole argument buffer.
+#define MTL_SUPPORT_BUFFER_BINDING 4
+// The most setVertexBytes() and its relatives take; a bigger support buffer goes through a snapshot buffer instead
+#define MTL_MAX_SET_BYTES 4096
+
 constexpr uint32 INVALID_UINT32 = std::numeric_limits<uint32>::max();
 constexpr size_t INVALID_OFFSET = std::numeric_limits<size_t>::max();
 

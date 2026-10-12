@@ -83,6 +83,11 @@ namespace PerfTelemetry
 		std::atomic<uint32_t> gpuArgMissConstant{0};    //  vertex / index sizes and index type
 		std::atomic<uint32_t> gpuArgDeltaEncodes{0};    //  misses encoded by copying the latest entry and writing only the differing slots
 		std::atomic<uint64_t> gpuArgDeltaSlots{0};      //    slots written by those
+		// Parts of gpuArgEncodeNs
+		std::atomic<uint64_t> gpuArgEncAllocNs{0};      //     snapshot allocation for the new argument buffer
+		std::atomic<uint64_t> gpuArgEncCopyNs{0};       //     copying the base entry (or clearing), retains and taking a cache slot
+		std::atomic<uint64_t> gpuArgEncSetNs{0};        //     setArgumentBuffer and the encoder's per-slot writes
+		std::atomic<uint64_t> gpuArgEncFlushNs{0};      //     flushing the allocation
 		// Parts of per-stage binding time (disjoint unless noted), to account for what the counters above do not cover
 		std::atomic<uint64_t> gpuBindTextureLoopNs{0};  //     texture + sampler loop (includes the lookups above and breadcrumb texture writes)
 		std::atomic<uint64_t> gpuBindResidencyNs{0};    //     residency table lookups that decide whether useResource() is needed (nested in the others)

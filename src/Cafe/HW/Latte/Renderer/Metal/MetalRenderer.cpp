@@ -3336,6 +3336,59 @@ void MetalRenderer::occlusionQuery_updateState() {
     ProcessFinishedCommandBuffers();
 }
 
+namespace
+{
+    // Marks a buffer slot of the encoder state as holding bytes from SetBytes(), not a buffer. ResetEncoderState() clears
+    // it like any other binding, so a new encoder always gets the bytes again.
+    constexpr size_t kBytesBoundOffset = std::numeric_limits<size_t>::max() - 1;
+
+    struct BoundBytes
+    {
+        uint32 length = 0;
+        uint8 data[MTL_MAX_SET_BYTES];
+    };
+    // What SetBytes() last gave each stage, for skipping a draw's identical support buffer (GPU thread only)
+    BoundBytes s_boundBytes[METAL_SHADER_TYPE_TOTAL];
+    uint32 s_boundBytesIndex[METAL_SHADER_TYPE_TOTAL];
+}
+
+void MetalRenderer::SetBytes(MTL::RenderCommandEncoder* renderCommandEncoder, MetalShaderType shaderType, const void* bytes, uint32 length, uint32 index)
+{
+    if (index >= MAX_MTL_BUFFERS || length > MTL_MAX_SET_BYTES)
+    {
+        cemuLog_logOnce(LogType::Force, "invalid Metal bytes binding {} ({} bytes)", index, length);
+        return;
+    }
+
+    auto& boundBuffer = m_state.m_encoderState.m_buffers[shaderType][index];
+    auto& shadow = s_boundBytes[shaderType];
+    if (boundBuffer.m_buffer == nullptr && boundBuffer.m_offset == kBytesBoundOffset && s_boundBytesIndex[shaderType] == index
+        && shadow.length == length && std::memcmp(shadow.data, bytes, length) == 0)
+        return;
+
+    switch (shaderType)
+    {
+    case METAL_SHADER_TYPE_VERTEX:
+        renderCommandEncoder->setVertexBytes(bytes, length, index);
+        break;
+    case METAL_SHADER_TYPE_OBJECT:
+        renderCommandEncoder->setObjectBytes(bytes, length, index);
+        break;
+    case METAL_SHADER_TYPE_MESH:
+        renderCommandEncoder->setMeshBytes(bytes, length, index);
+        break;
+    case METAL_SHADER_TYPE_FRAGMENT:
+        renderCommandEncoder->setFragmentBytes(bytes, length, index);
+        break;
+    default:
+        return;
+    }
+    boundBuffer = {nullptr, kBytesBoundOffset};
+    s_boundBytesIndex[shaderType] = index;
+    shadow.length = length;
+    std::memcpy(shadow.data, bytes, length);
+}
+
 void MetalRenderer::SetBuffer(MTL::RenderCommandEncoder* renderCommandEncoder, MetalShaderType shaderType, MTL::Buffer* buffer, size_t offset, uint32 index)
 {
     if (index >= MAX_MTL_BUFFERS)
@@ -4908,17 +4961,29 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
             telemetry.gpuBindSupportPrepNs.fetch_add((snapshotStart - supportPrepStart - remappedNs) * PerfTelemetry::kSampleEvery, std::memory_order_relaxed);
         }
         size_t size = shader->uniform.uniformRangeSize;
-        auto* allocation = m_memoryManager->GetCachedSnapshot(MetalMemoryManager::SupportSnapshotBase + mtlShaderType, supportBufferData, size);
-        PerfTelemetry::SampleEnd(telemetry.gpuBindSnapshotNs, snapshotStart);
-        if (!allocation)
-            return false; // out of memory - the caller skips the draw
-        if (argumentEncoder)
+        // With an argument buffer the support buffer has a slot of its own (MTL_SUPPORT_BUFFER_BINDING), so a draw that
+        // changes only these values keeps reusing the previous argument-buffer encode. Up to 4 KB it goes in with
+        // setBytes, which also skips the snapshot allocation; bigger ones, and shaders without an argument buffer, use
+        // a snapshot buffer.
+        const uint32 supportBinding = argumentEncoder ? MTL_SUPPORT_BUFFER_BINDING : (uint32)shader->resourceMapping.uniformVarsBufferBindingPoint;
+        if (argumentEncoder && size <= MTL_MAX_SET_BYTES)
         {
-            argumentBindings[MetalArgumentBuffer::SupportBuffer] = {MetalArgumentBinding::Type::Buffer, allocation->mtlBuffer, allocation->bufferOffset};
-            useResource(allocation->mtlBuffer, MTL::ResourceUsageRead, renderStage);
+            // Whole 16-byte rows, like the struct the shader declares (supportBufferData is far bigger than this)
+            const uint32 length = (uint32)std::min<size_t>(Align(std::max<size_t>(size, 16), 16), MTL_MAX_SET_BYTES);
+            if (computeCommandEncoder)
+                computeCommandEncoder->setBytes(supportBufferData, length, supportBinding);
+            else
+                SetBytes(renderCommandEncoder, mtlShaderType, supportBufferData, length, supportBinding);
+            PerfTelemetry::SampleEnd(telemetry.gpuBindSnapshotNs, snapshotStart);
         }
         else
-            bindBuffer(mtlShaderType, allocation->mtlBuffer, allocation->bufferOffset, shader->resourceMapping.uniformVarsBufferBindingPoint);
+        {
+            auto* allocation = m_memoryManager->GetCachedSnapshot(MetalMemoryManager::SupportSnapshotBase + mtlShaderType, supportBufferData, size);
+            PerfTelemetry::SampleEnd(telemetry.gpuBindSnapshotNs, snapshotStart);
+            if (!allocation)
+                return false; // out of memory - the caller skips the draw
+            bindBuffer(mtlShaderType, allocation->mtlBuffer, allocation->bufferOffset, supportBinding);
+        }
     }
     
     // Uniform buffers

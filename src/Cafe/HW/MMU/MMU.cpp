@@ -131,8 +131,12 @@ void MMURange::mapMem()
 	cemu_assert_debug(!m_isMapped);
 	if (memory_commitRange(baseAddress, size) == nullptr)
 	{
+		#if BOOST_OS_IOS
+		WindowSystem::ShowErrorDialog(_tr("There isn't enough free memory to start this game. Close other apps and restart your device, then try again."), _tr("Not enough memory to start"));
+		#else
 		std::string errorMsg = _tr("Unable to allocate {} memory", name);
 		WindowSystem::ShowErrorDialog(errorMsg, _tr("Error"));
+		#endif
 		#if BOOST_OS_WINDOWS
 		ExitProcess(-1);
 		#else
@@ -310,7 +314,11 @@ void memory_init()
 	{
 		debug_printf("memory_init(): Unable to reserve guest memory regions\n");
 		debugBreakpoint();
+		#if BOOST_OS_IOS
+		WindowSystem::ShowErrorDialog(_tr("There isn't enough free memory to start this game. Close other apps and restart your device, then try again."), _tr("Not enough memory to start"));
+		#else
 		WindowSystem::ShowErrorDialog(_tr("Unable to reserve guest memory regions"), _tr("Error"));
+		#endif
 		exit(-1);
 	}
 	for (auto& itr : g_mmuRanges)
