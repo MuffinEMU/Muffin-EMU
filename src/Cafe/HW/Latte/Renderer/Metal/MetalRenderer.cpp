@@ -1014,6 +1014,11 @@ void MetalRenderer::EncodeScreenRecordingFrame(MTL::Texture* source, MTL::Render
     colorAttachment->setStoreAction(MTL::StoreActionStore);
 
     auto renderCommandEncoder = GetTemporaryRenderCommandEncoder(renderPassDescriptor);
+    if (!renderCommandEncoder)
+    {
+        IOSScreenRecorder::AbortFrame(token);
+        return;
+    }
     // The completion handler has to go on before EndEncoding, which can commit the command buffer.
     auto commandBuffer = GetCommandBuffer();
     commandBuffer->addCompletedHandler([token](MTL::CommandBuffer*) { IOSScreenRecorder::EndFrame(token); });

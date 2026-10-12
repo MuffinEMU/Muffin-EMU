@@ -66,6 +66,7 @@ namespace
 	std::atomic<uint64_t> s_slotWrite{0};
 	std::atomic<uint64_t> s_slotRead{0};
 	std::atomic<uint32_t> s_audioRate{48000};
+	std::atomic<uint32_t> s_audioDropped{0}; // audio blocks lost to a full ring or a busy encoder
 
 	struct Session
 	{
@@ -83,6 +84,7 @@ namespace
 		double base = 0.0;
 		double lastCapture = 0.0;
 		uint32_t capturedSinceFlush = 0;
+		double lastVideoPts = -1.0; // writer queue only
 
 		std::atomic<bool> writerReady{false}; // startSession has been called; appends are allowed
 		std::atomic<bool> failed{false};
@@ -112,6 +114,9 @@ namespace
 	};
 
 	std::mutex s_mutex;
+	// Held for the whole of Start and Stop, so a Start never runs while a Stop is still finishing: the Stop
+	// would otherwise clear the new session's sink, join its audio thread and reset the ring under it.
+	std::mutex s_lifecycleMutex;
 	std::shared_ptr<Session> s_session;
 	std::atomic<double> s_lastMain{0.0};
 
@@ -194,6 +199,8 @@ namespace
 			else
 				audioInput = nil; // video only
 
+			// A fragment about every 5 seconds, so a crash, jetsam or force-quit leaves a playable file.
+			writer.movieFragmentInterval = CMTimeMakeWithSeconds(5.0, 600);
 			if (![writer startWriting])
 			{
 				session->failed = true;
@@ -216,6 +223,9 @@ namespace
 			return; // before the first picture
 		// Blocks arrive back to back; keep them contiguous unless there was a real gap (the game paused).
 		if (lastEnd > 0.0 && std::abs(pts - lastEnd) < 0.05)
+			pts = lastEnd;
+		// Strictly increasing per track: never start before the previous block ended.
+		if (lastEnd > 0.0 && pts < lastEnd)
 			pts = lastEnd;
 		lastEnd = pts + slot.frames / rate;
 
@@ -249,6 +259,8 @@ namespace
 				std::this_thread::sleep_for(std::chrono::milliseconds(5));
 			if (input.isReadyForMoreMediaData && session->writer.status == AVAssetWriterStatusWriting)
 				[input appendSampleBuffer:sample];
+			else
+				s_audioDropped.fetch_add(1, std::memory_order_relaxed);
 			CFRelease(sample);
 		}
 		if (block)
@@ -290,7 +302,10 @@ namespace
 		{
 			const uint64_t write = s_slotWrite.load(std::memory_order_relaxed);
 			if (write - s_slotRead.load(std::memory_order_acquire) >= kAudioSlots)
+			{
+				s_audioDropped.fetch_add(1, std::memory_order_relaxed);
 				return; // the writer is far behind: drop rather than wait
+			}
 			AudioSlot& slot = s_slots[write % kAudioSlots];
 			const uint32_t n = std::min(frames - done, kAudioSlotFrames);
 			const int16_t* src = interleaved + (size_t)done * channels;
@@ -328,6 +343,7 @@ namespace IOSScreenRecorder
 	{
 		if (!path || !*path)
 			return false;
+		std::lock_guard lifecycle(s_lifecycleMutex);
 		std::lock_guard lock(s_mutex);
 		if (s_session)
 			return false;
@@ -338,6 +354,7 @@ namespace IOSScreenRecorder
 		session->queue = dispatch_queue_create("muffin.screenrecorder", DISPATCH_QUEUE_SERIAL);
 		s_slotRead.store(0);
 		s_slotWrite.store(0);
+		s_audioDropped.store(0);
 		s_lastMain.store(0.0);
 		session->audioThread = std::thread(AudioThreadMain, session);
 		s_session = session;
@@ -348,6 +365,7 @@ namespace IOSScreenRecorder
 
 	bool Stop()
 	{
+		std::lock_guard lifecycle(s_lifecycleMutex);
 		std::shared_ptr<Session> session;
 		{
 			std::lock_guard lock(s_mutex);
@@ -357,6 +375,7 @@ namespace IOSScreenRecorder
 		}
 		if (!session)
 			return false;
+		// Start is locked out until this returns, so the sink is still this session's.
 		::IOSAudioRecorder::SetSink(nullptr);
 		session->audioStop.store(true, std::memory_order_release);
 		if (session->audioThread.joinable())
@@ -386,6 +405,8 @@ namespace IOSScreenRecorder
 		ok = ok && session->appended.load() > 0;
 		if (session->dropped.load() > 0)
 			NSLog(@"Screen recording skipped %u frame(s) the encoder could not take", session->dropped.load());
+		if (s_audioDropped.load() > 0)
+			NSLog(@"Screen recording dropped %u audio block(s): the encoder could not keep up", s_audioDropped.load());
 		if (!ok)
 			[[NSFileManager defaultManager] removeItemAtPath:session->path error:nil];
 		return ok;
@@ -418,88 +439,91 @@ namespace IOSScreenRecorder
 		else if (now - s_lastMain.load(std::memory_order_relaxed) < 0.5)
 			return false; // the main output is being drawn; that is the one recorded
 
-		std::shared_ptr<Session> session;
+		@autoreleasepool
 		{
-			std::lock_guard lock(s_mutex);
-			session = s_session;
-		}
-		if (!session || session->failed.load(std::memory_order_relaxed) || !sourceWidth || !sourceHeight)
-			return false;
-		if (session->sized && now - session->lastCapture < kMinFrameInterval)
-			return false;
-
-		if (!session->sized)
-		{
-			id<MTLDevice> device = (__bridge id<MTLDevice>)mtlDevice;
-			session->width = EvenSide(sourceWidth);
-			session->height = EvenSide(sourceHeight);
-			NSDictionary* poolAttributes = @{(id)kCVPixelBufferPoolMinimumBufferCountKey: @3};
-			NSDictionary* bufferAttributes = @{
-				(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA),
-				(id)kCVPixelBufferWidthKey: @(session->width),
-				(id)kCVPixelBufferHeightKey: @(session->height),
-				(id)kCVPixelBufferIOSurfacePropertiesKey: @{},
-				(id)kCVPixelBufferMetalCompatibilityKey: @YES,
-			};
-			if (CVPixelBufferPoolCreate(kCFAllocatorDefault, (__bridge CFDictionaryRef)poolAttributes,
-			                            (__bridge CFDictionaryRef)bufferAttributes, &session->pool) != kCVReturnSuccess
-			    || CVMetalTextureCacheCreate(kCFAllocatorDefault, nullptr, device, nullptr, &session->textureCache) != kCVReturnSuccess)
+			std::shared_ptr<Session> session;
 			{
-				session->failed = true;
+				std::lock_guard lock(s_mutex);
+				session = s_session;
+			}
+			if (!session || session->failed.load(std::memory_order_relaxed) || !sourceWidth || !sourceHeight)
+				return false;
+			if (session->sized && now - session->lastCapture < kMinFrameInterval)
+				return false;
+
+			if (!session->sized)
+			{
+				id<MTLDevice> device = (__bridge id<MTLDevice>)mtlDevice;
+				session->width = EvenSide(sourceWidth);
+				session->height = EvenSide(sourceHeight);
+				NSDictionary* poolAttributes = @{(id)kCVPixelBufferPoolMinimumBufferCountKey: @3};
+				NSDictionary* bufferAttributes = @{
+					(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA),
+					(id)kCVPixelBufferWidthKey: @(session->width),
+					(id)kCVPixelBufferHeightKey: @(session->height),
+					(id)kCVPixelBufferIOSurfacePropertiesKey: @{},
+					(id)kCVPixelBufferMetalCompatibilityKey: @YES,
+				};
+				if (CVPixelBufferPoolCreate(kCFAllocatorDefault, (__bridge CFDictionaryRef)poolAttributes,
+				                            (__bridge CFDictionaryRef)bufferAttributes, &session->pool) != kCVReturnSuccess
+				    || CVMetalTextureCacheCreate(kCFAllocatorDefault, nullptr, device, nullptr, &session->textureCache) != kCVReturnSuccess)
+				{
+					session->failed = true;
+					return false;
+				}
+				session->sized = true;
+				session->base = now;
+				// The writer is opened on its own queue; frames queued behind it wait their turn there.
+				dispatch_async(session->queue, ^{ SetUpWriter(session); });
+			}
+
+			if (session->inFlight.load(std::memory_order_relaxed) >= kMaxFramesInFlight)
+			{
+				session->dropped.fetch_add(1, std::memory_order_relaxed);
 				return false;
 			}
-			session->sized = true;
-			session->base = now;
-			// The writer is opened on its own queue; frames queued behind it wait their turn there.
-			dispatch_async(session->queue, ^{ SetUpWriter(session); });
-		}
+			NSDictionary* aux = @{(id)kCVPixelBufferPoolAllocationThresholdKey: @6};
+			CVPixelBufferRef buffer = nullptr;
+			if (CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(kCFAllocatorDefault, session->pool,
+			        (__bridge CFDictionaryRef)aux, &buffer) != kCVReturnSuccess || !buffer)
+			{
+				session->dropped.fetch_add(1, std::memory_order_relaxed);
+				return false;
+			}
+			CVBufferSetAttachment(buffer, kCVImageBufferColorPrimariesKey, kCVImageBufferColorPrimaries_ITU_R_709_2, kCVAttachmentMode_ShouldPropagate);
+			CVBufferSetAttachment(buffer, kCVImageBufferTransferFunctionKey, kCVImageBufferTransferFunction_ITU_R_709_2, kCVAttachmentMode_ShouldPropagate);
+			CVBufferSetAttachment(buffer, kCVImageBufferYCbCrMatrixKey, kCVImageBufferYCbCrMatrix_ITU_R_709_2, kCVAttachmentMode_ShouldPropagate);
 
-		if (session->inFlight.load(std::memory_order_relaxed) >= kMaxFramesInFlight)
-		{
-			session->dropped.fetch_add(1, std::memory_order_relaxed);
-			return false;
-		}
-		NSDictionary* aux = @{(id)kCVPixelBufferPoolAllocationThresholdKey: @6};
-		CVPixelBufferRef buffer = nullptr;
-		if (CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(kCFAllocatorDefault, session->pool,
-		        (__bridge CFDictionaryRef)aux, &buffer) != kCVReturnSuccess || !buffer)
-		{
-			session->dropped.fetch_add(1, std::memory_order_relaxed);
-			return false;
-		}
-		CVBufferSetAttachment(buffer, kCVImageBufferColorPrimariesKey, kCVImageBufferColorPrimaries_ITU_R_709_2, kCVAttachmentMode_ShouldPropagate);
-		CVBufferSetAttachment(buffer, kCVImageBufferTransferFunctionKey, kCVImageBufferTransferFunction_ITU_R_709_2, kCVAttachmentMode_ShouldPropagate);
-		CVBufferSetAttachment(buffer, kCVImageBufferYCbCrMatrixKey, kCVImageBufferYCbCrMatrix_ITU_R_709_2, kCVAttachmentMode_ShouldPropagate);
+			NSDictionary* textureAttributes = @{(id)kCVMetalTextureUsage: @(MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead)};
+			CVMetalTextureRef cvTexture = nullptr;
+			const CVReturn result = CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault, session->textureCache, buffer,
+				(__bridge CFDictionaryRef)textureAttributes, srgb ? MTLPixelFormatBGRA8Unorm_sRGB : MTLPixelFormatBGRA8Unorm,
+				session->width, session->height, 0, &cvTexture);
+			id<MTLTexture> texture = (result == kCVReturnSuccess && cvTexture) ? CVMetalTextureGetTexture(cvTexture) : nil;
+			if (!texture)
+			{
+				if (cvTexture)
+					CFRelease(cvTexture);
+				CVPixelBufferRelease(buffer);
+				session->dropped.fetch_add(1, std::memory_order_relaxed);
+				return false;
+			}
+			if (++session->capturedSinceFlush >= 240)
+			{
+				session->capturedSinceFlush = 0;
+				CVMetalTextureCacheFlush(session->textureCache, 0);
+			}
 
-		NSDictionary* textureAttributes = @{(id)kCVMetalTextureUsage: @(MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead)};
-		CVMetalTextureRef cvTexture = nullptr;
-		const CVReturn result = CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault, session->textureCache, buffer,
-			(__bridge CFDictionaryRef)textureAttributes, srgb ? MTLPixelFormatBGRA8Unorm_sRGB : MTLPixelFormatBGRA8Unorm,
-			session->width, session->height, 0, &cvTexture);
-		id<MTLTexture> texture = (result == kCVReturnSuccess && cvTexture) ? CVMetalTextureGetTexture(cvTexture) : nil;
-		if (!texture)
-		{
-			if (cvTexture)
-				CFRelease(cvTexture);
-			CVPixelBufferRelease(buffer);
-			session->dropped.fetch_add(1, std::memory_order_relaxed);
-			return false;
+			session->lastCapture = now;
+			session->seconds.store(now - session->base, std::memory_order_relaxed);
+			session->inFlight.fetch_add(1, std::memory_order_relaxed);
+			auto* token = new FrameToken{session, buffer, cvTexture, now - session->base};
+			*outTexture = (__bridge void*)texture;
+			*outToken = token;
+			*outWidth = session->width;
+			*outHeight = session->height;
+			return true;
 		}
-		if (++session->capturedSinceFlush >= 240)
-		{
-			session->capturedSinceFlush = 0;
-			CVMetalTextureCacheFlush(session->textureCache, 0);
-		}
-
-		session->lastCapture = now;
-		session->seconds.store(now - session->base, std::memory_order_relaxed);
-		session->inFlight.fetch_add(1, std::memory_order_relaxed);
-		auto* token = new FrameToken{session, buffer, cvTexture, now - session->base};
-		*outTexture = (__bridge void*)texture;
-		*outToken = token;
-		*outWidth = session->width;
-		*outHeight = session->height;
-		return true;
 	}
 
 	void EndFrame(void* tokenPointer)
@@ -510,7 +534,12 @@ namespace IOSScreenRecorder
 			if (session->writerReady.load(std::memory_order_acquire) && !session->failed.load()
 			    && session->writer.status == AVAssetWriterStatusWriting && session->videoInput.isReadyForMoreMediaData)
 			{
-				if ([session->adaptor appendPixelBuffer:token->buffer withPresentationTime:CMTimeMakeWithSeconds(token->pts, 60000)])
+				// Strictly increasing: completion handlers can run out of order, and the writer fails on that.
+				double pts = token->pts;
+				if (pts <= session->lastVideoPts)
+					pts = session->lastVideoPts + 0.001;
+				session->lastVideoPts = pts;
+				if ([session->adaptor appendPixelBuffer:token->buffer withPresentationTime:CMTimeMakeWithSeconds(pts, 60000)])
 					session->appended.fetch_add(1, std::memory_order_relaxed);
 				else
 					session->dropped.fetch_add(1, std::memory_order_relaxed);

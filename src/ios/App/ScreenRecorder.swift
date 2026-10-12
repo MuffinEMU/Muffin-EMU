@@ -24,6 +24,8 @@ final class ScreenRecorder: ObservableObject {
 
     private var timer: Timer?
     private var url: URL?
+    /// A stop is still closing the file on its background queue; a new recording waits for it.
+    private var isFinishing = false
 
     private init() {}
 
@@ -34,6 +36,10 @@ final class ScreenRecorder: ObservableObject {
     func start(gameName: String) {
         guard !isRecording else { return }
         let audio = AudioRecorder.shared
+        guard !isFinishing else {
+            audio.failureMessage = "Still saving the last recording. Try again in a moment."
+            return
+        }
         guard Self.freeBytes() >= Self.minimumFreeBytes else {
             audio.failureMessage = "Not enough storage to record. Free up some space and try again."
             return
@@ -79,6 +85,7 @@ final class ScreenRecorder: ObservableObject {
     func stop(notice: String? = nil) {
         guard isRecording, let url else { return }
         isRecording = false
+        isFinishing = true
         timer?.invalidate()
         timer = nil
         self.url = nil
@@ -92,6 +99,7 @@ final class ScreenRecorder: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async {
             let written = cemu_bridge_screen_record_stop()
             Task { @MainActor in
+                ScreenRecorder.shared.isFinishing = false
                 let audio = AudioRecorder.shared
                 if !written {
                     audio.failureMessage = notice ?? "Nothing was recorded."
