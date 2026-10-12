@@ -3513,12 +3513,19 @@ MTL::CommandBuffer* MetalRenderer::GetCommandBuffer()
     {
         // A page fault was seen on the previous queue; nothing is being recorded right now, so this is the
         // moment to replace it (once) before the next command buffer is made.
-        if (m_gpuRecoveryPending && !m_gpuRecovering)
+        const bool replacingQueue = m_gpuRecoveryPending && !m_gpuRecovering;
+        if (replacingQueue)
             RecoverFromGpuFault();
 
-        // Cached argument buffers belong to the command buffer they were recorded in
+        // Cached argument buffers outlive command buffers (they retain what they reference); only the ones not
+        // used for a few command buffers are dropped. After a queue replacement nothing cached is trusted.
         if (m_memoryManager)
-            m_memoryManager->ReleaseArgumentCache();
+        {
+            if (replacingQueue)
+                m_memoryManager->ReleaseArgumentCache();
+            else
+                m_memoryManager->AgeArgumentCache();
+        }
 
         // Debug
         //m_commandQueue->insertDebugCaptureBoundary();

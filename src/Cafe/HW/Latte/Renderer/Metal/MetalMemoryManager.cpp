@@ -96,7 +96,7 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCac
 void MetalMemoryManager::ReleaseArgumentCacheEntry(ArgumentCacheEntry& entry)
 {
     if (entry.allocation)
-        m_snapshotAllocator.FreeReservation(entry.allocation);
+        RetireArgumentBlock(entry.allocation);
     entry.allocation = nullptr;
     // The resources were retained when the entry was made; give them back only after the allocation
     // is queued for release
@@ -117,6 +117,75 @@ void MetalMemoryManager::ReleaseArgumentCache()
             ReleaseArgumentCacheEntry(entry);
         cache.entries.clear();
     }
+}
+
+void MetalMemoryManager::AgeArgumentCache()
+{
+    const uint64 generation = ++m_argumentGeneration;
+    for (auto& cache : m_argumentCaches)
+    {
+        auto& entries = cache.entries;
+        for (size_t i = 0; i < entries.size();)
+        {
+            if (generation - entries[i].lastGeneration > ARGUMENT_CACHE_MAX_AGE)
+            {
+                ReleaseArgumentCacheEntry(entries[i]);
+                entries[i] = std::move(entries.back());
+                entries.pop_back();
+            }
+            else
+                ++i;
+        }
+    }
+}
+
+MetalMemoryManager::ArgumentBlock* MetalMemoryManager::AllocateArgumentBlock(uint32 size, uint32 alignment)
+{
+    auto it = m_freeArgumentBlocks.find(size);
+    if (it != m_freeArgumentBlocks.end())
+    {
+        // Same size almost always means the same layout; the offset check keeps the alignment promise regardless
+        auto& blocks = it->second;
+        for (size_t i = blocks.size(); i-- > 0;)
+        {
+            if (blocks[i]->bufferOffset % alignment == 0)
+            {
+                ArgumentBlock* block = blocks[i];
+                blocks[i] = blocks.back();
+                blocks.pop_back();
+                m_pooledArgumentBlocks--;
+                return block;
+            }
+        }
+    }
+    return m_snapshotAllocator.AllocateBufferMemory(size, alignment);
+}
+
+void MetalMemoryManager::RetireArgumentBlock(ArgumentBlock* block)
+{
+    if (m_pooledArgumentBlocks >= ARGUMENT_BLOCK_POOL_MAX)
+    {
+        m_snapshotAllocator.FreeReservation(block);
+        return;
+    }
+    // The block may still be read by any command buffer recorded so far; the newest one finishes last (the
+    // queue completes in order), so it is reusable once that one has finished. Null: nothing is in flight.
+    MTL::CommandBuffer* retireOn = m_mtlr->GetCommandBufferToRetireOn();
+    m_pooledArgumentBlocks++;
+    if (retireOn)
+        m_retiringArgumentBlocks[retireOn].push_back(block);
+    else
+        m_freeArgumentBlocks[block->size].push_back(block);
+}
+
+void MetalMemoryManager::ReclaimArgumentBlocks(MTL::CommandBuffer* finishedCommandBuffer)
+{
+    auto it = m_retiringArgumentBlocks.find(finishedCommandBuffer);
+    if (it == m_retiringArgumentBlocks.end())
+        return;
+    for (ArgumentBlock* block : it->second)
+        m_freeArgumentBlocks[block->size].push_back(block);
+    m_retiringArgumentBlocks.erase(it);
 }
 
 namespace
@@ -145,8 +214,8 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCac
 {
     cemu_assert_debug(stage < METAL_SHADER_TYPE_TOTAL);
     auto& telemetry = PerfTelemetry::Get();
-    // Make sure a command buffer exists first: the cache is emptied when a new one begins, so an entry
-    // made now always belongs to the command buffer that is being recorded
+    // Make sure a command buffer exists first: when a new one begins the cache is aged (AgeArgumentCache()),
+    // so the generation stamped below is the one of the command buffer being recorded
     m_mtlr->GetCommandBuffer();
     const uint64 lookupStart = PerfTelemetry::SampleStart();
     auto& cache = m_argumentCaches[stage];
@@ -163,6 +232,7 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCac
         if (entry.hash == hash && entry.encoder == encoder && entry.bindings == bindings)
         {
             entry.lastUse = ++cache.useCounter;
+            entry.lastGeneration = m_argumentGeneration;
             m_mtlr->GetPerformanceMonitor().m_argumentBufferReuses++;
             PerfTelemetry::SampleCount(telemetry.gpuArgReuses);
             PerfTelemetry::SampleEnd(telemetry.gpuArgReuseNs, lookupStart);
@@ -173,7 +243,7 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCac
     const uint64 encodeStart = PerfTelemetry::SampleStart();
     const uint32 alignment = std::max<uint32>(256, static_cast<uint32>(encoder->alignment()));
     const uint32 encodedLength = static_cast<uint32>(encoder->encodedLength());
-    auto* allocation = m_snapshotAllocator.AllocateBufferMemory(encodedLength, alignment);
+    auto* allocation = AllocateArgumentBlock(encodedLength, alignment);
     PerfTelemetry::SampleEnd(telemetry.gpuArgEncAllocNs, encodeStart);
     if (!allocation)
     {
@@ -181,7 +251,8 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCac
         return nullptr;
     }
 
-    // Most recent entry made with this encoder, so with this exact layout. Encoded contents are plain resource handles
+    // Most recent entry made with this encoder, so with this exact layout (entries now outlive command
+    // buffers, so this is usually found even for a layout's first use in a command buffer). Encoded contents are plain resource handles
     // (buffer address, texture and sampler IDs, constants) that do not depend on where the argument buffer itself lives,
     // so its bytes are a valid starting point for the new buffer and only the slots that differ have to be written.
     const ArgumentCacheEntry* base = nullptr;
@@ -260,6 +331,7 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCac
     }
     slot->hash = hash;
     slot->lastUse = ++cache.useCounter;
+    slot->lastGeneration = m_argumentGeneration;
     slot->encoder = encoder;
     slot->bindings = bindings;
     slot->allocation = allocation;
