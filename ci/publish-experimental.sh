@@ -39,14 +39,8 @@ BASE7=$(printf '%s' "$BASE" | cut -c1-7)
 BASE_VER=$(git describe --tags --match 'v[0-9]*' --abbrev=0 "$BASE" 2>/dev/null || echo "no numbered release")
 AHEAD=$(git rev-list --count "$BASE..$SHA")
 SHA7=$(printf '%s' "$SHA" | cut -c1-7)
-# The version stamped into the app. The Experimental source must list this exact string or SideStore
-# refuses the install ("does not match the version specified by the source").
-APP_VERSION=$(python3 -c '
-import plistlib, sys, zipfile
-z = zipfile.ZipFile(sys.argv[1])
-name = next(n for n in z.namelist() if n.count("/") == 2 and n.startswith("Payload/") and n.endswith(".app/Info.plist"))
-print(plistlib.loads(z.read(name))["CFBundleShortVersionString"])
-' MuffinEMU.ipa)
+# The version stamped into the app, which the Experimental source has to list exactly.
+APP_VERSION=$(ipa_version MuffinEMU.ipa)
 
 BODY=$(mktemp)
 {

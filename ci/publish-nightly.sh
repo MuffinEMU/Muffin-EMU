@@ -63,9 +63,14 @@ if [ "$MAIN" != "$SHA" ] && ! git diff --quiet "$SHA" "$MAIN" -- . "${IGNORABLE_
 fi
 
 # ---- publish -----------------------------------------------------------------------------------
+# The version stamped into the app, which the Nightly source has to list exactly.
+APP_VERSION=$(ipa_version MuffinEMU.ipa)
+
 BODY=$(mktemp)
 cat > "$BODY" <<NOTES
 The newest build of MuffinEMU, from commit $SHA on \`main\`.
+
+**App version:** $APP_VERSION
 
 **Known issue:** the on-screen controls don't respond reliably yet. A fix is on the way.
 

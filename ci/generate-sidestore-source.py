@@ -298,6 +298,11 @@ def nightly_version(rel, ipa):
     than a bug in it; the alternative is inventing a build counter this script has no
     honest source for.
     """
+    m = re.search(r"\*\*App version:\*\* ([0-9][0-9.]*)", rel.get("body") or "")
+    if m:
+        # The version stamped into the app. SideStore refuses an install whose app version differs
+        # from the listing, so once publish-nightly.sh records it, it is the only honest answer.
+        return m.group(1)
     date = nightly_asset_date(rel, ipa)[:10]
     y, m, d = (date.split("-") + ["0", "0", "0"])[:3]
     return f"{int(y or 0)}.{int(m or 0)}.{int(d or 0)}"
