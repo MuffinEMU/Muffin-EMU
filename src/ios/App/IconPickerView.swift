@@ -104,24 +104,27 @@ private struct IconOptionCard: View {
             MuffinCard {
                 VStack(alignment: .leading, spacing: 8) {
                     ZStack(alignment: .topTrailing) {
+                        // A locked Pro icon is shown blurred under a lock: enough to tell what it is,
+                        // not enough to be the icon.
                         iconThumbnail
                             .frame(width: 64, height: 64)
+                            .blur(radius: isLocked ? 3 : 0)
                             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .overlay {
+                                if isLocked {
+                                    Image(systemName: "lock.fill")
+                                        .font(.system(size: 22, weight: .bold))
+                                        .foregroundStyle(LinearGradient(colors: [Color(red: 1, green: 0.94, blue: 0.72), Color(red: 0.73, green: 0.51, blue: 0.16)],
+                                                                        startPoint: .topLeading, endPoint: .bottomTrailing))
+                                        .shadow(color: .black.opacity(0.45), radius: 3, y: 2)
+                                }
+                            }
                             .overlay(
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                                     .stroke(isSelected ? MuffinTheme.pixelBlue : MuffinTheme.wrapper, lineWidth: isSelected ? 3 : 1)
                             )
-                            .opacity(isLocked ? 0.5 : 1.0)
 
-                        if isLocked {
-                            Image(systemName: "lock.fill")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(MuffinTheme.sparkleCream)
-                                .padding(5)
-                                .background(MuffinTheme.blueberryNavy)
-                                .clipShape(Circle())
-                                .offset(x: 6, y: -6)
-                        } else if isSelected {
+                        if isSelected {
                             Image(systemName: "checkmark.circle.fill")
                                 .font(.system(size: 16, weight: .bold))
                                 .foregroundColor(MuffinTheme.accentText)
