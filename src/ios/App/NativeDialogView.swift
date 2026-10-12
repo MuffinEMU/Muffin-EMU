@@ -251,7 +251,7 @@ private struct NativeDialogLayer: View {
     private func card(for request: NativeDialogRequest) -> some View {
         switch request {
         case let .keyboard(id, maxLength, multiline, text, hint):
-            KeyboardCard(id: id, maxLength: maxLength, multiline: multiline, hint: hint, text: text)
+            KeyboardCard(id: id, maxLength: maxLength, multiline: multiline, text: text, hint: hint)
         case let .error(id, title, message, buttons):
             ErrorCard(id: id, title: title, message: message, buttons: buttons)
         }
