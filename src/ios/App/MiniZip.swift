@@ -265,6 +265,16 @@ struct MiniZip {
         return c
     }
 
+    /// Continues a running CRC-32 across chunks: start from 0, feed the chunks in order, and the
+    /// result after the last one equals `crc32` of all the bytes at once.
+    static func crc32(continuing crc: UInt32, with data: Data) -> UInt32 {
+        var c: UInt32 = crc ^ 0xFFFF_FFFF
+        data.withUnsafeBytes { (buf: UnsafeRawBufferPointer) in
+            for byte in buf { c = crcTable[Int((c ^ UInt32(byte)) & 0xFF)] ^ (c >> 8) }
+        }
+        return c ^ 0xFFFF_FFFF
+    }
+
     static func crc32(_ data: Data) -> UInt32 {
         var c: UInt32 = 0xFFFF_FFFF
         data.withUnsafeBytes { (buf: UnsafeRawBufferPointer) in

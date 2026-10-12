@@ -65,6 +65,7 @@ struct SettingsView: View {
     @ViewBuilder private var formSystem: some View {
         FilesSettingsSection()
         SettingsBackupSection()
+        MigrationSettingsSection()
         DeviceReportSection()
         DiagnosticsSection()
         AboutSettingsSection()

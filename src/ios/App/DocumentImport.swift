@@ -82,6 +82,22 @@ enum DocumentImport {
         }
     }
 
+    /// The share sheet for files we already have. Unlike presentExport this hands over the file
+    /// itself rather than a copy, which matters for an archive that can be many gigabytes.
+    static func presentShare(_ urls: [URL]) {
+        waitForStablePresenter(attemptsLeft: 20) { presenter in
+            guard let presenter else { return }
+            let sheet = UIActivityViewController(activityItems: urls, applicationActivities: nil)
+            // iPad shows the sheet as a popover, which needs somewhere to point at.
+            if let popover = sheet.popoverPresentationController {
+                popover.sourceView = presenter.view
+                popover.sourceRect = CGRect(x: presenter.view.bounds.midX, y: presenter.view.bounds.midY, width: 0, height: 0)
+                popover.permittedArrowDirections = []
+            }
+            presenter.present(sheet, animated: true)
+        }
+    }
+
     enum PresentationError: LocalizedError {
         case noPresenter
 
