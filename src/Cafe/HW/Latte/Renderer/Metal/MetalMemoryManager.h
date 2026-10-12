@@ -48,6 +48,9 @@ public:
     /// draw only reads from an offset onward compare and copy just that tail.
     MetalSynchronizedHeapAllocator::AllocatorReservation* GetCachedSnapshot(uint32 slot, const void* data, uint32 size, uint32 firstByte = 0);
     MetalSynchronizedHeapAllocator::AllocatorReservation* GetCachedArgumentBuffer(uint32 stage, MTL::ArgumentEncoder* encoder, const MetalArgumentBindings& bindings);
+    /// Drops every cached argument buffer. Called when a new command buffer begins: the allocations are
+    /// retired against the command buffers that may still be reading them, exactly like a replaced snapshot.
+    void ReleaseArgumentCache();
     void GetSnapshotStats(uint32& numBuffers, size_t& totalSize, size_t& freeSize) const
     {
         m_snapshotAllocator.GetStats(numBuffers, totalSize, freeSize);
@@ -158,12 +161,25 @@ private:
         uint32 endByte = 0;
     } m_snapshots[SnapshotCount]{};
 
-    struct ArgumentSnapshot
+    // A few encoded argument buffers per stage instead of only the last one: draws of different objects
+    // interleave, so the single previous encode rarely matched. Entries only live for one command buffer
+    // (ReleaseArgumentCache() runs when the next one begins), which bounds how long they keep the resources
+    // they retain alive and matches how long the GPU can still be reading the allocations.
+    static constexpr uint32 ARGUMENT_CACHE_ENTRIES = 48;
+    struct ArgumentCacheEntry
     {
+        uint64 hash = 0;
+        uint64 lastUse = 0;
         MTL::ArgumentEncoder* encoder = nullptr; // retained to keep layout identity stable
         MetalArgumentBindings bindings{};
         MetalSynchronizedHeapAllocator::AllocatorReservation* allocation = nullptr;
-    } m_argumentSnapshots[METAL_SHADER_TYPE_TOTAL]{};
+    };
+    struct ArgumentCache
+    {
+        std::vector<ArgumentCacheEntry> entries;
+        uint64 useCounter = 0;
+    } m_argumentCaches[METAL_SHADER_TYPE_TOTAL]{};
+    void ReleaseArgumentCacheEntry(ArgumentCacheEntry& entry);
 
     MTL::Buffer* m_bufferCache = nullptr;
     size_t m_bufferCacheSize = 0;

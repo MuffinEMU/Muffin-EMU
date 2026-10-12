@@ -43,6 +43,10 @@ namespace PerfTelemetry
 		// BC to ASTC re-encode on a GPU without BC). Wall time on the calling thread, per slice.
 		std::atomic<uint32_t> textureDecodes{0};
 		std::atomic<uint64_t> textureDecodeNs{0};
+		// Of that work, the BC to ASTC re-encode (decode the BC blocks, then ASTC-encode them). Counted where the
+		// encode runs, so it also includes the re-encode of copied raw blocks, which textureDecodes does not.
+		std::atomic<uint32_t> textureTranscodes{0};
+		std::atomic<uint64_t> textureTranscodeNs{0};
 
 		// Latte (GPU) thread breakdown, wall nanoseconds on that thread. The first three are disjoint
 		// slices of a draw; the rest are parts of those slices (see ios_perf_log_window for the layout).
@@ -61,6 +65,38 @@ namespace PerfTelemetry
 		std::atomic<uint64_t> gpuPassNs{0};         //   render encoder / pass setup
 		std::atomic<uint64_t> gpuPipelineNs{0};     //   pipeline state lookup
 		std::atomic<uint64_t> gpuBindNs{0};         //   per-stage uniform, texture and sampler binding
+		std::atomic<uint32_t> gpuUseResourceCalls{0}; //     of it: useResource() calls made on the encoder
+		std::atomic<uint32_t> gpuUseResourceSkips{0}; //     useResource() calls skipped, already declared on this encoder
+		std::atomic<uint64_t> gpuUseResourceNs{0};
+		std::atomic<uint32_t> gpuArgEncodes{0};     //     argument buffers encoded
+		std::atomic<uint64_t> gpuArgEncodeNs{0};
+		std::atomic<uint32_t> gpuArgReuses{0};      //     argument buffers found in the cache
+		std::atomic<uint64_t> gpuArgReuseNs{0};
+		std::atomic<uint32_t> gpuArgMissNoBase{0};  //     argument buffer misses with no earlier entry for the layout
+		std::atomic<uint32_t> gpuArgMissSupport{0}; //     misses (this and the next five are not exclusive) where the support buffer differs from the latest entry,
+		std::atomic<uint32_t> gpuArgMissSupportOnly{0}; //   where only it does,
+		std::atomic<uint32_t> gpuArgMissUniform{0}; //     uniform buffers,
+		std::atomic<uint32_t> gpuArgMissTexture{0}; //     textures,
+		std::atomic<uint32_t> gpuArgMissSampler{0}; //     samplers,
+		std::atomic<uint32_t> gpuArgMissVertexIndex{0}; //  vertex / index / streamout buffers,
+		std::atomic<uint32_t> gpuArgMissConstant{0};    //  vertex / index sizes and index type
+		std::atomic<uint32_t> gpuArgDeltaEncodes{0};    //  misses encoded by copying the latest entry and writing only the differing slots
+		std::atomic<uint64_t> gpuArgDeltaSlots{0};      //    slots written by those
+		// Parts of per-stage binding time (disjoint unless noted), to account for what the counters above do not cover
+		std::atomic<uint64_t> gpuBindTextureLoopNs{0};  //     texture + sampler loop (includes the lookups above and breadcrumb texture writes)
+		std::atomic<uint64_t> gpuBindResidencyNs{0};    //     residency table lookups that decide whether useResource() is needed (nested in the others)
+		std::atomic<uint64_t> gpuBindSupportPrepNs{0};  //     support buffer contents: rescale, alpha ref, registers, viewport (not the next two)
+		std::atomic<uint64_t> gpuBindRemappedNs{0};     //     remapped uniform loading
+		std::atomic<uint64_t> gpuBindSnapshotNs{0};     //     support buffer snapshot compare / upload
+		std::atomic<uint64_t> gpuBindUniformLoopNs{0};  //     uniform buffer loop, everything
+		std::atomic<uint64_t> gpuBindTrackNs{0};        //       of it: shared buffer cache tracking
+		std::atomic<uint64_t> gpuBindCrumbNs{0};        //       of it: breadcrumb writes
+		std::atomic<uint64_t> gpuBindVertexNs{0};       //     vertex / index buffer recording for the argument buffer
+		std::atomic<uint64_t> gpuBindFinalNs{0};        //     argument buffer lookup and binding to the encoder (includes the encode and reuse time above)
+		std::atomic<uint32_t> gpuSamplerLookups{0};
+		std::atomic<uint64_t> gpuSamplerLookupNs{0};
+		std::atomic<uint32_t> gpuTexViewLookups{0};
+		std::atomic<uint64_t> gpuTexViewLookupNs{0};
 		std::atomic<uint64_t> gpuEndNs{0};          // draw_endSequence: readback checks, command buffer commit
 
 		// PPC recompiler

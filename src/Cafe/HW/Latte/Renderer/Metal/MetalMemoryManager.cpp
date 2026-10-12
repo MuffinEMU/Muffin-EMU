@@ -17,14 +17,17 @@
 
 MetalMemoryManager::~MetalMemoryManager()
 {
-    // Argument snapshots retain their recorded resources and encoder; release them here.
-    for (auto& snapshot : m_argumentSnapshots)
+    // Cached argument buffers retain their recorded resources and encoder; release them here.
+    for (auto& cache : m_argumentCaches)
     {
-        for (const auto& binding : snapshot.bindings)
-            if (binding.resource)
-                static_cast<NS::Object*>(binding.resource)->release();
-        if (snapshot.encoder)
-            snapshot.encoder->release();
+        for (auto& entry : cache.entries)
+        {
+            for (const auto& binding : entry.bindings)
+                if (binding.resource)
+                    static_cast<NS::Object*>(binding.resource)->release();
+            if (entry.encoder)
+                entry.encoder->release();
+        }
     }
     if (m_bufferCache)
     {
@@ -90,50 +93,167 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCac
     return snapshot.allocation;
 }
 
+void MetalMemoryManager::ReleaseArgumentCacheEntry(ArgumentCacheEntry& entry)
+{
+    if (entry.allocation)
+        m_snapshotAllocator.FreeReservation(entry.allocation);
+    entry.allocation = nullptr;
+    // The resources were retained when the entry was made; give them back only after the allocation
+    // is queued for release
+    for (const auto& binding : entry.bindings)
+        if (binding.resource)
+            static_cast<NS::Object*>(binding.resource)->release();
+    entry.bindings = {};
+    if (entry.encoder)
+        entry.encoder->release();
+    entry.encoder = nullptr;
+}
+
+void MetalMemoryManager::ReleaseArgumentCache()
+{
+    for (auto& cache : m_argumentCaches)
+    {
+        for (auto& entry : cache.entries)
+            ReleaseArgumentCacheEntry(entry);
+        cache.entries.clear();
+    }
+}
+
+namespace
+{
+    // What an argument-buffer slot holds, for telling apart why a cached encode could not be reused
+    enum class ArgumentSlotKind : uint32 { Support, Uniform, Texture, Sampler, VertexIndex, Constant };
+
+    ArgumentSlotKind GetArgumentSlotKind(uint32 index)
+    {
+        using namespace MetalArgumentBuffer;
+        if (index == SupportBuffer)
+            return ArgumentSlotKind::Support;
+        if (index >= UniformBufferBase && index < StreamoutBuffer)
+            return ArgumentSlotKind::Uniform;
+        if (index >= TextureBase && index < SamplerBase)
+            return ArgumentSlotKind::Texture;
+        if (index >= SamplerBase && index < VertexBufferBase)
+            return ArgumentSlotKind::Sampler;
+        if (index == StreamoutBuffer || (index >= VertexBufferBase && index < VertexBufferSizeBase) || index == IndexBuffer)
+            return ArgumentSlotKind::VertexIndex;
+        return ArgumentSlotKind::Constant; // vertex and index buffer sizes, index type
+    }
+}
+
 MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCachedArgumentBuffer(uint32 stage, MTL::ArgumentEncoder* encoder, const MetalArgumentBindings& bindings)
 {
     cemu_assert_debug(stage < METAL_SHADER_TYPE_TOTAL);
+    auto& telemetry = PerfTelemetry::Get();
+    // Make sure a command buffer exists first: the cache is emptied when a new one begins, so an entry
+    // made now always belongs to the command buffer that is being recorded
     m_mtlr->GetCommandBuffer();
-    auto& snapshot = m_argumentSnapshots[stage];
+    const uint64 lookupStart = PerfTelemetry::NowNs();
+    auto& cache = m_argumentCaches[stage];
     // Same encoder and same bindings produce an identical buffer, so reuse it. Callers still
     // have to declare residency (useResource) themselves; only the encoding is cached.
-    if (snapshot.encoder == encoder && snapshot.bindings == bindings)
+    uint64 hash = reinterpret_cast<uintptr_t>(encoder) * 0x9E3779B97F4A7C15ull;
+    for (const auto& binding : bindings)
     {
-        m_mtlr->GetPerformanceMonitor().m_argumentBufferReuses++;
-        return snapshot.allocation;
+        hash ^= reinterpret_cast<uintptr_t>(binding.resource) + binding.value + static_cast<uint64>(binding.type) + 0x9E3779B97F4A7C15ull + (hash << 6) + (hash >> 2);
+        hash *= 0xFF51AFD7ED558CCDull;
+    }
+    for (auto& entry : cache.entries)
+    {
+        if (entry.hash == hash && entry.encoder == encoder && entry.bindings == bindings)
+        {
+            entry.lastUse = ++cache.useCounter;
+            m_mtlr->GetPerformanceMonitor().m_argumentBufferReuses++;
+            telemetry.gpuArgReuses.fetch_add(1, std::memory_order_relaxed);
+            telemetry.gpuArgReuseNs.fetch_add(PerfTelemetry::NowNs() - lookupStart, std::memory_order_relaxed);
+            return entry.allocation;
+        }
     }
 
-    if (snapshot.allocation)
-        m_snapshotAllocator.FreeReservation(snapshot.allocation);
-    if (snapshot.encoder != encoder)
+    const uint64 encodeStart = PerfTelemetry::NowNs();
+    const uint32 alignment = std::max<uint32>(256, static_cast<uint32>(encoder->alignment()));
+    const uint32 encodedLength = static_cast<uint32>(encoder->encodedLength());
+    auto* allocation = m_snapshotAllocator.AllocateBufferMemory(encodedLength, alignment);
+    if (!allocation)
     {
-        if (snapshot.encoder)
-            snapshot.encoder->release();
-        snapshot.encoder = encoder->retain();
+        // Out of buffer memory; the next call retries the allocation.
+        return nullptr;
     }
 
-    // Retain the new set before releasing the old one so shared resources are never freed in between.
+    // Most recent entry made with this encoder, so with this exact layout. Encoded contents are plain resource handles
+    // (buffer address, texture and sampler IDs, constants) that do not depend on where the argument buffer itself lives,
+    // so its bytes are a valid starting point for the new buffer and only the slots that differ have to be written.
+    const ArgumentCacheEntry* base = nullptr;
+    for (const auto& entry : cache.entries)
+        if (entry.encoder == encoder && entry.allocation && (!base || entry.lastUse > base->lastUse))
+            base = &entry;
+
+    uint16 deltaSlots[std::tuple_size_v<MetalArgumentBindings>];
+    uint32 deltaCount = 0;
+    uint32 differingKinds = 0;
+    bool canDelta = base != nullptr;
+    if (base)
+    {
+        for (uint32 index = 0; index < bindings.size(); ++index)
+        {
+            if (bindings[index] == base->bindings[index])
+                continue;
+            differingKinds |= 1u << static_cast<uint32>(GetArgumentSlotKind(index));
+            // A slot that goes back to unused cannot be cleared on its own, so that case encodes from scratch
+            if (bindings[index].type == MetalArgumentBinding::Type::Unused)
+                canDelta = false;
+            else
+                deltaSlots[deltaCount++] = static_cast<uint16>(index);
+        }
+        auto kindBit = [&](ArgumentSlotKind kind) { return (differingKinds >> static_cast<uint32>(kind)) & 1u; };
+        telemetry.gpuArgMissSupport.fetch_add(kindBit(ArgumentSlotKind::Support), std::memory_order_relaxed);
+        telemetry.gpuArgMissSupportOnly.fetch_add(differingKinds == (1u << static_cast<uint32>(ArgumentSlotKind::Support)) ? 1 : 0, std::memory_order_relaxed);
+        telemetry.gpuArgMissUniform.fetch_add(kindBit(ArgumentSlotKind::Uniform), std::memory_order_relaxed);
+        telemetry.gpuArgMissTexture.fetch_add(kindBit(ArgumentSlotKind::Texture), std::memory_order_relaxed);
+        telemetry.gpuArgMissSampler.fetch_add(kindBit(ArgumentSlotKind::Sampler), std::memory_order_relaxed);
+        telemetry.gpuArgMissVertexIndex.fetch_add(kindBit(ArgumentSlotKind::VertexIndex), std::memory_order_relaxed);
+        telemetry.gpuArgMissConstant.fetch_add(kindBit(ArgumentSlotKind::Constant), std::memory_order_relaxed);
+    }
+    else
+        telemetry.gpuArgMissNoBase.fetch_add(1, std::memory_order_relaxed);
+
+    if (canDelta)
+    {
+        // Copied before the new entry is made below: that can move or evict the entry this reads from
+        std::memcpy(allocation->memPtr, base->allocation->memPtr, encodedLength);
+    }
+    else
+    {
+        std::memset(allocation->memPtr, 0, allocation->size);
+    }
+
+    // Retain the new set before the evicted one is released so shared resources are never freed in between.
     for (const auto& binding : bindings)
         if (binding.resource)
             static_cast<NS::Object*>(binding.resource)->retain();
-    for (const auto& binding : snapshot.bindings)
-        if (binding.resource)
-            static_cast<NS::Object*>(binding.resource)->release();
-    snapshot.bindings = bindings;
-    const uint32 alignment = std::max<uint32>(256, static_cast<uint32>(encoder->alignment()));
-    snapshot.allocation = m_snapshotAllocator.AllocateBufferMemory(static_cast<uint32>(encoder->encodedLength()), alignment);
-    auto* allocation = snapshot.allocation;
-    if (!allocation)
+    encoder->retain();
+
+    // Take a slot: a new one while there is room, else the least recently used
+    ArgumentCacheEntry* slot;
+    if (cache.entries.size() < ARGUMENT_CACHE_ENTRIES)
     {
-        // Out of buffer memory. Drop the cached encoder so the reuse check above cannot
-        // match these bindings again; the next call retries the allocation.
-        snapshot.encoder->release();
-        snapshot.encoder = nullptr;
-        return nullptr;
+        slot = &cache.entries.emplace_back();
     }
-    std::memset(allocation->memPtr, 0, allocation->size);
+    else
+    {
+        slot = &cache.entries[0];
+        for (auto& entry : cache.entries)
+            if (entry.lastUse < slot->lastUse)
+                slot = &entry;
+        ReleaseArgumentCacheEntry(*slot);
+    }
+    slot->hash = hash;
+    slot->lastUse = ++cache.useCounter;
+    slot->encoder = encoder;
+    slot->bindings = bindings;
+    slot->allocation = allocation;
     encoder->setArgumentBuffer(allocation->mtlBuffer, allocation->bufferOffset);
-    for (uint32 index = 0; index < bindings.size(); ++index)
+    auto encodeSlot = [&](uint32 index)
     {
         const auto& binding = bindings[index];
         switch (binding.type)
@@ -154,10 +274,24 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCac
                     *static_cast<uint32*>(constant) = static_cast<uint32>(binding.value);
                 break;
         }
+    };
+    if (canDelta)
+    {
+        for (uint32 i = 0; i < deltaCount; ++i)
+            encodeSlot(deltaSlots[i]);
+        telemetry.gpuArgDeltaEncodes.fetch_add(1, std::memory_order_relaxed);
+        telemetry.gpuArgDeltaSlots.fetch_add(deltaCount, std::memory_order_relaxed);
+    }
+    else
+    {
+        for (uint32 index = 0; index < bindings.size(); ++index)
+            encodeSlot(index);
     }
 
     m_snapshotAllocator.FlushReservation(allocation);
     m_mtlr->GetPerformanceMonitor().m_argumentBufferEncodes++;
+    telemetry.gpuArgEncodes.fetch_add(1, std::memory_order_relaxed);
+    telemetry.gpuArgEncodeNs.fetch_add(PerfTelemetry::NowNs() - encodeStart, std::memory_order_relaxed);
     return allocation;
 }
 

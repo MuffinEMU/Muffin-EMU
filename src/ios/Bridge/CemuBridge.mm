@@ -1455,6 +1455,8 @@ namespace {
         uint64_t shaderCompileNs = 0, pipelineCompileNs = 0;
         uint32_t textureDecodes = 0;
         uint64_t textureDecodeNs = 0;
+        uint32_t textureTranscodes = 0;
+        uint64_t textureTranscodeNs = 0;
         uint32_t jitBlocks = 0, jitInvalidations = 0, jitArenaReleases = 0, jitArenaAllocFails = 0;
         uint64_t jitCompileNs = 0;
         // GPU thread breakdown (see PerfTelemetry::Counters)
@@ -1462,6 +1464,13 @@ namespace {
         uint64_t gpuBeginNs = 0, gpuTexUpdateNs = 0, gpuTexHashNs = 0, gpuTexHashBytes = 0;
         uint64_t gpuExecNs = 0, gpuIndexNs = 0, gpuFlushNs = 0, gpuBufferNs = 0, gpuSnapshotCompareBytes = 0, gpuSnapshotCopyBytes = 0;
         uint64_t gpuPassNs = 0, gpuPipelineNs = 0, gpuBindNs = 0, gpuEndNs = 0;
+        uint32_t gpuUseResourceCalls = 0, gpuUseResourceSkips = 0, gpuArgEncodes = 0, gpuArgReuses = 0, gpuSamplerLookups = 0, gpuTexViewLookups = 0;
+        uint64_t gpuUseResourceNs = 0, gpuArgEncodeNs = 0, gpuArgReuseNs = 0, gpuSamplerLookupNs = 0, gpuTexViewLookupNs = 0;
+        uint32_t gpuArgMissNoBase = 0, gpuArgMissSupport = 0, gpuArgMissSupportOnly = 0, gpuArgMissUniform = 0, gpuArgMissTexture = 0;
+        uint32_t gpuArgMissSampler = 0, gpuArgMissVertexIndex = 0, gpuArgMissConstant = 0, gpuArgDeltaEncodes = 0;
+        uint64_t gpuArgDeltaSlots = 0;
+        uint64_t gpuBindTextureLoopNs = 0, gpuBindResidencyNs = 0, gpuBindSupportPrepNs = 0, gpuBindRemappedNs = 0, gpuBindSnapshotNs = 0;
+        uint64_t gpuBindUniformLoopNs = 0, gpuBindTrackNs = 0, gpuBindCrumbNs = 0, gpuBindVertexNs = 0, gpuBindFinalNs = 0;
     };
 
     PerfSnapshot ios_perf_take()
@@ -1486,6 +1495,8 @@ namespace {
         s.pipelineSyncCompiles = c.pipelineSyncCompiles.load(std::memory_order_relaxed);
         s.textureDecodes = c.textureDecodes.load(std::memory_order_relaxed);
         s.textureDecodeNs = c.textureDecodeNs.load(std::memory_order_relaxed);
+        s.textureTranscodes = c.textureTranscodes.load(std::memory_order_relaxed);
+        s.textureTranscodeNs = c.textureTranscodeNs.load(std::memory_order_relaxed);
         s.jitBlocks = c.jitBlocks.load(std::memory_order_relaxed);
         s.jitCompileNs = c.jitCompileNs.load(std::memory_order_relaxed);
         s.jitInvalidations = c.jitInvalidations.load(std::memory_order_relaxed);
@@ -1507,6 +1518,37 @@ namespace {
         s.gpuPipelineNs = c.gpuPipelineNs.load(std::memory_order_relaxed);
         s.gpuBindNs = c.gpuBindNs.load(std::memory_order_relaxed);
         s.gpuEndNs = c.gpuEndNs.load(std::memory_order_relaxed);
+        s.gpuUseResourceCalls = c.gpuUseResourceCalls.load(std::memory_order_relaxed);
+        s.gpuUseResourceSkips = c.gpuUseResourceSkips.load(std::memory_order_relaxed);
+        s.gpuArgEncodes = c.gpuArgEncodes.load(std::memory_order_relaxed);
+        s.gpuArgReuses = c.gpuArgReuses.load(std::memory_order_relaxed);
+        s.gpuSamplerLookups = c.gpuSamplerLookups.load(std::memory_order_relaxed);
+        s.gpuTexViewLookups = c.gpuTexViewLookups.load(std::memory_order_relaxed);
+        s.gpuUseResourceNs = c.gpuUseResourceNs.load(std::memory_order_relaxed);
+        s.gpuArgEncodeNs = c.gpuArgEncodeNs.load(std::memory_order_relaxed);
+        s.gpuArgReuseNs = c.gpuArgReuseNs.load(std::memory_order_relaxed);
+        s.gpuSamplerLookupNs = c.gpuSamplerLookupNs.load(std::memory_order_relaxed);
+        s.gpuTexViewLookupNs = c.gpuTexViewLookupNs.load(std::memory_order_relaxed);
+        s.gpuArgMissNoBase = c.gpuArgMissNoBase.load(std::memory_order_relaxed);
+        s.gpuArgMissSupport = c.gpuArgMissSupport.load(std::memory_order_relaxed);
+        s.gpuArgMissSupportOnly = c.gpuArgMissSupportOnly.load(std::memory_order_relaxed);
+        s.gpuArgMissUniform = c.gpuArgMissUniform.load(std::memory_order_relaxed);
+        s.gpuArgMissTexture = c.gpuArgMissTexture.load(std::memory_order_relaxed);
+        s.gpuArgMissSampler = c.gpuArgMissSampler.load(std::memory_order_relaxed);
+        s.gpuArgMissVertexIndex = c.gpuArgMissVertexIndex.load(std::memory_order_relaxed);
+        s.gpuArgMissConstant = c.gpuArgMissConstant.load(std::memory_order_relaxed);
+        s.gpuArgDeltaEncodes = c.gpuArgDeltaEncodes.load(std::memory_order_relaxed);
+        s.gpuArgDeltaSlots = c.gpuArgDeltaSlots.load(std::memory_order_relaxed);
+        s.gpuBindTextureLoopNs = c.gpuBindTextureLoopNs.load(std::memory_order_relaxed);
+        s.gpuBindResidencyNs = c.gpuBindResidencyNs.load(std::memory_order_relaxed);
+        s.gpuBindSupportPrepNs = c.gpuBindSupportPrepNs.load(std::memory_order_relaxed);
+        s.gpuBindRemappedNs = c.gpuBindRemappedNs.load(std::memory_order_relaxed);
+        s.gpuBindSnapshotNs = c.gpuBindSnapshotNs.load(std::memory_order_relaxed);
+        s.gpuBindUniformLoopNs = c.gpuBindUniformLoopNs.load(std::memory_order_relaxed);
+        s.gpuBindTrackNs = c.gpuBindTrackNs.load(std::memory_order_relaxed);
+        s.gpuBindCrumbNs = c.gpuBindCrumbNs.load(std::memory_order_relaxed);
+        s.gpuBindVertexNs = c.gpuBindVertexNs.load(std::memory_order_relaxed);
+        s.gpuBindFinalNs = c.gpuBindFinalNs.load(std::memory_order_relaxed);
         return s;
     }
 
@@ -1557,6 +1599,8 @@ namespace {
         const double pipelineMs = (double)(b.pipelineCompileNs - a.pipelineCompileNs) / 1e6;
         const uint32_t textureDecodes = b.textureDecodes - a.textureDecodes;
         const double textureDecodeMs = (double)(b.textureDecodeNs - a.textureDecodeNs) / 1e6;
+        const uint32_t textureTranscodes = b.textureTranscodes - a.textureTranscodes;
+        const double textureTranscodeMs = (double)(b.textureTranscodeNs - a.textureTranscodeNs) / 1e6;
         const uint32_t jitBlocks = b.jitBlocks - a.jitBlocks;
         const double jitMs = (double)(b.jitCompileNs - a.jitCompileNs) / 1e6;
         const int thermal = ios_thermal_state();
@@ -1606,12 +1650,12 @@ namespace {
         cemuLog_log(LogType::Force,
             "perf {:.0f}s: fps host {:.1f} game {:.1f} vsync {:.1f} (speed {:.0f}%) | ppc thread run {:.0f}% wait {:.0f}% | "
             "gpu thread busy {:.0f}% idle {:.0f}% sync {:.0f}% (drawable {:.0f} ms) | metal gpu {:.1f} ms/frame ({:.0f}% busy, {:.1f} cb/frame) | "
-            "compiled shaders {} ({:.0f} ms) pipelines {} ({:.0f} ms, {} on the gpu thread) | texture decodes {} ({:.0f} ms) | "
+            "compiled shaders {} ({:.0f} ms) pipelines {} ({:.0f} ms, {} on the gpu thread) | texture decodes {} ({:.0f} ms, BC->ASTC {} = {:.0f} ms) | "
             "jit blocks {} ({:.0f} ms) invalidated {} arena released {} alloc-failed {} used {}/{} MB | thermal {} | limit: {}",
             dt, hostFps, guestFps, vsyncRate, speedPct, ppcRun * 100.0, ppcWait * 100.0,
             gpuThreadBusy * 100.0, gpuIdle * 100.0, gpuSync * 100.0, (double)(b.drawableWaitNs - a.drawableWaitNs) / 1e6,
             mtlMsPerFrame, mtlBusy * 100.0, cbPerFrame,
-            shaders, shaderMs, pipelines, pipelineMs, pipelinesOnGpuThread, textureDecodes, textureDecodeMs,
+            shaders, shaderMs, pipelines, pipelineMs, pipelinesOnGpuThread, textureDecodes, textureDecodeMs, textureTranscodes, textureTranscodeMs,
             jitBlocks, jitMs, b.jitInvalidations - a.jitInvalidations, b.jitArenaReleases - a.jitArenaReleases, b.jitArenaAllocFails - a.jitArenaAllocFails,
             (uint64_t)(PPCRecompiler_getJitArenaUsed() / (1024 * 1024)), (uint64_t)(PPCRecompiler_getJitArenaSize() / (1024 * 1024)),
             ios_thermal_name(thermal), PerfTelemetry::BottleneckName(verdict));
@@ -1622,6 +1666,8 @@ namespace {
         {
             const double perFrame = frames > 0.0 ? 1.0 / (frames * 1e6) : 0.0;
             auto ms = [&](uint64_t x, uint64_t y) { return (double)(x - y) * perFrame; };
+            // counts per emulated frame
+            auto n = [&](uint32_t x, uint32_t y) { return frames > 0.0 ? (double)(x - y) / frames : 0.0; };
             const double busyMs = gpuThreadBusy * wallNs * perFrame;
             const double beginMs = ms(b.gpuBeginNs, a.gpuBeginNs);
             const double execMs = ms(b.gpuExecNs, a.gpuExecNs);
@@ -1631,13 +1677,33 @@ namespace {
             const double mbPerFrame = frames > 0.0 ? 1.0 / (frames * 1048576.0) : 0.0;
             cemuLog_log(LogType::Force,
                 "perf gpu thread ms/frame {:.1f}: draws {:.0f}/frame | begin {:.1f} (textures {:.1f}, hashing {:.1f} = {} textures {:.1f} MB/frame) | "
-                "execute {:.1f} (index {:.1f}, flush queue {:.1f}, buffers {:.1f} [compared {:.1f} MB/frame, copied {:.1f} MB/frame], render pass {:.1f}, pipeline {:.1f}, resource bind {:.1f}) | "
+                "execute {:.1f} (index {:.1f}, flush queue {:.1f}, buffers {:.1f} [compared {:.1f} MB/frame, copied {:.1f} MB/frame], render pass {:.1f}, pipeline {:.1f}, resource bind {:.1f} [useResource {:.0f} calls/frame {:.1f} ms, {:.0f} skipped; argument buffers {:.0f} encoded {:.1f} ms, {:.0f} reused {:.1f} ms; sampler lookups {:.0f} {:.1f} ms; texture views {:.0f} {:.1f} ms]) | "
+                "arg misses/frame {:.0f} [no base {:.0f}; differing vs latest: support {:.0f} (only {:.0f}), uniform {:.0f}, texture {:.0f}, sampler {:.0f}, vertex/index {:.0f}, constant {:.0f}; delta encodes {:.0f} writing {:.1f} slots each] | "
+                "bind parts ms/frame [texture loop {:.1f}, support prep {:.1f}, remapped uniforms {:.1f}, support snapshot {:.1f}, uniform loop {:.1f} (shared cache track {:.1f}, breadcrumbs {:.1f}), vertex/index {:.1f}, arg buffer bind {:.1f}, residency lookups {:.1f}, rest {:.1f}] | "
                 "end/commit {:.1f} | other {:.1f}",
                 busyMs, frames > 0.0 ? draws / frames : 0.0, beginMs, ms(b.gpuTexUpdateNs, a.gpuTexUpdateNs), ms(b.gpuTexHashNs, a.gpuTexHashNs),
                 frames > 0.0 ? (uint32_t)((b.gpuTexHashes - a.gpuTexHashes) / frames) : 0u, (double)(b.gpuTexHashBytes - a.gpuTexHashBytes) * mbPerFrame,
                 execMs, ms(b.gpuIndexNs, a.gpuIndexNs), ms(b.gpuFlushNs, a.gpuFlushNs), ms(b.gpuBufferNs, a.gpuBufferNs),
                 (double)(b.gpuSnapshotCompareBytes - a.gpuSnapshotCompareBytes) * mbPerFrame, (double)(b.gpuSnapshotCopyBytes - a.gpuSnapshotCopyBytes) * mbPerFrame,
-                ms(b.gpuPassNs, a.gpuPassNs), ms(b.gpuPipelineNs, a.gpuPipelineNs), ms(b.gpuBindNs, a.gpuBindNs), endMs, otherMs);
+                ms(b.gpuPassNs, a.gpuPassNs), ms(b.gpuPipelineNs, a.gpuPipelineNs), ms(b.gpuBindNs, a.gpuBindNs),
+                n(b.gpuUseResourceCalls, a.gpuUseResourceCalls), ms(b.gpuUseResourceNs, a.gpuUseResourceNs), n(b.gpuUseResourceSkips, a.gpuUseResourceSkips),
+                n(b.gpuArgEncodes, a.gpuArgEncodes), ms(b.gpuArgEncodeNs, a.gpuArgEncodeNs), n(b.gpuArgReuses, a.gpuArgReuses), ms(b.gpuArgReuseNs, a.gpuArgReuseNs),
+                n(b.gpuSamplerLookups, a.gpuSamplerLookups), ms(b.gpuSamplerLookupNs, a.gpuSamplerLookupNs),
+                n(b.gpuTexViewLookups, a.gpuTexViewLookups), ms(b.gpuTexViewLookupNs, a.gpuTexViewLookupNs),
+                n(b.gpuArgEncodes, a.gpuArgEncodes),
+                n(b.gpuArgMissNoBase, a.gpuArgMissNoBase), n(b.gpuArgMissSupport, a.gpuArgMissSupport), n(b.gpuArgMissSupportOnly, a.gpuArgMissSupportOnly),
+                n(b.gpuArgMissUniform, a.gpuArgMissUniform), n(b.gpuArgMissTexture, a.gpuArgMissTexture), n(b.gpuArgMissSampler, a.gpuArgMissSampler),
+                n(b.gpuArgMissVertexIndex, a.gpuArgMissVertexIndex), n(b.gpuArgMissConstant, a.gpuArgMissConstant),
+                n(b.gpuArgDeltaEncodes, a.gpuArgDeltaEncodes),
+                b.gpuArgDeltaEncodes != a.gpuArgDeltaEncodes ? (double)(b.gpuArgDeltaSlots - a.gpuArgDeltaSlots) / (double)(b.gpuArgDeltaEncodes - a.gpuArgDeltaEncodes) : 0.0,
+                ms(b.gpuBindTextureLoopNs, a.gpuBindTextureLoopNs), ms(b.gpuBindSupportPrepNs, a.gpuBindSupportPrepNs), ms(b.gpuBindRemappedNs, a.gpuBindRemappedNs),
+                ms(b.gpuBindSnapshotNs, a.gpuBindSnapshotNs), ms(b.gpuBindUniformLoopNs, a.gpuBindUniformLoopNs), ms(b.gpuBindTrackNs, a.gpuBindTrackNs),
+                ms(b.gpuBindCrumbNs, a.gpuBindCrumbNs), ms(b.gpuBindVertexNs, a.gpuBindVertexNs), ms(b.gpuBindFinalNs, a.gpuBindFinalNs),
+                ms(b.gpuBindResidencyNs, a.gpuBindResidencyNs),
+                std::max(0.0, ms(b.gpuBindNs, a.gpuBindNs) - ms(b.gpuBindTextureLoopNs, a.gpuBindTextureLoopNs) - ms(b.gpuBindSupportPrepNs, a.gpuBindSupportPrepNs) -
+                    ms(b.gpuBindRemappedNs, a.gpuBindRemappedNs) - ms(b.gpuBindSnapshotNs, a.gpuBindSnapshotNs) - ms(b.gpuBindUniformLoopNs, a.gpuBindUniformLoopNs) -
+                    ms(b.gpuBindVertexNs, a.gpuBindVertexNs) - ms(b.gpuBindFinalNs, a.gpuBindFinalNs)),
+                endMs, otherMs);
         }
 
         char line[200];
