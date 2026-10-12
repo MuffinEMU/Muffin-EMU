@@ -51,9 +51,9 @@ public final class ShowcasePad: ControlScheme {
     // MARK: Settings (the showcase pad's three)
 
     public var layoutPreset: ShowcaseLayoutPreset = .native { didSet { settingChanged() } }
-    /// nil (the default) is the Classic look the other styles wear: translucent pale buttons,
-    /// dark stick wells, dark system buttons and a yellow held state.
-    public var colourPreset: ShowcaseColourPreset? = nil {
+    /// Wii U White (the default) is Showcase's own GamePad look. nil is the Classic colours the
+    /// other styles wear: translucent pale buttons, dark stick wells and dark system buttons.
+    public var colourPreset: ShowcaseColourPreset? = .wiiUWhite {
         // As in the showcase, picking a preset drops an imported colour file.
         didSet { customColours = nil }
     }

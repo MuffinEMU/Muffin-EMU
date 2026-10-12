@@ -1462,10 +1462,21 @@ do {
         }
         check(unit(0.8) < unit(1) - 1 && unit(1) <= unit(1.2) + 0.01, "showcase: the shared scale resizes the pad (\(unit(0.8)), \(unit(1)), \(unit(1.2)))")
         let pad = ShowcasePad(); pad.pointsPerInch = 132; pad.layout(d.context(.stacked))
-        // Classic (the default) is drawn at the setting itself, as the other styles are.
+        check(ShowcasePad().colourPreset == .wiiUWhite, "showcase: Wii U White is the default colour")
+        // Classic is drawn at the setting itself, as the other styles are.
+        pad.colourPreset = nil
         check(abs(pad.scene(pressed: [], sticks: [:]).opacity - Double(PadSettings.defaultOpacity)) < 1e-9
               && abs(pad.scene(pressed: [], sticks: [:], opacity: 0.3).opacity - 0.3) < 1e-9,
               "showcase: Classic scene opacity is the shared opacity")
+        // Held goes Showcase's way in every colour: a step darker, never the other styles' yellow.
+        let yellow = PadStyle.look(nil).lit!
+        for preset in PadStyle.choices {
+            pad.colourPreset = preset
+            let held = pad.scene(pressed: Set(PadButton.allCases), sticks: [:])
+            let fills = held.primitives.compactMap { p -> ShowcaseRGBA? in if case .solid(let c)? = p.fill { return c }; return nil }
+            check(!fills.contains { abs($0.r - yellow.r) < 0.02 && abs($0.g - yellow.g) < 0.02 && abs($0.b - yellow.b) < 0.02 },
+                  "showcase: \(PadStyle.name(preset)) held controls are not yellow")
+        }
         pad.colourPreset = .wiiUWhite
         let def = pad.scene(pressed: [], sticks: [:])
         check(abs(def.opacity - 0.94) < 1e-9 && pad.scene(pressed: [], sticks: [:], opacity: 1).opacity <= 1
