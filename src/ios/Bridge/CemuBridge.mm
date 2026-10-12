@@ -1470,6 +1470,7 @@ namespace {
         uint32_t gpuArgMissNoBase = 0, gpuArgMissSupport = 0, gpuArgMissSupportOnly = 0, gpuArgMissUniform = 0, gpuArgMissTexture = 0;
         uint32_t gpuArgMissSampler = 0, gpuArgMissVertexIndex = 0, gpuArgMissConstant = 0, gpuArgDeltaEncodes = 0;
         uint64_t gpuArgDeltaSlots = 0;
+        uint64_t gpuArgEncAllocNs = 0, gpuArgEncCopyNs = 0, gpuArgEncSetNs = 0, gpuArgEncFlushNs = 0;
         uint64_t gpuBindTextureLoopNs = 0, gpuBindResidencyNs = 0, gpuBindSupportPrepNs = 0, gpuBindRemappedNs = 0, gpuBindSnapshotNs = 0;
         uint64_t gpuBindUniformLoopNs = 0, gpuBindTrackNs = 0, gpuBindCrumbNs = 0, gpuBindVertexNs = 0, gpuBindFinalNs = 0;
     };
@@ -1540,6 +1541,10 @@ namespace {
         s.gpuArgMissConstant = c.gpuArgMissConstant.load(std::memory_order_relaxed);
         s.gpuArgDeltaEncodes = c.gpuArgDeltaEncodes.load(std::memory_order_relaxed);
         s.gpuArgDeltaSlots = c.gpuArgDeltaSlots.load(std::memory_order_relaxed);
+        s.gpuArgEncAllocNs = c.gpuArgEncAllocNs.load(std::memory_order_relaxed);
+        s.gpuArgEncCopyNs = c.gpuArgEncCopyNs.load(std::memory_order_relaxed);
+        s.gpuArgEncSetNs = c.gpuArgEncSetNs.load(std::memory_order_relaxed);
+        s.gpuArgEncFlushNs = c.gpuArgEncFlushNs.load(std::memory_order_relaxed);
         s.gpuBindTextureLoopNs = c.gpuBindTextureLoopNs.load(std::memory_order_relaxed);
         s.gpuBindResidencyNs = c.gpuBindResidencyNs.load(std::memory_order_relaxed);
         s.gpuBindSupportPrepNs = c.gpuBindSupportPrepNs.load(std::memory_order_relaxed);
@@ -1679,7 +1684,7 @@ namespace {
             cemuLog_log(LogType::Force,
                 "perf gpu thread ms/frame {:.1f}: draws {:.0f}/frame | begin {:.1f} (textures {:.1f}, hashing {:.1f} = {} textures {:.1f} MB/frame) | "
                 "execute {:.1f} (index {:.1f}, flush queue {:.1f}, buffers {:.1f} [compared {:.1f} MB/frame, copied {:.1f} MB/frame], render pass {:.1f}, pipeline {:.1f}, resource bind {:.1f} [sampled 1/8: useResource {:.0f} calls/frame {:.1f} ms, {:.0f} skipped; argument buffers {:.0f} encoded {:.1f} ms, {:.0f} reused {:.1f} ms; sampler lookups {:.0f} {:.1f} ms; texture views {:.0f} {:.1f} ms]) | "
-                "arg misses/frame {:.0f} [no base {:.0f}; differing vs latest: support {:.0f} (only {:.0f}), uniform {:.0f}, texture {:.0f}, sampler {:.0f}, vertex/index {:.0f}, constant {:.0f}; delta encodes {:.0f} writing {:.1f} slots each] | "
+                "arg misses/frame {:.0f} [no base {:.0f}; differing vs latest: support {:.0f} (only {:.0f}), uniform {:.0f}, texture {:.0f}, sampler {:.0f}, vertex/index {:.0f}, constant {:.0f}; delta encodes {:.0f} writing {:.1f} slots each; encode parts ms/frame: alloc {:.1f}, copy+retain+slot {:.1f}, encoder calls {:.1f}, flush {:.1f}] | "
                 "bind parts (sampled 1/8) ms/frame [texture loop {:.1f}, support prep {:.1f}, remapped uniforms {:.1f}, support snapshot {:.1f}, uniform loop {:.1f} (shared cache track {:.1f}, breadcrumbs {:.1f}), vertex/index {:.1f}, arg buffer bind {:.1f}, residency lookups {:.1f}, rest {:.1f}] | "
                 "end/commit {:.1f} | other {:.1f}",
                 busyMs, frames > 0.0 ? draws / frames : 0.0, beginMs, ms(b.gpuTexUpdateNs, a.gpuTexUpdateNs), ms(b.gpuTexHashNs, a.gpuTexHashNs),
@@ -1697,6 +1702,7 @@ namespace {
                 n(b.gpuArgMissVertexIndex, a.gpuArgMissVertexIndex), n(b.gpuArgMissConstant, a.gpuArgMissConstant),
                 n(b.gpuArgDeltaEncodes, a.gpuArgDeltaEncodes),
                 b.gpuArgDeltaEncodes != a.gpuArgDeltaEncodes ? (double)(b.gpuArgDeltaSlots - a.gpuArgDeltaSlots) / (double)(b.gpuArgDeltaEncodes - a.gpuArgDeltaEncodes) : 0.0,
+                ms(b.gpuArgEncAllocNs, a.gpuArgEncAllocNs), ms(b.gpuArgEncCopyNs, a.gpuArgEncCopyNs), ms(b.gpuArgEncSetNs, a.gpuArgEncSetNs), ms(b.gpuArgEncFlushNs, a.gpuArgEncFlushNs),
                 ms(b.gpuBindTextureLoopNs, a.gpuBindTextureLoopNs), ms(b.gpuBindSupportPrepNs, a.gpuBindSupportPrepNs), ms(b.gpuBindRemappedNs, a.gpuBindRemappedNs),
                 ms(b.gpuBindSnapshotNs, a.gpuBindSnapshotNs), ms(b.gpuBindUniformLoopNs, a.gpuBindUniformLoopNs), ms(b.gpuBindTrackNs, a.gpuBindTrackNs),
                 ms(b.gpuBindCrumbNs, a.gpuBindCrumbNs), ms(b.gpuBindVertexNs, a.gpuBindVertexNs), ms(b.gpuBindFinalNs, a.gpuBindFinalNs),
