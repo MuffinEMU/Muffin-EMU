@@ -654,6 +654,7 @@ MetalRenderer::~MetalRenderer()
         m_commandEncoder->release();
         m_commandEncoder = nullptr;
     }
+    m_encoderResidency.Reset();
     if (m_currentCommandBuffer.m_commandBuffer && !m_currentCommandBuffer.m_commited)
         m_currentCommandBuffer.m_commandBuffer->release();
     m_currentCommandBuffer = {};
@@ -3395,6 +3396,10 @@ MTL::CommandBuffer* MetalRenderer::GetCommandBuffer()
         if (m_gpuRecoveryPending && !m_gpuRecovering)
             RecoverFromGpuFault();
 
+        // Cached argument buffers belong to the command buffer they were recorded in
+        if (m_memoryManager)
+            m_memoryManager->ReleaseArgumentCache();
+
         // Debug
         //m_commandQueue->insertDebugCaptureBoundary();
 
@@ -3580,6 +3585,8 @@ void MetalRenderer::EndEncoding()
         m_commandEncoder->release();
         m_commandEncoder = nullptr;
         m_encoderType = MetalEncoderType::None;
+        // Residency is per encoder; the next one starts with nothing declared
+        m_encoderResidency.Reset();
 
         // Commit the command buffer if enough draw calls have been recorded
         if (m_recordedDrawcalls >= m_commitTreshold)
@@ -4534,12 +4541,30 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
         argumentBindings[MetalArgumentBuffer::Dummy] = {MetalArgumentBinding::Type::Constant, nullptr, 0};
     }
     
+    auto& telemetry = PerfTelemetry::Get();
     auto useResource = [&](MTL::Resource* resource, MTL::ResourceUsage usage, MTL::RenderStages stage)
     {
         if (computeCommandEncoder)
+        {
+            // A compute encoder is fresh for each emulated draw, so there is nothing to deduplicate
+            const uint64 start = PerfTelemetry::NowNs();
             computeCommandEncoder->useResource(resource, usage);
-        else
-            renderCommandEncoder->useResource(resource, usage, stage);
+            telemetry.gpuUseResourceNs.fetch_add(PerfTelemetry::NowNs() - start, std::memory_order_relaxed);
+            telemetry.gpuUseResourceCalls.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+        // Residency lasts as long as the encoder, and a pass declares the same resources draw after draw
+        uint32 declaredUsage = static_cast<uint32>(usage);
+        uint32 declaredStages = static_cast<uint32>(stage);
+        if (renderCommandEncoder == m_commandEncoder && !m_encoderResidency.Declare(resource, declaredUsage, declaredStages))
+        {
+            telemetry.gpuUseResourceSkips.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+        const uint64 start = PerfTelemetry::NowNs();
+        renderCommandEncoder->useResource(resource, static_cast<MTL::ResourceUsage>(declaredUsage), static_cast<MTL::RenderStages>(declaredStages));
+        telemetry.gpuUseResourceNs.fetch_add(PerfTelemetry::NowNs() - start, std::memory_order_relaxed);
+        telemetry.gpuUseResourceCalls.fetch_add(1, std::memory_order_relaxed);
     };
     auto bindBuffer = [&](MetalShaderType type, MTL::Buffer* buffer, size_t offset, uint32 index)
     {
@@ -4634,7 +4659,10 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
             _LatteRegisterSetSampler* samplerWords = LatteGPUState.contextNew.SQ_TEX_SAMPLER + samplerIndex;
             if (textureView && textureView->baseTexture->overwriteInfo.anisotropicLevel >= 0)
                 samplerWords->WORD0.set_MAX_ANISO_RATIO(textureView->baseTexture->overwriteInfo.anisotropicLevel);
+            const uint64 samplerStart = PerfTelemetry::NowNs();
             sampler = m_samplerCache->GetSamplerState(LatteGPUState.contextNew, shader->shaderType, stageSamplerIndex, samplerWords);
+            telemetry.gpuSamplerLookupNs.fetch_add(PerfTelemetry::NowNs() - samplerStart, std::memory_order_relaxed);
+            telemetry.gpuSamplerLookups.fetch_add(1, std::memory_order_relaxed);
         }
         if (samplerBinding >= 0)
         {
@@ -4676,7 +4704,10 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
         {
             // get texture register word 0
             uint32 word4 = LatteGPUState.contextRegister[texUnitRegIndex + 4];
+            const uint64 viewStart = PerfTelemetry::NowNs();
             mtlTexture = textureView->GetSwizzledView(word4);
+            telemetry.gpuTexViewLookupNs.fetch_add(PerfTelemetry::NowNs() - viewStart, std::memory_order_relaxed);
+            telemetry.gpuTexViewLookups.fetch_add(1, std::memory_order_relaxed);
             if (!mtlTexture)
             {
                 // The view could not be created (its base texture was replaced by the null texture after an

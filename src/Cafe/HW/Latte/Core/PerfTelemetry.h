@@ -61,6 +61,17 @@ namespace PerfTelemetry
 		std::atomic<uint64_t> gpuPassNs{0};         //   render encoder / pass setup
 		std::atomic<uint64_t> gpuPipelineNs{0};     //   pipeline state lookup
 		std::atomic<uint64_t> gpuBindNs{0};         //   per-stage uniform, texture and sampler binding
+		std::atomic<uint32_t> gpuUseResourceCalls{0}; //     of it: useResource() calls made on the encoder
+		std::atomic<uint32_t> gpuUseResourceSkips{0}; //     useResource() calls skipped, already declared on this encoder
+		std::atomic<uint64_t> gpuUseResourceNs{0};
+		std::atomic<uint32_t> gpuArgEncodes{0};     //     argument buffers encoded
+		std::atomic<uint64_t> gpuArgEncodeNs{0};
+		std::atomic<uint32_t> gpuArgReuses{0};      //     argument buffers found in the cache
+		std::atomic<uint64_t> gpuArgReuseNs{0};
+		std::atomic<uint32_t> gpuSamplerLookups{0};
+		std::atomic<uint64_t> gpuSamplerLookupNs{0};
+		std::atomic<uint32_t> gpuTexViewLookups{0};
+		std::atomic<uint64_t> gpuTexViewLookupNs{0};
 		std::atomic<uint64_t> gpuEndNs{0};          // draw_endSequence: readback checks, command buffer commit
 
 		// PPC recompiler

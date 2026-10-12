@@ -1462,6 +1462,8 @@ namespace {
         uint64_t gpuBeginNs = 0, gpuTexUpdateNs = 0, gpuTexHashNs = 0, gpuTexHashBytes = 0;
         uint64_t gpuExecNs = 0, gpuIndexNs = 0, gpuFlushNs = 0, gpuBufferNs = 0, gpuSnapshotCompareBytes = 0, gpuSnapshotCopyBytes = 0;
         uint64_t gpuPassNs = 0, gpuPipelineNs = 0, gpuBindNs = 0, gpuEndNs = 0;
+        uint32_t gpuUseResourceCalls = 0, gpuUseResourceSkips = 0, gpuArgEncodes = 0, gpuArgReuses = 0, gpuSamplerLookups = 0, gpuTexViewLookups = 0;
+        uint64_t gpuUseResourceNs = 0, gpuArgEncodeNs = 0, gpuArgReuseNs = 0, gpuSamplerLookupNs = 0, gpuTexViewLookupNs = 0;
     };
 
     PerfSnapshot ios_perf_take()
@@ -1507,6 +1509,17 @@ namespace {
         s.gpuPipelineNs = c.gpuPipelineNs.load(std::memory_order_relaxed);
         s.gpuBindNs = c.gpuBindNs.load(std::memory_order_relaxed);
         s.gpuEndNs = c.gpuEndNs.load(std::memory_order_relaxed);
+        s.gpuUseResourceCalls = c.gpuUseResourceCalls.load(std::memory_order_relaxed);
+        s.gpuUseResourceSkips = c.gpuUseResourceSkips.load(std::memory_order_relaxed);
+        s.gpuArgEncodes = c.gpuArgEncodes.load(std::memory_order_relaxed);
+        s.gpuArgReuses = c.gpuArgReuses.load(std::memory_order_relaxed);
+        s.gpuSamplerLookups = c.gpuSamplerLookups.load(std::memory_order_relaxed);
+        s.gpuTexViewLookups = c.gpuTexViewLookups.load(std::memory_order_relaxed);
+        s.gpuUseResourceNs = c.gpuUseResourceNs.load(std::memory_order_relaxed);
+        s.gpuArgEncodeNs = c.gpuArgEncodeNs.load(std::memory_order_relaxed);
+        s.gpuArgReuseNs = c.gpuArgReuseNs.load(std::memory_order_relaxed);
+        s.gpuSamplerLookupNs = c.gpuSamplerLookupNs.load(std::memory_order_relaxed);
+        s.gpuTexViewLookupNs = c.gpuTexViewLookupNs.load(std::memory_order_relaxed);
         return s;
     }
 
@@ -1622,6 +1635,8 @@ namespace {
         {
             const double perFrame = frames > 0.0 ? 1.0 / (frames * 1e6) : 0.0;
             auto ms = [&](uint64_t x, uint64_t y) { return (double)(x - y) * perFrame; };
+            // counts per emulated frame
+            auto n = [&](uint32_t x, uint32_t y) { return frames > 0.0 ? (double)(x - y) / frames : 0.0; };
             const double busyMs = gpuThreadBusy * wallNs * perFrame;
             const double beginMs = ms(b.gpuBeginNs, a.gpuBeginNs);
             const double execMs = ms(b.gpuExecNs, a.gpuExecNs);
@@ -1631,13 +1646,17 @@ namespace {
             const double mbPerFrame = frames > 0.0 ? 1.0 / (frames * 1048576.0) : 0.0;
             cemuLog_log(LogType::Force,
                 "perf gpu thread ms/frame {:.1f}: draws {:.0f}/frame | begin {:.1f} (textures {:.1f}, hashing {:.1f} = {} textures {:.1f} MB/frame) | "
-                "execute {:.1f} (index {:.1f}, flush queue {:.1f}, buffers {:.1f} [compared {:.1f} MB/frame, copied {:.1f} MB/frame], render pass {:.1f}, pipeline {:.1f}, resource bind {:.1f}) | "
+                "execute {:.1f} (index {:.1f}, flush queue {:.1f}, buffers {:.1f} [compared {:.1f} MB/frame, copied {:.1f} MB/frame], render pass {:.1f}, pipeline {:.1f}, resource bind {:.1f} [useResource {:.0f} calls/frame {:.1f} ms, {:.0f} skipped; argument buffers {:.0f} encoded {:.1f} ms, {:.0f} reused {:.1f} ms; sampler lookups {:.0f} {:.1f} ms; texture views {:.0f} {:.1f} ms]) | "
                 "end/commit {:.1f} | other {:.1f}",
                 busyMs, frames > 0.0 ? draws / frames : 0.0, beginMs, ms(b.gpuTexUpdateNs, a.gpuTexUpdateNs), ms(b.gpuTexHashNs, a.gpuTexHashNs),
                 frames > 0.0 ? (uint32_t)((b.gpuTexHashes - a.gpuTexHashes) / frames) : 0u, (double)(b.gpuTexHashBytes - a.gpuTexHashBytes) * mbPerFrame,
                 execMs, ms(b.gpuIndexNs, a.gpuIndexNs), ms(b.gpuFlushNs, a.gpuFlushNs), ms(b.gpuBufferNs, a.gpuBufferNs),
                 (double)(b.gpuSnapshotCompareBytes - a.gpuSnapshotCompareBytes) * mbPerFrame, (double)(b.gpuSnapshotCopyBytes - a.gpuSnapshotCopyBytes) * mbPerFrame,
-                ms(b.gpuPassNs, a.gpuPassNs), ms(b.gpuPipelineNs, a.gpuPipelineNs), ms(b.gpuBindNs, a.gpuBindNs), endMs, otherMs);
+                ms(b.gpuPassNs, a.gpuPassNs), ms(b.gpuPipelineNs, a.gpuPipelineNs), ms(b.gpuBindNs, a.gpuBindNs),
+                n(b.gpuUseResourceCalls, a.gpuUseResourceCalls), ms(b.gpuUseResourceNs, a.gpuUseResourceNs), n(b.gpuUseResourceSkips, a.gpuUseResourceSkips),
+                n(b.gpuArgEncodes, a.gpuArgEncodes), ms(b.gpuArgEncodeNs, a.gpuArgEncodeNs), n(b.gpuArgReuses, a.gpuArgReuses), ms(b.gpuArgReuseNs, a.gpuArgReuseNs),
+                n(b.gpuSamplerLookups, a.gpuSamplerLookups), ms(b.gpuSamplerLookupNs, a.gpuSamplerLookupNs),
+                n(b.gpuTexViewLookups, a.gpuTexViewLookups), ms(b.gpuTexViewLookupNs, a.gpuTexViewLookupNs), endMs, otherMs);
         }
 
         char line[200];
