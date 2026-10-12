@@ -38,6 +38,7 @@ enum SettingsDefaults {
         // Recorded results. Resetting them would forget what the app learned (and re-run the
         // one-time repair, which would then erase a clock speed chosen after this reset).
         "muffin.cpu.autoDemoted",
+        "muffin.cpu.autoDemotedV2",
         "muffin.cpu.autoMultiPending",
         "muffin.render.vulkanFailedBuild",
         "muffin.render.vulkanFailureReason",

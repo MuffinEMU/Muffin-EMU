@@ -1098,27 +1098,88 @@ namespace {
             && thermalState == 0;
     }
 
-    NSString* ios_two_core_hang_key() { return @"muffin.cpu.twoCoreHung"; }
+    // The two-core guard. Each pinned title keeps the app build (CFBundleVersion) and core fingerprint it was recorded
+    // on, so a later build can retry it once. Stored as {titleKey: {build, core}} under the V2 key; the plain list
+    // under the old key is migrated with build "?" (unknown, older than any real build). The Swift side
+    // (CoreGuard in RenderScale.swift) reads and clears the same key.
+    NSString* ios_two_core_hang_key() { return @"muffin.cpu.twoCoreHungV2"; }
+    NSString* ios_two_core_hang_legacy_key() { return @"muffin.cpu.twoCoreHung"; }
 
     NSString* ios_title_key(uint64_t titleId) { return [NSString stringWithFormat:@"%016llx", (unsigned long long)titleId]; }
 
-    bool ios_two_core_hang_recorded(uint64_t titleId)
+    NSString* ios_app_build_string()
     {
-        return [[[NSUserDefaults standardUserDefaults] stringArrayForKey:ios_two_core_hang_key()] containsObject:ios_title_key(titleId)];
+        NSString* build = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleVersion"];
+        return [build isKindOfClass:[NSString class]] ? build : @"?";
     }
 
+    NSString* ios_core_fingerprint_string()
+    {
+        NSString* core = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"MuffinCoreFingerprint"];
+        return [core isKindOfClass:[NSString class]] ? core : @"unstamped";
+    }
+
+    // Recorded on an older app build than this one. An unknown or unparseable build counts as 0, so a migrated entry is
+    // older than any real build, and nothing is older than an app whose own build cannot be read.
+    bool ios_build_is_older(NSString* recorded, NSString* current)
+    {
+        const long long r = [recorded isKindOfClass:[NSString class]] ? [recorded longLongValue] : 0;
+        const long long c = [current longLongValue];
+        return r < c;
+    }
+
+    NSMutableDictionary<NSString*, NSDictionary*>* ios_two_core_hang_load()
+    {
+        NSUserDefaults* defaults = [NSUserDefaults standardUserDefaults];
+        NSDictionary* stored = [defaults dictionaryForKey:ios_two_core_hang_key()];
+        NSMutableDictionary<NSString*, NSDictionary*>* map = [NSMutableDictionary dictionary];
+        for (NSString* key in stored)
+        {
+            if ([stored[key] isKindOfClass:[NSDictionary class]])
+                map[[key lowercaseString]] = stored[key];
+        }
+        NSArray<NSString*>* legacy = [defaults stringArrayForKey:ios_two_core_hang_legacy_key()];
+        if (legacy)
+        {
+            for (NSString* key in legacy)
+            {
+                if (!map[[key lowercaseString]])
+                    map[[key lowercaseString]] = @{@"build" : @"?", @"core" : @"unknown"};
+            }
+            [defaults setObject:map forKey:ios_two_core_hang_key()];
+            [defaults removeObjectForKey:ios_two_core_hang_legacy_key()];
+        }
+        return map;
+    }
+
+    // The build this title's entry was recorded on, or nil when it has no entry.
+    NSString* ios_two_core_hang_recorded_build(uint64_t titleId)
+    {
+        NSDictionary* entry = ios_two_core_hang_load()[ios_title_key(titleId)];
+        if (!entry)
+            return nil;
+        NSString* build = entry[@"build"];
+        return [build isKindOfClass:[NSString class]] ? build : @"?";
+    }
+
+    bool ios_two_core_hang_recorded(uint64_t titleId)
+    {
+        return ios_two_core_hang_recorded_build(titleId) != nil;
+    }
+
+    // Records (or re-records, with this build and core) a title that failed, or removes it once a run succeeded.
     void ios_two_core_hang_set(uint64_t titleId, bool hung)
     {
         NSUserDefaults* defaults = [NSUserDefaults standardUserDefaults];
-        NSMutableArray<NSString*>* list = [([defaults stringArrayForKey:ios_two_core_hang_key()] ?: @[]) mutableCopy];
+        NSMutableDictionary<NSString*, NSDictionary*>* map = ios_two_core_hang_load();
         NSString* key = ios_title_key(titleId);
-        if (hung && ![list containsObject:key])
-            [list addObject:key];
-        else if (!hung && [list containsObject:key])
-            [list removeObject:key];
+        if (hung)
+            map[key] = @{@"build" : ios_app_build_string(), @"core" : ios_core_fingerprint_string()};
+        else if (map[key])
+            [map removeObjectForKey:key];
         else
             return;
-        [defaults setObject:list forKey:ios_two_core_hang_key()];
+        [defaults setObject:map forKey:ios_two_core_hang_key()];
     }
 
     struct CoreDecision
@@ -1176,7 +1237,17 @@ namespace {
             cemu_bridge_log_line((std::string("CPU cores: ") + (setting == kCoreModeTwo ? "two" : "three") + " cores chosen in Advanced settings, more than this device can run (up to " + std::to_string(maxThreads) + " host thread(s); " + deviceText + "). Attempting it anyway").c_str());
         if (setting == kCoreModeTwo)
         {
-            if (titleId != 0 && ios_two_core_hang_recorded(titleId))
+            NSString* hungBuild = titleId != 0 ? ios_two_core_hang_recorded_build(titleId) : nil;
+            if (hungBuild && ios_build_is_older(hungBuild, ios_app_build_string()))
+            {
+                // Recorded on an earlier build: try two cores once on this one. The entry is re-stamped with this build now, so
+                // a crash during the retry still counts as a failure on this build; a clean GX2Init removes it (the watcher).
+                const bool known = [hungBuild longLongValue] > 0;
+                cemu_bridge_log_line((std::string("CPU cores: retrying two cores for this title after an update; it failed on build ")
+                    + (known ? [hungBuild UTF8String] : "an earlier, unrecorded one")).c_str());
+                ios_two_core_hang_set(titleId, true);
+            }
+            else if (hungBuild)
             {
                 d.reason = std::string("one core: a two-core run of this title never reached GX2Init before (") + deviceText + ")";
                 return d;

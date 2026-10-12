@@ -299,59 +299,164 @@ enum CoreMode: String, CaseIterable, Identifiable {
     }
 }
 
+/// Titles kept on one core by the core guards (a failed two-core start, or a three-core run that crashed, hung or stalled),
+/// with the app build and core each was recorded on. An entry recorded on an older build is retried once; the Settings
+/// and per-game rows clear them. The two-core list is written by the bridge (ios_two_core_hang_set in CemuBridge.mm).
+enum CoreGuard {
+    static let twoCoreKey = "muffin.cpu.twoCoreHungV2"
+    static let twoCoreLegacyKey = "muffin.cpu.twoCoreHung"
+    static let threeCoreKey = "muffin.cpu.autoDemotedV2"
+    static let threeCoreLegacyKey = "muffin.cpu.autoDemoted"
+    static let pendingKey = "muffin.cpu.autoMultiPending"
+
+    static var currentBuild: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+    }
+
+    static var currentCore: String {
+        Bundle.main.infoDictionary?["MuffinCoreFingerprint"] as? String ?? "unstamped"
+    }
+
+    static func entry() -> [String: String] { ["build": currentBuild, "core": currentCore] }
+
+    /// Recorded on an older build than this one. An unknown build counts as 0, so a migrated entry is older than any real one.
+    static func isOlder(_ entry: [String: String]?) -> Bool {
+        (Int(entry?["build"] ?? "") ?? 0) < (Int(currentBuild) ?? 0)
+    }
+
+    /// The stored entries, migrating a plain list from an older version of the app. Keys are upper-cased.
+    static func load(_ key: String, legacyKey: String) -> [String: [String: String]] {
+        let defaults = UserDefaults.standard
+        var map: [String: [String: String]] = [:]
+        for (id, value) in defaults.dictionary(forKey: key) ?? [:] {
+            map[id.uppercased()] = value as? [String: String] ?? ["build": "?", "core": "unknown"]
+        }
+        if let legacy = defaults.stringArray(forKey: legacyKey) {
+            for id in legacy where map[id.uppercased()] == nil {
+                map[id.uppercased()] = ["build": "?", "core": "unknown"]
+            }
+            defaults.set(map, forKey: key)
+            defaults.removeObject(forKey: legacyKey)
+        }
+        return map
+    }
+
+    static func save(_ map: [String: [String: String]], key: String) {
+        UserDefaults.standard.set(map, forKey: key)
+    }
+
+    static func twoCore() -> [String: [String: String]] { load(twoCoreKey, legacyKey: twoCoreLegacyKey) }
+    static func threeCore() -> [String: [String: String]] { load(threeCoreKey, legacyKey: threeCoreLegacyKey) }
+
+    /// Every pinned title, either list.
+    static var pinnedCount: Int { Set(twoCore().keys).union(threeCore().keys).count }
+
+    static func isPinned(gameID: String) -> Bool {
+        let id = gameID.uppercased()
+        return twoCore()[id] != nil || threeCore()[id] != nil
+    }
+
+    /// Empties both lists.
+    static func clearAll() {
+        let defaults = UserDefaults.standard
+        for key in [twoCoreKey, twoCoreLegacyKey, threeCoreKey, threeCoreLegacyKey] { defaults.removeObject(forKey: key) }
+        cemu_bridge_log_line("CPU cores: cleared the titles kept on one core")
+    }
+
+    /// Lets one title try two or three cores again.
+    static func clear(gameID: String) {
+        let id = gameID.uppercased()
+        var two = twoCore()
+        var three = threeCore()
+        two[id] = nil
+        three[id] = nil
+        save(two, key: twoCoreKey)
+        save(three, key: threeCoreKey)
+        cemu_bridge_log_line("CPU cores: \(gameID) will try more than one core again")
+    }
+}
+
 /// Titles where Auto stays on one core because an earlier three-core run that Auto chose either
-/// ended without a clean stop (crash, hang, the app killed) or stalled. Remembered per title.
+/// ended without a clean stop (crash, hang, the app killed) or stalled. Remembered per title, with the build it
+/// happened on: after an update the title gets one more three-core try (see `sessionStarted`).
 enum AutoCoreHistory {
-    private static let demotedKey = "muffin.cpu.autoDemoted"
-    private static let pendingKey = "muffin.cpu.autoMultiPending"
+    private static let pendingKey = CoreGuard.pendingKey
+
+    private static func entries() -> [String: [String: String]] { CoreGuard.threeCore() }
+
+    private static func record(_ gameID: String) {
+        var demoted = entries()
+        demoted[gameID.uppercased()] = CoreGuard.entry()
+        CoreGuard.save(demoted, key: CoreGuard.threeCoreKey)
+    }
 
     /// Call at launch. Settles a run that never ended cleanly, then says whether this title is demoted.
     static func isDemotedAtLaunch(gameID: String) -> Bool {
         let defaults = UserDefaults.standard
-        var demoted = Set(defaults.stringArray(forKey: demotedKey) ?? [])
         if let pending = defaults.string(forKey: pendingKey) {
             defaults.removeObject(forKey: pendingKey)
-            if demoted.insert(pending).inserted {
-                defaults.set(demoted.sorted(), forKey: demotedKey)
+            let known = entries()[pending.uppercased()]
+            // Recorded again with the current build, also when it was already listed (a failed retry).
+            record(pending)
+            if known == nil || !(known?["build"] == CoreGuard.currentBuild) {
                 cemu_bridge_log_line("CPU cores: \(pending) ended a three-core run without a clean stop, so Auto keeps it on one core from now on")
             }
         }
-        return demoted.contains(gameID)
+        return isDemoted(gameID: gameID, logRetry: true)
     }
 
     /// Whether Auto keeps this title on one core, without settling a pending run. For a launch
-    /// that does not go through `isDemotedAtLaunch` (the Wii U Menu starting a game).
+    /// that does not go through `isDemotedAtLaunch` (the Wii U Menu starting a game). An entry from an older build is
+    /// not kept: the title is tried on three cores once more.
     static func isDemoted(gameID: String) -> Bool {
-        Set(UserDefaults.standard.stringArray(forKey: demotedKey) ?? []).contains(gameID)
+        isDemoted(gameID: gameID, logRetry: false)
+    }
+
+    private static func isDemoted(gameID: String, logRetry: Bool) -> Bool {
+        guard let entry = entries()[gameID.uppercased()] else { return false }
+        guard CoreGuard.isOlder(entry) else { return true }
+        if logRetry {
+            let old = Int(entry["build"] ?? "") ?? 0
+            cemu_bridge_log_line("CPU cores: retrying three cores for this title after an update; it failed on " + (old > 0 ? "build \(old)" : "an earlier, unrecorded build"))
+        }
+        return false
     }
 
     /// Carries a title's entry over when its settings key changes from the file-name id to the title ID. Its pending run is
     /// left alone: that is a live session, settled by the key it started under.
     static func adoptTitleIDKey(from oldID: String, to newID: String) {
-        let defaults = UserDefaults.standard
-        var demoted = Set(defaults.stringArray(forKey: demotedKey) ?? [])
-        guard demoted.contains(oldID) else { return }
-        demoted.remove(oldID)
-        demoted.insert(newID)
-        defaults.set(demoted.sorted(), forKey: demotedKey)
+        var demoted = entries()
+        guard let entry = demoted[oldID.uppercased()] else { return }
+        demoted[oldID.uppercased()] = nil
+        demoted[newID.uppercased()] = entry
+        CoreGuard.save(demoted, key: CoreGuard.threeCoreKey)
     }
 
-    /// Call once a title that Auto put on three cores has booted.
+    /// Call once a title that Auto put on three cores has booted. A title retried after an update is re-stamped with this
+    /// build now, so a crash during the retry counts as a failure on this build.
     static func sessionStarted(gameID: String) {
         UserDefaults.standard.set(gameID, forKey: pendingKey)
+        if entries()[gameID.uppercased()] != nil { record(gameID) }
     }
 
-    /// Call when the title stops normally.
+    /// Call when the title stops normally. A clean stop of a retried title lifts the pin.
     static func sessionEnded(gameID: String, stalled: Bool) {
         let defaults = UserDefaults.standard
         guard defaults.string(forKey: pendingKey) == gameID else { return }
         defaults.removeObject(forKey: pendingKey)
-        guard stalled else { return }
-        var demoted = Set(defaults.stringArray(forKey: demotedKey) ?? [])
-        if demoted.insert(gameID).inserted {
-            defaults.set(demoted.sorted(), forKey: demotedKey)
-            cemu_bridge_log_line("CPU cores: a three-core run of \(gameID) stalled, so Auto keeps it on one core from now on")
+        guard stalled else {
+            var demoted = entries()
+            if demoted.removeValue(forKey: gameID.uppercased()) != nil {
+                CoreGuard.save(demoted, key: CoreGuard.threeCoreKey)
+                cemu_bridge_log_line("CPU cores: the three-core retry of \(gameID) ended cleanly, so Auto will use three cores for it again")
+            }
+            return
         }
+        let known = entries()[gameID.uppercased()] != nil
+        record(gameID)
+        cemu_bridge_log_line(known
+            ? "CPU cores: the three-core retry of \(gameID) stalled again, so Auto keeps it on one core on this build"
+            : "CPU cores: a three-core run of \(gameID) stalled, so Auto keeps it on one core from now on")
     }
 }
 

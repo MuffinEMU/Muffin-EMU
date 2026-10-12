@@ -291,6 +291,7 @@ struct GameOptionsView: View {
     /// failures here are all short enough to read in place.
     @State private var saveTransferMessage: String?
     @State private var coreWarning: CoreMode?
+    @State private var keptOnOneCore = false
     @State private var saveTransferFailed = false
     @State private var showingImportConfirmation = false
 
@@ -420,6 +421,20 @@ struct GameOptionsView: View {
                     ForEach(CoreMode.listed) { mode in
                         Text(mode.isAvailable ? mode.title : mode.title + ", may not work").tag(mode.rawValue)
                     }
+                }
+            }
+            if keptOnOneCore {
+                HStack(spacing: 10) {
+                    Text("This game is kept on one core after a failed two-/three-core start")
+                        .font(.system(size: 12))
+                        .foregroundColor(MuffinTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 12)
+                    Button("Try again") {
+                        CoreGuard.clear(gameID: game.settingsKey)
+                        keptOnOneCore = CoreGuard.isPinned(gameID: game.settingsKey)
+                    }
+                    .tint(MuffinTheme.accentText)
                 }
             }
             if !store.overrides(for: game.settingsKey).isIdentity {

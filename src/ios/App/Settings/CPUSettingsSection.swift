@@ -18,6 +18,8 @@ struct CPUSettingsSection: View {
     @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
 
     @State private var coreWarning: CoreMode?
+    @State private var pinnedCount = CoreGuard.pinnedCount
+    @State private var confirmClearPinned = false
 
     private var advanced: Bool { SettingsMode.isAdvanced(raw: settingsModeRaw) }
 
@@ -142,6 +144,32 @@ struct CPUSettingsSection: View {
                 }
             }
 
+            // Only when a title has been put back on one core after a failed two- or three-core start.
+            if pinnedCount > 0 {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Titles kept on one core (\(pinnedCount))")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        Text("These games failed to start on more than one core. Each gets one more try after an app update.")
+                            .font(.system(size: 12))
+                            .foregroundColor(MuffinTheme.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 12)
+                    Button("Clear") { confirmClearPinned = true }
+                        .tint(MuffinTheme.accentText)
+                }
+                .confirmationDialog("Clear titles kept on one core?", isPresented: $confirmClearPinned, titleVisibility: .visible) {
+                    Button("Clear", role: .destructive) {
+                        CoreGuard.clearAll()
+                        pinnedCount = CoreGuard.pinnedCount
+                    }
+                    Button("Cancel", role: .cancel) { }
+                } message: {
+                    Text("\(pinnedCount) title\(pinnedCount == 1 ? "" : "s") will try more than one core again the next time you start \(pinnedCount == 1 ? "it" : "them").")
+                }
+            }
+
             // On by default: at .serious iOS is already throttling, so lowering the pixel count
             // gives frames back.
             Toggle(isOn: $autoReduceWhenHot) {
@@ -225,6 +253,7 @@ struct CPUSettingsSection: View {
                 text: "The recompiler needs a JIT enabler (StikJIT, SideStore or LiveContainer). Without one the interpreter runs instead, which is much slower; the CPU line above shows which you got.\n\nFavour accuracy is slower but can fix a game that glitches, desyncs or crashes. It also builds every shader before it is needed, whatever Compile shaders in the background is set to.\n\nFavour performance is the opposite trade: everything runs as fast as MuffinEMU can make it, and some quality goes. The picture is drawn at Balanced at most with linear scaling, so it's softer. Shaders skip the Wii U's exact multiply rule, which is faster but can make lighting or shadows look wrong in some games. Shaders always compile in the background, so things can pop in for a moment instead of the game pausing. Crash reports carry less detail. Favour accuracy and Favour performance turn each other off, and a game set to favour accuracy in its own options still does.\n\nCool down automatically acts when iOS reports the device is overheating, and Device heat shows that same state. In Advanced mode, Cool down starts at picks the point: Serious (the default) acts as soon as iOS starts throttling, Critical waits until iOS is throttling hard.\n\nThe recompiler, Favour accuracy, Favour performance, One-core mode and CPU cores apply the next time you start a game.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
+        .onAppear { pinnedCount = CoreGuard.pinnedCount }
     }
 }
 
