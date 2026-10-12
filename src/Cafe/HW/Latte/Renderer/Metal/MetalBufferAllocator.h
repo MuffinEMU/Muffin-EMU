@@ -172,8 +172,10 @@ class MetalSynchronizedHeapAllocator
   private:
 	const class MetalRenderer* m_mtlr;
 	MetalBufferChunkedHeap m_chunkedHeap;
-	// allocations
-	std::vector<TrackedAllocation> m_activeAllocations;
+	// allocations, keyed by ActiveKey(chunk, offset). A map, not a list: snapshots and argument buffers
+	// are allocated and freed thousands of times a frame, and a linear search per free cost milliseconds.
+	static uint64 ActiveKey(uint32 chunkIndex, uint32 offset) { return ((uint64)chunkIndex << 32) | offset; }
+	std::unordered_map<uint64, CHAddr> m_activeAllocations;
 	MemoryPool<AllocatorReservation> m_poolAllocatorReservation{32};
 	// release queue
 	std::unordered_map<MTL::CommandBuffer*, std::vector<CHAddr>> m_releaseQueue;

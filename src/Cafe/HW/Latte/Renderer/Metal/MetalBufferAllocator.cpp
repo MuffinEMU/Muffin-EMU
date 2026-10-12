@@ -296,7 +296,7 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalSynchronizedHeapAlloc
 		cemuLog_logOnce(LogType::Force, "Metal: could not reserve {} bytes of buffer memory (alignment {})", size, alignment);
 		return nullptr;
 	}
-	m_activeAllocations.emplace_back(addr);
+	m_activeAllocations.emplace(ActiveKey(addr.chunkIndex, addr.offset), addr);
 	AllocatorReservation* res = m_poolAllocatorReservation.allocObj();
 	res->bufferIndex = addr.chunkIndex;
 	res->bufferOffset = addr.offset;
@@ -313,7 +313,7 @@ void MetalSynchronizedHeapAllocator::FreeReservation(AllocatorReservation* uploa
 	// Never key the release on a command buffer that has already finished and been released: the entry would
 	// never be processed (a leak), or be hit by a new command buffer that reuses the address.
 	MTL::CommandBuffer* currentCommandBuffer = m_mtlr->GetCommandBufferToRetireOn();
-	auto it = std::find_if(m_activeAllocations.begin(), m_activeAllocations.end(), [&uploadReservation](const TrackedAllocation& allocation) { return allocation.allocation.chunkIndex == uploadReservation->bufferIndex && allocation.allocation.offset == uploadReservation->bufferOffset; });
+	auto it = m_activeAllocations.find(ActiveKey(uploadReservation->bufferIndex, uploadReservation->bufferOffset));
 	if (it == m_activeAllocations.end())
 	{
 		// cemu_assert_debug() alone is a no-op in Release, and the two lines below
@@ -329,9 +329,9 @@ void MetalSynchronizedHeapAllocator::FreeReservation(AllocatorReservation* uploa
 		return;
 	}
 	if (currentCommandBuffer)
-		m_releaseQueue[currentCommandBuffer].emplace_back(it->allocation);
+		m_releaseQueue[currentCommandBuffer].emplace_back(it->second);
 	else
-		m_chunkedHeap.free(it->allocation);
+		m_chunkedHeap.free(it->second);
 	m_activeAllocations.erase(it);
 	m_poolAllocatorReservation.freeObj(uploadReservation);
 }
