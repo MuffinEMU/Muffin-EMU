@@ -303,6 +303,36 @@
 				<key>CFBundleIconName</key>
 				<string>AltIcon-pro-aurora</string>
 			</dict>
+			<key>cherry-blossom</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-cherry-blossom</string>
+			</dict>
+			<key>cookies-and-cream</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-cookies-and-cream</string>
+			</dict>
+			<key>campfire-smores</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-campfire-smores</string>
+			</dict>
+			<key>under-the-sea</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-under-the-sea</string>
+			</dict>
+			<key>rainy-day</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-rainy-day</string>
+			</dict>
+			<key>cafe-latte</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-cafe-latte</string>
+			</dict>
 			<key>progress-pride</key>
 			<dict>
 				<key>CFBundleIconName</key>
