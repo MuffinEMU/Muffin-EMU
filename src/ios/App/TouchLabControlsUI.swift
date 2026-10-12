@@ -274,6 +274,12 @@ struct TouchLabLayoutPanel: View {
     @AppStorage(ControllerLayoutSettings.scaleKey) private var controlScale = ControllerLayoutSettings.defaultScale
     @AppStorage(ControllerLayoutSettings.opacityKey) private var controlOpacity = ControllerLayoutSettings.defaultOpacity
     @AppStorage(ControllerLayoutSettings.stickSpacingKey) private var stickSpacing = ControllerLayoutSettings.defaultStickSpacing
+    // The same look settings as Settings > On-screen Controls, so the change can be judged on the live pad.
+    @AppStorage(TouchLabSettings.showcaseStyleKey) private var showcaseStyle = true
+    @AppStorage(TouchLabSettings.classicColourKey) private var classicColour = TouchLabSettings.defaultClassicColour
+    @AppStorage(TouchLabSettings.showcaseColourKey) private var showcaseColour = TouchLabSettings.defaultShowcaseColour
+    @AppStorage(TouchLabSettings.showcaseGlassKey) private var showcaseGlass = false
+    @AppStorage(TouchLabSettings.aScaleKey) private var aScale = TouchLabSettings.defaultAScale
     private var shoulderStore = ShoulderOffsetStorage()
     @ObservedObject private var windowSize = ControlsWindowSize.shared
     /// The shoulder setting for the orientation the pad is in now (kept apart per orientation),
@@ -303,12 +309,23 @@ struct TouchLabLayoutPanel: View {
 
         if scheme == TouchLabSettings.zoneStyleID { ZoneEditRows(gameID: gameID) }
 
+        lookRows
+
         PanelSliderRow("Button size", leadingIcon: "minus.magnifyingglass", trailingIcon: "plus.magnifyingglass",
                        value: $controlScale,
                        range: ControllerLayoutSettings.minScale...ControllerLayoutSettings.maxScale)
 
         PanelSliderRow("Opacity", leadingIcon: "circle.lefthalf.filled", trailingIcon: "circle.fill",
                        value: $controlOpacity, range: 0.2...1.0)
+
+        // As in Settings: Arc places every button by your reach and Showcase is the GamePad at its real
+        // size, so neither has a separate A size. The buttons around A shrink a little to make room.
+        if scheme != TouchLabSettings.arcStyleID && scheme != TouchLabSettings.showcaseStyleID {
+            PanelSliderRow("A button size", title: "A size", leadingIcon: "a.circle", trailingIcon: "a.circle.fill",
+                           value: $aScale, range: TouchLabSettings.aScaleRange, step: 0.01,
+                           spokenValue: "\(Int((aScale * 100).rounded())) percent",
+                           readout: "\(Int((aScale * 100).rounded()))%")
+        }
 
         // Hand size: both sticks move together, apart or closer. Only the styles with sticks
         // in fixed places have anything for it to move.
@@ -359,6 +376,38 @@ struct TouchLabLayoutPanel: View {
                      ? "These settings apply to every game, except that Adaptive remembers where your thumbs land separately for each game."
                      : "These settings apply to every game.",
                      prominent: false)
+    }
+
+    /// Showcase style on or off and its colours, as in Settings. Showcase itself is always in that look,
+    /// so it has no switch, only its colour and glass.
+    @ViewBuilder private var lookRows: some View {
+        if scheme != TouchLabSettings.showcaseStyleID {
+            PanelToggle(title: "Showcase style", isOn: $showcaseStyle)
+        }
+        if TouchLabSettings.usesClassicLook(scheme) && showcaseStyle {
+            colourPicker(selection: $classicColour, options: TouchLabSettings.classicColourOptions)
+        }
+        if scheme == TouchLabSettings.showcaseStyleID {
+            colourPicker(selection: $showcaseColour, options: TouchLabSettings.showcaseColourOptions)
+            PanelToggle(title: "Glass look", isOn: $showcaseGlass)
+        }
+    }
+
+    private func colourPicker(selection: Binding<String>, options: [(value: String, title: String)]) -> some View {
+        HStack {
+            Text("Colour")
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundColor(.white.opacity(0.85))
+            Spacer()
+            Picker("Colour", selection: selection) {
+                ForEach(options, id: \.value) { option in
+                    Text(option.title).tag(option.value)
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .tint(MuffinTheme.pixelBlue)
+        }
     }
 
     /// Size, opacity, stick spacing and shoulder height are the only placement the fixed styles have.
