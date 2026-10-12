@@ -442,6 +442,42 @@ enum MuffinThemePresets {
         shadowLight: "#28353A", shadowDark: "#000000"
     )
 
+    static let proRoyalVelvet = MuffinThemeDefinition(
+        id: "pro-royal-velvet", name: "Royal Velvet", iconId: "pro-royal-velvet",
+        backgroundTopLight: "#C2304E", backgroundTopDark: "#6E0F24",
+        backgroundBottomLight: "#7A0F2A", backgroundBottomDark: "#2A0610",
+        muffinTopLightLight: "#D02A45", muffinTopLightDark: "#D02A45",
+        muffinTopDarkLight: "#7A0C22", muffinTopDarkDark: "#A3172F",
+        creamLight: "#FFF9F2", creamDark: "#24090F",
+        wrapperLight: "#F6E3C4", wrapperDark: "#3D1A14",
+        blueberryNavyLight: "#B8862B", blueberryNavyDark: "#F2C658",
+        pixelBlueLight: "#C8133D", pixelBlueDark: "#FF6B86",
+        blushPinkLight: "#E7899A", blushPinkDark: "#F2A9B6",
+        brownDarkestLight: "#2A0610", brownDarkestDark: "#FFF5F0",
+        brownDarkLight: "#5A1424", brownDarkDark: "#F6DDE0",
+        brownMidLight: "#8A3A4A", brownMidDark: "#E2B4BC",
+        sparkleCreamLight: "#FFE9B8", sparkleCreamDark: "#FFE9B8",
+        shadowLight: "#3A0010", shadowDark: "#000000"
+    )
+
+    static let proAurora = MuffinThemeDefinition(
+        id: "pro-aurora", name: "Aurora", iconId: "pro-aurora",
+        backgroundTopLight: "#9EF0DA", backgroundTopDark: "#0C2A5C",
+        backgroundBottomLight: "#7F86F2", backgroundBottomDark: "#050A24",
+        muffinTopLightLight: "#7DF9D6", muffinTopLightDark: "#7DF9D6",
+        muffinTopDarkLight: "#6F7BE0", muffinTopDarkDark: "#8A8CF0",
+        creamLight: "#F7FBFF", creamDark: "#0D1430",
+        wrapperLight: "#E4EDFF", wrapperDark: "#1C2A50",
+        blueberryNavyLight: "#3B4FC4", blueberryNavyDark: "#8FA2FF",
+        pixelBlueLight: "#12B48A", pixelBlueDark: "#4DFFB8",
+        blushPinkLight: "#A974FF", blushPinkDark: "#C9A6FF",
+        brownDarkestLight: "#0C1230", brownDarkestDark: "#F4F8FF",
+        brownDarkLight: "#26305E", brownDarkDark: "#DCE6FF",
+        brownMidLight: "#56628F", brownMidDark: "#AEBBE6",
+        sparkleCreamLight: "#FFFFFF", sparkleCreamDark: "#FFFFFF",
+        shadowLight: "#0A1640", shadowDark: "#000000"
+    )
+
     static let progressPride = MuffinThemeDefinition(
         id: "progress-pride", name: "Progress Pride", iconId: "progress-pride",
         backgroundTopLight: "#C4BBC0", backgroundTopDark: "#5C5156",
@@ -587,6 +623,6 @@ enum MuffinThemePresets {
     )
 
     static let all: [MuffinThemeDefinition] = [
-        bakery, adhdAwareness, audhdAwareness, autismAwareness, bisexualPride, blueberryBlast, dark, disabilityPride, doubleChocolate, equality, fixTheWorld, galaxySpace, happy, holidayFrost, lemonZest, lesbianPride, mentalHealthPride, mintMatcha, neonCyber, nonbinaryPride, proDiamondIce, proGoldVip, proHolographic, progressPride, pumpkinSpice, rainbowPride, retro, spookyHalloween, strawberry, summerBeach, transgenderPride
+        bakery, adhdAwareness, audhdAwareness, autismAwareness, bisexualPride, blueberryBlast, dark, disabilityPride, doubleChocolate, equality, fixTheWorld, galaxySpace, happy, holidayFrost, lemonZest, lesbianPride, mentalHealthPride, mintMatcha, neonCyber, nonbinaryPride, proDiamondIce, proGoldVip, proHolographic, proRoyalVelvet, proAurora, progressPride, pumpkinSpice, rainbowPride, retro, spookyHalloween, strawberry, summerBeach, transgenderPride
     ]
 }

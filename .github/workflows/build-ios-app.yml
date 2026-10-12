@@ -474,6 +474,34 @@ jobs:
           retention-days: 14
 
       # ---- the Swift app ----
+      # The Pro app icons' real art lives in a private repo; this public one carries a locked
+      # placeholder for each, so the art exists only in the IPAs we publish. A numbered release must
+      # have it. Any other build without the key (a fork's pull request) keeps the placeholders.
+      - name: Bring in the Pro icon art
+        if: steps.go.outputs.reuse != 'true'
+        env:
+          PRO_ART_KEY: ${{ secrets.PRO_ART_DEPLOY_KEY }}
+          MUFFIN_CHANNEL: ${{ steps.channel.outputs.channel }}
+        run: |
+          set -eo pipefail
+          if [ -z "$PRO_ART_KEY" ]; then
+            if [ "$GITHUB_REF_NAME" = "main" ] || [ "$MUFFIN_CHANNEL" = "release" ]; then
+              echo "::error::PRO_ART_DEPLOY_KEY is missing; a release would ship locked Pro icons"
+              exit 1
+            fi
+            echo "::notice::No Pro art key; the Pro icons stay as locked placeholders"
+            exit 0
+          fi
+          keyfile="$RUNNER_TEMP/proart_key"
+          printf '%s\n' "$PRO_ART_KEY" > "$keyfile"
+          chmod 600 "$keyfile"
+          GIT_SSH_COMMAND="ssh -i $keyfile -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" \
+            git clone -q --depth 1 git@github.com:MuffinEMU/MuffinEMU-ProArt.git "$RUNNER_TEMP/proart"
+          rm -f "$keyfile"
+          cp -R "$RUNNER_TEMP/proart/Assets.xcassets/." src/ios/Resources/Assets.xcassets/
+          rm -rf "$RUNNER_TEMP/proart"
+          echo "Pro icon art in place: $(ls src/ios/Resources/Assets.xcassets | grep -c '^AltIcon-pro-.*appiconset$') icon(s)"
+
       - name: xcodegen generate
         if: steps.go.outputs.reuse != 'true'
         run: |

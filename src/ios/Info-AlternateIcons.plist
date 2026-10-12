@@ -293,6 +293,16 @@
 				<key>CFBundleIconName</key>
 				<string>AltIcon-pro-holographic</string>
 			</dict>
+			<key>pro-royal-velvet</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-pro-royal-velvet</string>
+			</dict>
+			<key>pro-aurora</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-pro-aurora</string>
+			</dict>
 			<key>progress-pride</key>
 			<dict>
 				<key>CFBundleIconName</key>

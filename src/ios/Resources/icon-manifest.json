@@ -33,7 +33,9 @@
     { "id": "nonbinary-pride",    "name": "Lemon & Lilac",      "tier": "free", "file": "specials/muffin-emu-icon-nonbinary-pride.svg", "tagline": "Yellow, white, purple and black stripes." },
     { "id": "pro-gold-vip",     "name": "Gold VIP",           "tier": "pro",  "file": "specials/muffin-emu-icon-pro-gold-vip.svg", "tagline": "A tiny gold crown for a muffin that knows its worth." },
     { "id": "pro-holographic",  "name": "Holographic",        "tier": "pro",  "file": "specials/muffin-emu-icon-pro-holographic.svg", "tagline": "Pastel-shifting holo foil, because your home screen deserves main-character energy." },
-    { "id": "pro-diamond-ice",  "name": "Diamond Ice",        "tier": "pro",  "file": "specials/muffin-emu-icon-pro-diamond-ice.svg", "tagline": "An ice-blue muffin dusted in gemstones. Cool under pressure." }
+    { "id": "pro-diamond-ice",  "name": "Diamond Ice",        "tier": "pro",  "file": "specials/muffin-emu-icon-pro-diamond-ice.svg", "tagline": "An ice-blue muffin dusted in gemstones. Cool under pressure." },
+    { "id": "pro-royal-velvet", "name": "Royal Velvet",       "tier": "pro",  "file": "specials/muffin-emu-icon-pro-royal-velvet.svg", "tagline": "Red velvet, cream cheese and gold foil. Dessert at its fanciest." },
+    { "id": "pro-aurora",       "name": "Aurora",             "tier": "pro",  "file": "specials/muffin-emu-icon-pro-aurora.svg", "tagline": "Northern lights poured over the top. Best enjoyed after dark." }
   ],
   "notMigrated": [
     "mono-black and mono-white are stamp/watermark marks, not homescreen icon candidates — left out of the picker list on purpose"
