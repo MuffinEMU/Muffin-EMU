@@ -1,10 +1,17 @@
 #pragma once
 #include <algorithm>
 #include <atomic>
+#include <condition_variable>
+#include <memory>
+#include <mutex>
 #include <thread>
 #include <vector>
 #include "LatteTextureLoader.h"
+#include "PerfTelemetry.h"
 #include "Common/DeviceCapabilities.h"
+#if defined(__APPLE__)
+#include <pthread/qos.h>
+#endif
 #include "astcenc.h"
 
 static inline uint8 astcFloatToUNorm8(float v)
@@ -42,9 +49,129 @@ static uint32 astcEncodeThreadCount()
     return count;
 }
 
-// Images smaller than this (in texels) are encoded on the calling thread alone: a thread costs tens of
-// microseconds to start, and a 256x256 encode already takes longer than three of them.
-static constexpr size_t kAstcThreadedMinTexels = 256 * 256;
+// Images with fewer blocks than this are decoded and encoded on the calling thread alone. The helpers are
+// persistent (ASTCWorkerPool below), so handing work to them costs a wake-up, not a thread start; 1024 blocks
+// (128x128 texels) is already far more encode time than that.
+static constexpr size_t kAstcThreadedMinBlocks = 32 * 32;
+
+// The threads one decode+encode shares. They are started on first use, live for the rest of the process and
+// sleep between images, so the per-image cost is a condition-variable wake-up instead of creating and joining
+// threads. One job runs at a time (the Latte thread is the only normal caller); a second caller that finds the
+// pool busy gets false back and does the work itself, which gives the same bytes.
+class ASTCWorkerPool
+{
+public:
+    static ASTCWorkerPool& Get()
+    {
+        static ASTCWorkerPool* pool = new ASTCWorkerPool(); // never destroyed: the workers outlive static destruction
+        return *pool;
+    }
+
+    // Runs body(i) once on each of up to `threads` threads, i = 0 on the calling thread, and returns when all
+    // of them are done. Returns false without running anything if the pool is busy or has no helpers.
+    template<typename Body>
+    bool Run(uint32 threads, Body& body)
+    {
+        if (threads <= 1)
+            return false;
+        std::unique_lock<std::mutex> submit(m_submitMutex, std::try_to_lock);
+        if (!submit.owns_lock())
+            return false;
+        EnsureWorkers(threads - 1);
+        const uint32 helpers = std::min<uint32>(threads - 1, m_workerCount);
+        if (helpers == 0)
+            return false;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_trampoline = [](void* arg, uint32 index) { (*static_cast<Body*>(arg))(index); };
+            m_arg = &body;
+            m_helpers = helpers;
+            m_pending = helpers;
+            m_generation++;
+        }
+        m_wake.notify_all();
+        body(0);
+        std::unique_lock<std::mutex> lock(m_mutex);
+        m_done.wait(lock, [this]() { return m_pending == 0; });
+        return true;
+    }
+
+private:
+    void EnsureWorkers(uint32 wanted)
+    {
+        while (m_workerCount < wanted)
+        {
+            uint64 generation;
+            {
+                std::lock_guard<std::mutex> lock(m_mutex);
+                generation = m_generation;
+            }
+            const uint32 index = m_workerCount + 1;
+            try
+            {
+                std::thread([this, index, generation]() { WorkerMain(index, generation); }).detach();
+            }
+            catch (...)
+            {
+                return; // run with the helpers there are
+            }
+            m_workerCount++;
+        }
+    }
+
+    void WorkerMain(uint32 index, uint64 seen)
+    {
+#if defined(__APPLE__)
+        // Same class as the Latte thread, so the scheduler keeps these on performance cores while a decode runs.
+        pthread_set_qos_class_self_np(QOS_CLASS_USER_INITIATED, 0);
+#endif
+        for (;;)
+        {
+            void (*trampoline)(void*, uint32) = nullptr;
+            void* arg = nullptr;
+            {
+                std::unique_lock<std::mutex> lock(m_mutex);
+                m_wake.wait(lock, [&]() { return m_generation != seen; });
+                seen = m_generation;
+                if (index > m_helpers)
+                    continue; // this job wants fewer threads
+                trampoline = m_trampoline;
+                arg = m_arg;
+            }
+            trampoline(arg, index);
+            {
+                std::lock_guard<std::mutex> lock(m_mutex);
+                m_pending--;
+            }
+            m_done.notify_all();
+        }
+    }
+
+    std::mutex m_submitMutex;
+    std::mutex m_mutex;
+    std::condition_variable m_wake;
+    std::condition_variable m_done;
+    uint32 m_workerCount = 0; // only touched by the thread holding m_submitMutex
+    void (*m_trampoline)(void*, uint32) = nullptr;
+    void* m_arg = nullptr;
+    uint32 m_helpers = 0;
+    uint32 m_pending = 0;
+    uint64 m_generation = 0;
+};
+
+// chunkFn(c) for every c in [0, chunkCount), spread over the pool. Chunks are handed out dynamically; each is
+// independent, so which thread runs which one cannot change the result.
+template<typename ChunkFn>
+static void astcParallelChunks(uint32 threads, size_t chunkCount, ChunkFn chunkFn)
+{
+    std::atomic<size_t> next{0};
+    auto body = [&](uint32) {
+        for (size_t c = next.fetch_add(1, std::memory_order_relaxed); c < chunkCount; c = next.fetch_add(1, std::memory_order_relaxed))
+            chunkFn(c);
+    };
+    if (!ASTCWorkerPool::Get().Run(threads, body))
+        body(0);
+}
 
 struct ASTCEncoderContext
 {
@@ -103,42 +230,24 @@ static ASTCEncoderContext* astcGetContext(astcenc_profile profile)
 
 // One image across several threads, the way astcenc documents it: every thread calls
 // astcenc_compress_image() with its own index and the library hands out blocks dynamically, so the
-// output is byte-identical to a single-threaded run. The helpers are joined before this returns, which
-// is what makes the astcenc_compress_reset() the caller does next legal. If a helper cannot be started
-// the remaining threads simply do its share.
+// output is byte-identical to a single-threaded run. The pool returns only when every helper has left
+// astcenc_compress_image(), which is what makes the astcenc_compress_reset() the caller does next legal.
+// If the pool cannot supply helpers the calling thread encodes the whole image.
 static astcenc_error astcCompressImageThreaded(astcenc_context* context, astcenc_image* image, const astcenc_swizzle* swizzle,
                                                uint8* outputData, size_t outputSize, uint32 threads)
 {
-    std::atomic<int> helperFailure{(int)ASTCENC_SUCCESS};
-    std::vector<std::thread> helpers;
-    helpers.reserve(threads - 1);
-    for (uint32 i = 1; i < threads; i++)
-    {
-        try
+    std::atomic<int> failure{(int)ASTCENC_SUCCESS};
+    auto body = [&](uint32 index) {
+        const astcenc_error st = astcenc_compress_image(context, image, swizzle, outputData, outputSize, index);
+        if (st != ASTCENC_SUCCESS)
         {
-            helpers.emplace_back([context, image, swizzle, outputData, outputSize, i, &helperFailure]() {
-                const astcenc_error st = astcenc_compress_image(context, image, swizzle, outputData, outputSize, i);
-                if (st != ASTCENC_SUCCESS)
-                {
-                    int expected = (int)ASTCENC_SUCCESS;
-                    helperFailure.compare_exchange_strong(expected, (int)st);
-                }
-            });
+            int expected = (int)ASTCENC_SUCCESS;
+            failure.compare_exchange_strong(expected, (int)st);
         }
-        catch (...)
-        {
-            break;
-        }
-    }
-
-    const astcenc_error mainStatus = astcenc_compress_image(context, image, swizzle, outputData, outputSize, 0);
-
-    for (std::thread& helper : helpers)
-        helper.join();
-
-    if (mainStatus != ASTCENC_SUCCESS)
-        return mainStatus;
-    return (astcenc_error)helperFailure.load();
+    };
+    if (!ASTCWorkerPool::Get().Run(threads, body))
+        body(0);
+    return (astcenc_error)failure.load();
 }
 
 static bool astcCompressRGBA8Image(const uint8* rgba8, sint32 width, sint32 height, astcenc_profile profile, uint8* outputData)
@@ -165,7 +274,7 @@ static bool astcCompressRGBA8Image(const uint8* rgba8, sint32 width, sint32 heig
 
     size_t outputSize = astcCompressedImageSize(width, height);
     uint32 threads = enc->threads;
-    if ((size_t)width * (size_t)height < kAstcThreadedMinTexels)
+    if ((size_t)((width + 3) / 4) * (size_t)((height + 3) / 4) < kAstcThreadedMinBlocks)
         threads = 1;
 
     astcenc_error status;
@@ -272,22 +381,61 @@ static void decodeBC5ToRGBA8Image(DecodeFn fn, LatteTextureLoaderCtx* tl, uint8*
 // the output, which is byte-identical to one pass. Images whose RGBA8 copy fits the budget are one band, as before.
 static constexpr size_t kAstcScratchBudgetBytes = 8u * 1024u * 1024u;
 
+// The scratch lives on after the call so the next texture does not map, fault in and zero a fresh block of memory
+// (the decode writes every byte of the band before the encode reads it). Only a modest buffer is kept; a band that
+// needs more is allocated for the one call.
+static constexpr size_t kAstcScratchKeepBytes = 2u * 1024u * 1024u;
+
 template<typename BandDecodeFn>
 static void decodeBandsAndCompressASTC(LatteTextureLoaderCtx* tl, uint8* outputData, astcenc_profile profile, BandDecodeFn decodeBand)
 {
+    // Counted here because this is the one place every BC to ASTC transcode (BC1 to BC5) passes through.
+    PerfTelemetry::Get().textureTranscodes.fetch_add(1, std::memory_order_relaxed);
+    PerfTelemetry::ScopedTimer transcodeTimer(PerfTelemetry::Get().textureTranscodeNs);
+
     const sint32 width = tl->width;
     const sint32 height = tl->height;
     const size_t rowBytes = (size_t)width * 4u;
     size_t bandRows = std::max<size_t>(4, (kAstcScratchBudgetBytes / std::max<size_t>(rowBytes, 1)) & ~(size_t)3);
     bandRows = std::min<size_t>(bandRows, (size_t)((height + 3) & ~3));
-    std::vector<uint8> rgba8(rowBytes * std::min<size_t>(bandRows, (size_t)height));
+    const size_t scratchBytes = rowBytes * std::min<size_t>(bandRows, (size_t)height);
+    thread_local std::unique_ptr<uint8[]> keptScratch;
+    thread_local size_t keptScratchBytes = 0;
+    std::unique_ptr<uint8[]> tempScratch;
+    uint8* rgba8;
+    if (scratchBytes <= kAstcScratchKeepBytes)
+    {
+        if (keptScratchBytes < scratchBytes)
+        {
+            keptScratch.reset(new uint8[scratchBytes]);
+            keptScratchBytes = scratchBytes;
+        }
+        rgba8 = keptScratch.get();
+    }
+    else
+    {
+        tempScratch.reset(new uint8[scratchBytes]);
+        rgba8 = tempScratch.get();
+    }
+
+    const uint32 threads = astcEncodeThreadCount();
     const size_t blocksX = (size_t)((width + 3) / 4);
+    // Block rows are independent, so a band is decoded in chunks of whole block rows by whichever thread is free.
+    constexpr sint32 kDecodeChunkRows = 16;
     for (sint32 y0 = 0; y0 < height; y0 += (sint32)bandRows)
     {
         const sint32 y1 = std::min<sint32>(height, y0 + (sint32)bandRows);
-        decodeBand(rgba8.data(), y0, y1);
+        if (threads > 1 && blocksX * (size_t)((y1 - y0 + 3) / 4) >= kAstcThreadedMinBlocks)
+        {
+            astcParallelChunks(threads, (size_t)((y1 - y0 + kDecodeChunkRows - 1) / kDecodeChunkRows), [&](size_t chunk) {
+                const sint32 ya = y0 + (sint32)chunk * kDecodeChunkRows;
+                decodeBand(rgba8 + (size_t)(ya - y0) * rowBytes, ya, std::min<sint32>(y1, ya + kDecodeChunkRows));
+            });
+        }
+        else
+            decodeBand(rgba8, y0, y1);
         uint8* bandOutput = outputData + (size_t)(y0 / 4) * blocksX * 16u;
-        if (!astcCompressRGBA8Image(rgba8.data(), width, y1 - y0, profile, bandOutput))
+        if (!astcCompressRGBA8Image(rgba8, width, y1 - y0, profile, bandOutput))
         {
             std::fill(outputData, outputData + astcCompressedImageSize(width, height), 0);
             return;

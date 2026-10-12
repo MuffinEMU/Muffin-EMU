@@ -43,6 +43,10 @@ namespace PerfTelemetry
 		// BC to ASTC re-encode on a GPU without BC). Wall time on the calling thread, per slice.
 		std::atomic<uint32_t> textureDecodes{0};
 		std::atomic<uint64_t> textureDecodeNs{0};
+		// Of that work, the BC to ASTC re-encode (decode the BC blocks, then ASTC-encode them). Counted where the
+		// encode runs, so it also includes the re-encode of copied raw blocks, which textureDecodes does not.
+		std::atomic<uint32_t> textureTranscodes{0};
+		std::atomic<uint64_t> textureTranscodeNs{0};
 
 		// Latte (GPU) thread breakdown, wall nanoseconds on that thread. The first three are disjoint
 		// slices of a draw; the rest are parts of those slices (see ios_perf_log_window for the layout).
