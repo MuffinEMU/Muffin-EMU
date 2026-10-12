@@ -21,7 +21,10 @@ struct ContentView: View {
     // onboardingCompleted: Settings > About > "Show welcome guide again" clears that flag and posts a notification, and a
     // cover bound to the flag tried to present while the Settings sheet was still up (SwiftUI drops that), and once
     // shown could not be closed because only the flag was reset on Finish.
-    @State private var showOnboarding = OnboardingState.shouldPresentOnFirstLaunch
+    // In the app that was moved to, the welcome that offers to bring the old install's data over comes first and the
+    // guide follows it, so the two covers never compete for the same moment.
+    @State private var showMigrationWelcome = MigrationWelcome.shouldOffer
+    @State private var showOnboarding = OnboardingState.shouldPresentOnFirstLaunch && !MigrationWelcome.shouldOffer
     @State private var selectedGame: GameMetadata?
     @State private var showingGameBrowser = true
     @State private var showingFavorites = false
@@ -134,6 +137,13 @@ struct ContentView: View {
         // (GameBrowserView), so the guide waits for that sheet to finish going away.
         .onReceive(NotificationCenter.default.publisher(for: .muffinReopenOnboarding)) { _ in
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { showOnboarding = true }
+        }
+        .fullScreenCover(isPresented: $showMigrationWelcome, onDismiss: {
+            MigrationWelcome.markSeen()
+            // An import brings the guide's finished flag with it; otherwise the guide is next.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { showOnboarding = OnboardingState.shouldPresentOnFirstLaunch }
+        }) {
+            MigrationWelcomeView { showMigrationWelcome = false }
         }
         .fullScreenCover(isPresented: $showOnboarding, onDismiss: { onboardingCompleted = true }) {
             OnboardingView(gameManager: gameManager) {

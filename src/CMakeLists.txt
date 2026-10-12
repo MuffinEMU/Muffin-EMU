@@ -82,7 +82,7 @@ if(BUILD_HEADLESS_DYLIB)
     set_target_properties(CemuBin PROPERTIES
         CXX_VISIBILITY_PRESET default
         VISIBILITY_INLINES_HIDDEN OFF
-        MACOSX_FRAMEWORK_IDENTIFIER com.kiddreads.MuffinEMU.Cemu
+        MACOSX_FRAMEWORK_IDENTIFIER dev.muffinemu.MuffinEMU.Cemu
         FRAMEWORK TRUE
     )
     if(IOS)
@@ -356,7 +356,7 @@ if(IOS AND MUFFIN_BENCH_ENGINE)
 	target_compile_definitions(CemuBin PRIVATE MBENCH_COMMIT="${MBENCH_COMMIT}")
 	set_target_properties(CemuBin PROPERTIES
 		OUTPUT_NAME "${MUFFIN_BENCH_NAME}"
-		MACOSX_FRAMEWORK_IDENTIFIER "com.kiddreads.bench.${MUFFIN_BENCH_NAME}")
+		MACOSX_FRAMEWORK_IDENTIFIER "dev.muffinemu.bench.${MUFFIN_BENCH_NAME}")
 	target_link_options(CemuBin PRIVATE
 		"-Wl,-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/ios/Bench/MuffinBenchEngine.exports")
 endif()

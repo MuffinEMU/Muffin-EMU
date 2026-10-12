@@ -91,14 +91,14 @@ struct PreviewPadSection: View {
                      document: layoutDocument,
                      contentType: .muffinLayout,
                      defaultFilename: previewLayoutPreset.title) { _ in }
-        .fileImporter(isPresented: $showingLayoutImporter, allowedContentTypes: [.muffinLayout]) { result in
+        .fileImporter(isPresented: $showingLayoutImporter, allowedContentTypes: [.muffinLayout, .legacyMuffinLayout]) { result in
             importLayout(result)
         }
         .fileExporter(isPresented: $showingColourExporter,
                      document: MuffinColourDocument(previewPad.colourFile),
                      contentType: .muffinColour,
                      defaultFilename: previewPad.colourFile.name) { _ in }
-        .fileImporter(isPresented: $showingColourImporter, allowedContentTypes: [.muffinColour]) { result in
+        .fileImporter(isPresented: $showingColourImporter, allowedContentTypes: [.muffinColour, .legacyMuffinColour]) { result in
             importColour(result)
         }
         .alert(previewFileAlertTitle,
@@ -226,7 +226,7 @@ struct PreviewPadSection: View {
 
 /// Layout document whose contents are set when export is requested. Empty until then.
 private struct LazyLayoutDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.muffinLayout] }
+    static var readableContentTypes: [UTType] { [.muffinLayout, .legacyMuffinLayout] }
     var file: MuffinLayoutFile?
 
     init(file: MuffinLayoutFile?) { self.file = file }

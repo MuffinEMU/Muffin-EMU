@@ -7,14 +7,14 @@ name: MuffinEMUAudit
 # audit workflow (.github/workflows/build-audit-ipa.yml) sets MUFFIN_CORE_DIR to that checkout; XcodeGen
 # substitutes ${...} from the environment. Relative paths resolve against this file's directory.
 options:
-  bundleIdPrefix: com.kiddreads
+  bundleIdPrefix: dev.muffinemu
   deploymentTarget:
     iOS: '15.0'
   xcodeVersion: '15.0'
 
 settings:
   PRODUCT_NAME: MuffinEMUAudit
-  PRODUCT_BUNDLE_IDENTIFIER: com.kiddreads.MuffinEMUAudit
+  PRODUCT_BUNDLE_IDENTIFIER: dev.muffinemu.MuffinEMUAudit
   SDKROOT: iphoneos
   IPHONEOS_DEPLOYMENT_TARGET: '15.0'
   SWIFT_VERSION: '5.0'

@@ -33,6 +33,11 @@ enum MigrationArchive {
     /// Where exports are written, in Documents so Files lists them.
     static let folderName = "Migration"
 
+    /// The bundle identifier before the move to dev.muffinemu.
+    static let legacyBundleID = "com.kiddreads.MuffinEMU"
+    /// Whether this is the app that is being moved away from, not the one that is moved to.
+    static var isLegacyApp: Bool { Bundle.main.bundleIdentifier == legacyBundleID }
+
     static let settingsPath = "_meta/settings.json"
     static let statePath = "_meta/appstate.json"
 

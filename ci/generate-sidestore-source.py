@@ -42,7 +42,16 @@ import os
 import plistlib, os, re, sys, urllib.request, urllib.error, urllib.parse, argparse
 
 PAGES = "https://muffinemu.github.io/MuffinEMU"
-BUNDLE_ID = "com.kiddreads.MuffinEMU"
+BUNDLE_ID = "dev.muffinemu.MuffinEMU"
+# The identifier the app had before it moved. A bundle identifier is an app's identity on iOS, so the old
+# app and the new one are two entries in the same source: releases from NEW_IDENTITY_FROM on are the new app,
+# everything before it stays on the old one, and the old entry's last version stays installable so people
+# can still open it and export. (The SOURCE identifiers further down are deliberately left as they were:
+# SideStore keys a source by its identifier, and changing one would make every existing subscriber's source
+# look like a different, new one.)
+LEGACY_BUNDLE_ID = "com.kiddreads.MuffinEMU"
+# First numbered release built with BUNDLE_ID: the one after the release that carries the export.
+NEW_IDENTITY_FROM = (10, 0, 0)
 # vX.Y, or vX.Y.Z for a point release. X.Y.Z sorts after X.Y (patch counts as 0 when absent).
 VERSION_TAG = re.compile(r"^v(\d+)\.(\d+)(?:\.(\d+))?$")
 
@@ -382,11 +391,75 @@ def build_source(rels, asset_name, ident, name, subtitle, app_subtitle, extra_no
     versions.sort(key=lambda v: v["key"], reverse=True)
     for v in versions:
         del v["key"]
-    versions = versions[:1]
+    # Newest of each identity: the new app, and the last build of the old one.
+    newest_new = [v for v in versions if is_new_identity(v["version"])][:1]
+    newest_old = [v for v in versions if not is_new_identity(v["version"])][:1]
+
     src = build_source_shell(ident, name, subtitle, app_subtitle, extra_note, asset_name)
-    src["apps"][0]["versions"] = versions
+    new_app = src["apps"][0]
+    apps = []
+    if newest_new:
+        new_app["versions"] = newest_new
+        apps.append(new_app)
+    if newest_old and newest_new:
+        apps.append(legacy_app(new_app, newest_old))
+    elif newest_old:
+        # Nothing built with the new identifier yet: the feed is exactly what it was, on the old identifier.
+        same = json.loads(json.dumps(new_app))
+        same["bundleIdentifier"] = LEGACY_BUNDLE_ID
+        same["versions"] = newest_old
+        apps.append(same)
+    src["apps"] = apps
+    src["featuredApps"] = [apps[0]["bundleIdentifier"]]
     src["news"] = news_for(rels, count=1)
+    if newest_new and newest_old:
+        # Once both exist, the old entry says where to go and notifies once; the release card stays quiet.
+        for n in src["news"]:
+            n["notify"] = False
+        src["news"].insert(0, move_news(rels))
     return src
+
+
+def is_new_identity(version):
+    """Whether a numbered release (a "9.9" or "10.0.1" string) was built with the new bundle identifier."""
+    parts = tuple(int(p) for p in version.split(".")) + (0,) * (3 - len(version.split(".")))
+    return parts >= NEW_IDENTITY_FROM
+
+
+MOVE_NOTE = (
+    "MuffinEMU has moved to a new app. This entry is the last version of the old one and gets no more updates. "
+    "Open Settings > Move to the new MuffinEMU in it and choose Export everything, then install the new MuffinEMU "
+    "from this source and choose Import from the old MuffinEMU. Your games, saves and settings stay in the old "
+    "app until you delete it, so nothing is lost if you wait.")
+
+
+def legacy_app(app, versions):
+    """The old identity's entry: same app, its own bundle identifier, and a note on where to go."""
+    old = json.loads(json.dumps(app))
+    old["bundleIdentifier"] = LEGACY_BUNDLE_ID
+    old["name"] = "MuffinEMU (old version)"
+    old["subtitle"] = "Moved to a new app. Export your data first."
+    old["localizedDescription"] = MOVE_NOTE + "\n\n" + app["localizedDescription"]
+    old["versions"] = versions
+    return old
+
+
+def move_news(rels):
+    """The final news item on the old entry. Dated like the newest new-identity release, so it appears with it."""
+    newest = next((r for r in sorted(rels, key=lambda r: r.get("published_at") or "", reverse=True)
+                   if VERSION_TAG.match(r.get("tag_name", "")) and not r.get("draft") and not r.get("prerelease")
+                   and is_new_identity(tag_version(VERSION_TAG.match(r["tag_name"])))), None)
+    return {
+        "title": "MuffinEMU has moved to a new app",
+        "identifier": "muffinemu-move-to-new-identity",
+        "caption": "Export your data in Settings, then install the new MuffinEMU.",
+        "date": ((newest or {}).get("published_at") or "")[:10],
+        "tintColor": "#E5652E",
+        "imageURL": HEADER_URL,
+        "url": f"{SITE}docs/installation.html",
+        "appID": LEGACY_BUNDLE_ID,
+        "notify": True,
+    }
 
 
 def news_for(rels, count=1):
@@ -419,7 +492,7 @@ def news_for(rels, count=1):
             "tintColor": "#E5652E",
             "imageURL": news_image(version),
             "url": rel.get("html_url"),
-            "appID": BUNDLE_ID,
+            "appID": BUNDLE_ID if is_new_identity(version) else LEGACY_BUNDLE_ID,
             "notify": False,
             "key": tag_key(m),
         })
@@ -582,7 +655,7 @@ def check_guards(feeds, rels):
                 bad.append(f"{fname}: the experimental feed points at the rolling `experimental` release")
             if "/releases/download/nightly/" in text or re.search(r"/releases/download/v\d+\.\d+(\.\d+)?/", text):
                 bad.append(f"{fname}: the experimental feed points at nightly or a numbered release")
-        for v in src["apps"][0]["versions"]:
+        for v in (v for app in src["apps"] for v in app["versions"]):
             m = DOWNLOAD.search(v["downloadURL"])
             tag = m.group(1) if m else ""
             title = titles.get(tag, "")

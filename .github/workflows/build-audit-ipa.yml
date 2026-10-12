@@ -1,6 +1,6 @@
 name: Build MuffinEMU Audit IPA
 
-# Builds the standalone "MuffinEMU Audit" app (tools/audit-app, bundle id com.kiddreads.MuffinEMUAudit) against a CHOSEN
+# Builds the standalone "MuffinEMU Audit" app (tools/audit-app, bundle id dev.muffinemu.MuffinEMUAudit) against a CHOSEN
 # MuffinEMU ref: checks that ref out, builds its core (Cemu.framework) fresh with -DMUFFIN_AUDIT_HOOKS=ON, builds the
 # guest program audit.rpx with devkitPPC + wut, and builds the app against both. The app installs next to MuffinEMU
 # and shares nothing with it. See docs/AUDIT.md.
@@ -498,7 +498,7 @@ jobs:
           body: |
             MuffinEMU Audit built against MuffinEMU `${{ needs.plan.outputs.ref }}` at `${{ needs.ipa.outputs.sha }}`.
 
-            A standalone diagnostic app (bundle id com.kiddreads.MuffinEMUAudit): it installs next to MuffinEMU and shares
+            A standalone diagnostic app (bundle id dev.muffinemu.MuffinEMUAudit): it installs next to MuffinEMU and shares
             nothing with it. Not a release of MuffinEMU. `MuffinEMU-Audit-*.ipa` is for SideStore / AltStore / LiveContainer,
             `*-fakesigned.ipa` for TrollStore. Reports are written to Files > MuffinEMU Audit > MuffinAuditReports.
             See docs/AUDIT.md.

@@ -97,7 +97,7 @@ print("ok: channels are separated; legacy auto-<sha> experiments are accepted by
 
 # 2. Shape of the experimental feed.
 app = f["experimental.json"]["apps"][0]
-assert app["name"] == "MuffinEMU Experimental" and app["bundleIdentifier"] == "com.kiddreads.MuffinEMU"
+assert app["name"] == "MuffinEMU Experimental" and app["bundleIdentifier"] == "dev.muffinemu.MuffinEMU"
 assert "unfinished test builds" in app["localizedDescription"] and "Stable" in app["localizedDescription"]
 vs = [v["version"] for v in app["versions"]]
 assert vs == ["2026.10.1.0905", "2026.9.30.2129", "2026.9.30.2110"], vs
@@ -156,4 +156,32 @@ leak = rel("v6.2", "Experimental: leaked (x @ 1234567)")   # an experiment publi
 expect_exit(lambda: gen.run("MuffinEMU/Muffin-EMU", None, [leak, NIGHTLY], out), "REFUSING")
 assert os.listdir(out) == [], os.listdir(out)
 print("ok: a refused run leaves the existing feeds untouched")
+# 7. The move to the new bundle identifier. Before any release carries it, the stable feed is the old app
+# alone, on the old identifier. Once one does, the new app is an entry of its own, the old one keeps its last
+# build with a pointer to the new app, and the source identifier does not change.
+out, f = run(STABLE + [NIGHTLY], FakeApi())
+apps = f["apps.json"]["apps"]
+assert [a["bundleIdentifier"] for a in apps] == ["com.kiddreads.MuffinEMU"], apps
+assert apps[0]["name"] == "MuffinEMU" and "moved" not in apps[0]["localizedDescription"].lower()
+assert f["apps.json"]["featuredApps"] == ["com.kiddreads.MuffinEMU"]
+
+CUT = [rel("v10.0", "MuffinEMU 10.0", body="## What changed\n\n- New identity\n"), rel("v9.9", "MuffinEMU 9.9", body="## What changed\n\n- Export\n"),
+       rel("v9.8", "MuffinEMU 9.8")]
+out, f = run(CUT + [NIGHTLY], FakeApi())
+feed = f["apps.json"]
+assert feed["identifier"] == "com.kiddreads.MuffinEMU.source", "the source identifier must not change"
+assert [a["bundleIdentifier"] for a in feed["apps"]] == ["dev.muffinemu.MuffinEMU", "com.kiddreads.MuffinEMU"], feed["apps"]
+new_app, old_app = feed["apps"]
+assert [v["version"] for v in new_app["versions"]] == ["10.0"] and [v["version"] for v in old_app["versions"]] == ["9.9"]
+assert old_app["versions"][0]["downloadURL"] == f"{BASE}/v9.9/MuffinEMU.ipa", "the old entry keeps its last build installable"
+assert old_app["localizedDescription"].startswith("MuffinEMU has moved") and "Export everything" in old_app["localizedDescription"]
+assert feed["featuredApps"] == ["dev.muffinemu.MuffinEMU"]
+ids = {n["identifier"]: n for n in feed["news"]}
+assert ids["muffinemu-move-to-new-identity"]["appID"] == "com.kiddreads.MuffinEMU" and ids["muffinemu-move-to-new-identity"]["notify"] is True
+assert ids["muffinemu-v10.0"]["appID"] == "dev.muffinemu.MuffinEMU" and ids["muffinemu-v10.0"]["notify"] is False
+assert f["trollstore.json"]["identifier"] == "com.kiddreads.MuffinEMU.trollstore"
+assert all(a["bundleIdentifier"] == "dev.muffinemu.MuffinEMU" for n in ("nightly.json",) for a in f[n]["apps"])
+assert gen.is_new_identity("10.0") and gen.is_new_identity("10.0.1") and gen.is_new_identity("11.3") and not gen.is_new_identity("9.9") and not gen.is_new_identity("9.9.2")
+print("ok: new identity is its own app entry, the old entry keeps its last build with a pointer, source identifiers are unchanged")
+
 print("all generator tests passed")

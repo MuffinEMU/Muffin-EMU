@@ -6,14 +6,14 @@ name: MuffinEMU Bench
 # (the same ordering the real MuffinEMU app.yml relies on for its own Cemu.framework),
 # and a bare "MuffinBench.entitlements" means the file sitting right next to this one.
 options:
-  bundleIdPrefix: com.kiddreads
+  bundleIdPrefix: dev.muffinemu
   deploymentTarget:
     iOS: '15.0'
   xcodeVersion: '15.0'
 
 settings:
   PRODUCT_NAME: MuffinBench
-  PRODUCT_BUNDLE_IDENTIFIER: com.kiddreads.MuffinEMUBench
+  PRODUCT_BUNDLE_IDENTIFIER: dev.muffinemu.MuffinEMUBench
   SDKROOT: iphoneos
   IPHONEOS_DEPLOYMENT_TARGET: '15.0'
   SWIFT_VERSION: '5.0'

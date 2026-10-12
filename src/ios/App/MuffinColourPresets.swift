@@ -71,12 +71,17 @@ extension UTType {
     /// Both are plain JSON under the hood - `MuffinLayoutFile`/`MuffinColourFile` already
     /// encode as such - so the type just needs its own extension and identifier to be
     /// distinguishable in the Files app and in a share sheet, not a new serialisation.
-    static let muffinLayout = UTType(exportedAs: "com.kiddreads.muffin.layout", conformingTo: .json)
-    static let muffinColour = UTType(exportedAs: "com.kiddreads.muffin.colour", conformingTo: .json)
+    static let muffinLayout = UTType(exportedAs: "dev.muffinemu.layout", conformingTo: .json)
+    static let muffinColour = UTType(exportedAs: "dev.muffinemu.colour", conformingTo: .json)
+
+    /// The identifiers from before the app moved to dev.muffinemu. Declared as imported types that conform
+    /// to the new ones (Info-AlternateIcons.plist), so a file marked with the old identifier still opens.
+    static let legacyMuffinLayout = UTType(importedAs: "com.kiddreads.muffin.layout", conformingTo: .muffinLayout)
+    static let legacyMuffinColour = UTType(importedAs: "com.kiddreads.muffin.colour", conformingTo: .muffinColour)
 }
 
 struct MuffinLayoutDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.muffinLayout] }
+    static var readableContentTypes: [UTType] { [.muffinLayout, .legacyMuffinLayout] }
     var file: MuffinLayoutFile
 
     init(_ file: MuffinLayoutFile) { self.file = file }
@@ -90,7 +95,7 @@ struct MuffinLayoutDocument: FileDocument {
 }
 
 struct MuffinColourDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.muffinColour] }
+    static var readableContentTypes: [UTType] { [.muffinColour, .legacyMuffinColour] }
     var file: MuffinColourFile
 
     init(_ file: MuffinColourFile) { self.file = file }

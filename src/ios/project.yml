@@ -1,17 +1,17 @@
 name: MuffinEMU
 
 options:
-  bundleIdPrefix: com.kiddreads
+  bundleIdPrefix: dev.muffinemu
   deploymentTarget:
     iOS: '15.0'
   xcodeVersion: '15.0'
 
 settings:
   PRODUCT_NAME: MuffinEMU
-  # Its own identifier, so MuffinEMU installs next to Muffin instead of over it: a
-  # different identifier is a different app container, and Muffin's library, keys and
-  # saves stay exactly where they are.
-  PRODUCT_BUNDLE_IDENTIFIER: com.kiddreads.MuffinEMU
+  # Its own identifier, so MuffinEMU installs next to the old one (com.kiddreads.MuffinEMU) instead of
+  # over it: a different identifier is a different app container, and the old app's library, keys and
+  # saves stay exactly where they are until they are moved across with Settings > Move to the new MuffinEMU.
+  PRODUCT_BUNDLE_IDENTIFIER: dev.muffinemu.MuffinEMU
   SDKROOT: iphoneos
   IPHONEOS_DEPLOYMENT_TARGET: '15.0'
   CODE_SIGN_IDENTITY: iPhone Developer

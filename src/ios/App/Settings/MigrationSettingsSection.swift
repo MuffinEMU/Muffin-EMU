@@ -241,6 +241,29 @@ final class MigrationModel: ObservableObject {
     }
 }
 
+/// Progress bar, current file and Stop, for either direction.
+struct MigrationProgressRows: View {
+    @ObservedObject var model: MigrationModel
+    let title: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ProgressView(value: model.progress)
+            Text("\(title)\u{2026} \(Int(model.progress * 100))%")
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+            Text(model.detail)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(MuffinTheme.secondaryText)
+                .lineLimit(2)
+            Text("Keep MuffinEMU open on screen until this finishes.")
+                .font(.system(size: 12))
+                .foregroundColor(MuffinTheme.secondaryText)
+            Button("Stop", role: .cancel) { model.cancel() }
+        }
+        .padding(.vertical, 2)
+    }
+}
+
 /// Settings > Move to the new MuffinEMU. Two sections: export from this app, import into one.
 struct MigrationSettingsSection: View {
     @StateObject private var model = MigrationModel()
@@ -269,7 +292,9 @@ struct MigrationSettingsSection: View {
 
     private var exportSection: some View {
         Section {
-            Text("MuffinEMU is moving to a new app identity, and the new one is a separate app that starts empty. This version stops getting updates after this release. Export your data here, install the new MuffinEMU, then import it there.")
+            Text(MigrationArchive.isLegacyApp
+                 ? "MuffinEMU is moving to a new app identity, and the new one is a separate app that starts empty. This version stops getting updates after this release. Export your data here, install the new MuffinEMU, then import it there."
+                 : "Export everything writes your data to one file, to restore after a reinstall or to move to another device. To bring your data over from the old MuffinEMU, use Import below.")
                 .font(.system(size: 13))
                 .foregroundColor(MuffinTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
@@ -299,7 +324,7 @@ struct MigrationSettingsSection: View {
             }
 
             if model.phase == .exporting {
-                runningRows(title: "Exporting")
+                MigrationProgressRows(model: model, title: "Exporting")
             } else {
                 Button {
                     model.export(includeGames: includeGames)
@@ -333,11 +358,11 @@ struct MigrationSettingsSection: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         } header: {
-            SettingsSectionHeader("Move to the new MuffinEMU", icon: "arrow.right.circle", accent: .system)
+            SettingsSectionHeader(MigrationArchive.isLegacyApp ? "Move to the new MuffinEMU" : "Export everything", icon: "arrow.right.circle", accent: .system)
         } footer: {
             InfoButton.footer(
                 "Keep MuffinEMU open on screen while it runs.",
-                title: "Move to the new MuffinEMU",
+                title: MigrationArchive.isLegacyApp ? "Move to the new MuffinEMU" : "Export everything",
                 text: "Export everything writes one file to Files, in MuffinEMU > Migration. It holds your saves, installed updates and DLC, accounts, keys.txt, otp.bin and seeprom.bin, compiled shader caches, graphic packs, save states, settings, favourites and appearance.\n\nGames (the Roms folder, and base games installed into the Wii U storage) are left out unless you turn on Include games. Without them the export is much smaller, and you can copy your games into the new app in Files. Screen recordings, save backups, logs and other caches are never included. The premium unlock isn't carried over; enter it again in the new app.\n\nThe export runs only while MuffinEMU is open on screen, and keeps the screen awake. You can stop it at any time. Before it starts, MuffinEMU checks that there's enough free space, and the file is kept out of device backups.\n\nWhen it's done, share the file to the new MuffinEMU's Files folder or to another device, install the new MuffinEMU, and choose Import from the old MuffinEMU there. Delete the export afterwards to get the space back.")
         }
         .confirmationDialog("Delete this export?", isPresented: $confirmDelete, titleVisibility: .visible) {
@@ -353,27 +378,32 @@ struct MigrationSettingsSection: View {
         return "Adds about \(MigrationArchive.format(plan.gameBytes)). Off by default."
     }
 
-    private func runningRows(title: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ProgressView(value: model.progress)
-            Text("\(title)\u{2026} \(Int(model.progress * 100))%")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-            Text(model.detail)
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundColor(MuffinTheme.secondaryText)
-                .lineLimit(2)
-            Text("Keep MuffinEMU open on screen until this finishes.")
-                .font(.system(size: 12))
-                .foregroundColor(MuffinTheme.secondaryText)
-            Button("Stop", role: .cancel) { model.cancel() }
-        }
-        .padding(.vertical, 2)
-    }
-
     // MARK: Import
 
     private var importSection: some View {
         Section {
+            MigrationImportControls(model: model)
+        } header: {
+            SettingsSectionHeader("Import an export", icon: "tray.and.arrow.down", accent: .system)
+        } footer: {
+            InfoButton.footer(
+                "Merges with what's here. A newer file is never replaced without asking.",
+                title: "Import an export",
+                text: "Pick the .muffinmove file you exported from the old MuffinEMU. It can be on this device or in iCloud Drive. This also works to restore your data after reinstalling MuffinEMU.\n\nMuffinEMU checks the file first and shows what it would change. Files that aren't here yet are added, and files that are older than the export's are updated. If a file here is newer than the export's copy, you choose whether to keep it or replace it; saves that are replaced are moved to save-backups first, not deleted. Every file is checked as it is copied, so a damaged export can't leave a half-written file behind, and an interrupted import can simply be run again.\n\nIt works only while MuffinEMU is open on screen. When it finishes, close MuffinEMU and open it again.")
+        }
+    }
+}
+
+/// The import button, its progress and its confirmation. Shared by Settings and the one-time welcome in the
+/// new app, so both ask the same questions in the same words.
+struct MigrationImportControls: View {
+    @ObservedObject var model: MigrationModel
+    /// Settings shows the outcome beside Export; the welcome has nowhere else to show it.
+    var showsMessage = false
+    @State private var restoreSettings = true
+
+    var body: some View {
+        Group {
             Toggle(isOn: $restoreSettings) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Restore settings too")
@@ -396,7 +426,7 @@ struct MigrationSettingsSection: View {
                     Button("Stop", role: .cancel) { model.cancel() }
                 }
             case .importing:
-                runningRows(title: "Importing")
+                MigrationProgressRows(model: model, title: "Importing")
             default:
                 Button {
                     model.choose()
@@ -406,13 +436,13 @@ struct MigrationSettingsSection: View {
                 }
                 .disabled(model.isBusy || model.phase == .confirming)
             }
-        } header: {
-            SettingsSectionHeader("Import an export", icon: "tray.and.arrow.down", accent: .system)
-        } footer: {
-            InfoButton.footer(
-                "Merges with what's here. A newer file is never replaced without asking.",
-                title: "Import an export",
-                text: "Pick the .muffinmove file you exported from the old MuffinEMU. It can be on this device or in iCloud Drive. This also works to restore your data after reinstalling MuffinEMU.\n\nMuffinEMU checks the file first and shows what it would change. Files that aren't here yet are added, and files that are older than the export's are updated. If a file here is newer than the export's copy, you choose whether to keep it or replace it; saves that are replaced are moved to save-backups first, not deleted. Every file is checked as it is copied, so a damaged export can't leave a half-written file behind, and an interrupted import can simply be run again.\n\nIt works only while MuffinEMU is open on screen. When it finishes, close MuffinEMU and open it again.")
+
+            if showsMessage, let message = model.message {
+                Text(message)
+                    .font(.system(size: 12))
+                    .foregroundColor(model.messageIsError ? .red : MuffinTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .confirmationDialog("Import this export?", isPresented: confirming, titleVisibility: .visible) {
             if let found = model.analysis {
@@ -437,7 +467,8 @@ struct MigrationSettingsSection: View {
 
     private var confirmationText: String {
         guard let found = model.analysis else { return "" }
-        let source = found.isFromThisApp ? "this app" : "another MuffinEMU install"
+        let source = found.isFromThisApp ? "this app"
+            : found.manifest.sourceBundleID == MigrationArchive.legacyBundleID ? "the old MuffinEMU" : "another MuffinEMU install"
         var text = "Made by \(source), version \(found.manifest.appVersion). It adds \(found.newFiles.count) files and updates \(found.updatedFiles.count), about \(MigrationArchive.format(found.bytesToWrite)); \(found.identicalCount) are already here."
         if !found.manifest.includesGames { text += " Games aren't in this export." }
         if !found.conflicts.isEmpty {
