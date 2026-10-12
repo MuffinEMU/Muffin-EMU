@@ -23,15 +23,14 @@ import TouchLabUI
 
 /// Settings for the TouchLab control styles.
 ///
-/// The TouchLab styles are OPTIONS. MuffinEMU's own pad stays the default: an empty
-/// `schemeKey` means "not using TouchLab". Making a TouchLab style the default later is a
-/// one-value change to `defaultScheme` (see INTEGRATION.md, "Promoting a style to the
-/// default") - deliberately not done yet.
+/// Zone is the default style. An empty `schemeKey` is MuffinEMU's original pad, still offered
+/// as "MuffinEMU (classic)". A player who already picked something keeps it, because
+/// `@AppStorage` only falls back to `defaultScheme` when nothing is stored.
 enum TouchLabSettings {
     /// "" (off - MuffinEMU's own pad) or a TouchLab scheme id: "zone", "float",
     /// "adaptive", "frame".
     static let schemeKey = "muffin.pad.touchlabScheme"
-    static let defaultScheme = ""
+    static let defaultScheme = "zone"
 
     /// Float's right side: "stick" (floating camera stick) or "swipe".
     static let floatCameraKey = "muffin.touchlab.float.camera"

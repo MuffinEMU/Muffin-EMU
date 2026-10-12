@@ -71,7 +71,7 @@ Both IPAs are attached to every [release](https://github.com/MuffinEMU/Muffin-EM
 | **Game formats** | WUA, decrypted games, encrypted disc images with your own `keys.txt`, and encrypted game folders (`title.tmd`, `title.tik` and `.app` files, with optional update and DLC subfolders). DLC and updates install from the app. |
 | **Renderers** | Metal by default. Vulkan through MoltenVK, with a choice of MoltenVK 1.4.3 or 1.2.8. |
 | **CPU** | A multi-core interpreter out of the box, and the AArch64 recompiler when a JIT enabler is attached. |
-| **On-screen GamePad** | Laid out from measurements of a real Wii U GamePad, with an optional analog stick, comfort controls, skins and a per-control layout editor. Four more control styles (Zone, Float, Adaptive and Frame) can be chosen in Settings, and the original stays the default. MFi and Bluetooth controllers work alongside it. |
+| **On-screen GamePad** | Laid out from measurements of a real Wii U GamePad, with an optional analog stick, comfort controls, skins and a per-control layout editor. Zone is the default control style; the original pad and the other styles (Float, Adaptive, Frame, Racing, Arc and Showcase) can be chosen in Settings. MFi and Bluetooth controllers work alongside it. |
 | **Displays** | Single screen, both screens, or the TV image on an external display. |
 | **Extras** | Graphic packs, save transfer, a persistent shader cache, and an in-app launch log for troubleshooting. |
 | **Themes** | 31 app icons, each with a matching theme. |
