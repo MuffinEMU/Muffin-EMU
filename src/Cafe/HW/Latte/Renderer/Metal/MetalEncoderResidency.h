@@ -8,7 +8,7 @@
 /// every draw of a pass. Declaring a resource a second time with the same usage and stages does
 /// nothing, so this lets the caller skip the call. Declare() reports whether a call is needed and
 /// what it has to carry: a resource seen before with fewer usage or stage bits than now needs one
-/// more call with the union of both.
+/// more call with this draw's own bits, exactly as it would have been declared without the skip.
 ///
 /// Every resource it remembers is retained until Reset(), so a resource that is freed and replaced
 /// while the encoder is still open can never hand its address to a different resource that would then
@@ -22,8 +22,8 @@ public:
     MetalEncoderResidency(const MetalEncoderResidency&) = delete;
     MetalEncoderResidency& operator=(const MetalEncoderResidency&) = delete;
 
-    /// Returns true when useResource() has to be called, with `usage` and `stages` widened to what
-    /// has to be declared (the union with anything declared before).
+    /// Returns true when useResource() has to be called with `usage` and `stages` (left unchanged, so
+    /// the call carries this draw's own bits and hazard tracking matches an unskipped declaration).
     bool Declare(MTL::Resource* resource, uint32& usage, uint32& stages)
     {
         if ((m_used + 1) * 2 > m_slots.size())
@@ -36,8 +36,6 @@ public:
                 return false;
             slot.usage |= usage;
             slot.stages |= stages;
-            usage = slot.usage;
-            stages = slot.stages;
             return true;
         }
         resource->retain();
