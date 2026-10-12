@@ -180,7 +180,7 @@ enum SettingsBackup {
     // MARK: - Value conversion
 
     /// A UserDefaults value as something JSONSerialization writes, or nil for a value that has no JSON form.
-    private static func jsonValue(_ value: Any) -> Any? {
+    static func jsonValue(_ value: Any) -> Any? {
         switch value {
         case let number as NSNumber:
             if !isBoolean(number), !number.doubleValue.isFinite { return nil }
@@ -201,7 +201,7 @@ enum SettingsBackup {
     }
 
     /// The reverse: a value read from the file as something UserDefaults can store.
-    private static func plistValue(_ value: Any) -> Any? {
+    static func plistValue(_ value: Any) -> Any? {
         switch value {
         case let number as NSNumber:
             if !isBoolean(number), !number.doubleValue.isFinite { return nil }
@@ -295,5 +295,46 @@ enum SettingsBackup {
             return isBoolean(number) == isBoolean(given)
         }
         return true
+    }
+}
+
+// MARK: - App state for a move to another install
+
+extension SettingsBackup {
+    static let stateFormatName = "MuffinEMU app state"
+
+    /// Whether a key is state the settings file leaves out but a move should carry: favourites, the
+    /// theme, per-game learned layouts and the like. Never the premium unlock, which is tied to the
+    /// install it was entered on; per-game options travel in the settings file.
+    private static func isMovedState(_ key: String) -> Bool {
+        guard key.hasPrefix("muffin."), !SettingsDefaults.isPortableSetting(key) else { return false }
+        return !key.hasPrefix("muffin.premium.") && key != PerGameSettingsStore.storageKey
+    }
+
+    /// Everything isMovedState picks, as one JSON document in the same value format as the settings file.
+    static func exportStateData() throws -> Data {
+        var state: [String: Any] = [:]
+        for (key, value) in UserDefaults.standard.dictionaryRepresentation() where isMovedState(key) {
+            if let converted = jsonValue(value) { state[key] = converted }
+        }
+        let document: [String: Any] = ["format": stateFormatName, "version": 1, "state": state]
+        return try JSONSerialization.data(withJSONObject: document, options: [.sortedKeys])
+    }
+
+    /// Adds the keys the file carries that this install doesn't have yet. A value already set here is
+    /// left as it is. Returns how many keys were added.
+    @discardableResult
+    static func mergeState(_ data: Data) -> Int {
+        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              root["format"] as? String == stateFormatName,
+              let state = root["state"] as? [String: Any] else { return 0 }
+        let defaults = UserDefaults.standard
+        var added = 0
+        for (key, raw) in state where isMovedState(key) && defaults.object(forKey: key) == nil {
+            guard let value = plistValue(raw) else { continue }
+            defaults.set(value, forKey: key)
+            added += 1
+        }
+        return added
     }
 }
