@@ -179,10 +179,10 @@ public enum ShowcaseColourPresets {
         glyphs: ["default": ShowcaseRGBA("#2F6B55")],
         outline: ShowcaseRGBA("#7FB39B"))
 
-    /// Extra: a translucent smoky grey that lets the picture show through; meant for low opacity.
+    /// Extra: a translucent steel grey that lets the picture show through; meant for low opacity.
     public static let smoke = ShowcaseColourFile(
         name: "Smoke",
-        fills: ["default": ShowcaseRGBA("#4A4D55", 0.78), "home": ShowcaseRGBA("#5A5E68", 0.85)],
+        fills: ["default": ShowcaseRGBA("#757C88", 0.70), "home": ShowcaseRGBA("#5C626D", 0.82)],
         glyphs: ["default": ShowcaseRGBA("#F2F3F5")],
         outline: ShowcaseRGBA("#FFFFFF", 0.55),
         pressedAlphaBoost: 0.14)
@@ -199,46 +199,46 @@ public enum ShowcaseColourPresets {
     // Built on the Classic look's rules: translucent bodies so the picture tints them, the
     // system row a step darker than the clusters, glyphs that clear 4.5:1 on their own fill.
 
-    /// Refined: frosted white with a cool blue cast and slate lettering.
+    /// Refined: ice blues with a deep slate-blue system row.
     public static let frost = ShowcaseColourFile(
         name: "Frost",
-        fills: ["face": ShowcaseRGBA("#EEF4FA", 0.78), "dpad": ShowcaseRGBA("#D3DEEA", 0.78),
-                "shoulderL": ShowcaseRGBA("#B9C8D8", 0.80), "shoulderR": ShowcaseRGBA("#B9C8D8", 0.80),
-                "start": ShowcaseRGBA("#4C5D72", 0.85), "select": ShowcaseRGBA("#4C5D72", 0.85),
-                "home": ShowcaseRGBA("#4C5D72", 0.85),
-                "stickL": ShowcaseRGBA("#DCE6F1", 0.88), "stickR": ShowcaseRGBA("#DCE6F1", 0.88),
-                "default": ShowcaseRGBA("#EEF4FA", 0.78)],
-        glyphs: ["default": ShowcaseRGBA("#2C3A4B"), "start": ShowcaseRGBA("#F2F7FC"),
-                 "select": ShowcaseRGBA("#F2F7FC"), "home": ShowcaseRGBA("#F2F7FC")],
-        outline: ShowcaseRGBA("#F4F8FC", 0.85),
+        fills: ["face": ShowcaseRGBA("#D6E9FB", 0.8), "dpad": ShowcaseRGBA("#A9CBEF", 0.8),
+                "shoulderL": ShowcaseRGBA("#8FB5E0", 0.82), "shoulderR": ShowcaseRGBA("#8FB5E0", 0.82),
+                "start": ShowcaseRGBA("#2F5D8A", 0.86), "select": ShowcaseRGBA("#2F5D8A", 0.86),
+                "home": ShowcaseRGBA("#2F5D8A", 0.86),
+                "stickL": ShowcaseRGBA("#C4DCF5", 0.88), "stickR": ShowcaseRGBA("#C4DCF5", 0.88),
+                "default": ShowcaseRGBA("#D6E9FB", 0.8)],
+        glyphs: ["default": ShowcaseRGBA("#173451"),
+                 "start": ShowcaseRGBA("#F2F8FE"), "select": ShowcaseRGBA("#F2F8FE"), "home": ShowcaseRGBA("#F2F8FE")],
+        outline: ShowcaseRGBA("#F2F8FE", 0.85),
         pressedAlphaBoost: 0.12)
 
-    /// Refined: charcoal with warm ember-orange lettering and an orange-tinted outline.
+    /// Refined: glowing ember red-brown with warm cream lettering and an orange outline.
     public static let ember = ShowcaseColourFile(
         name: "Ember",
-        fills: ["face": ShowcaseRGBA("#2B2A2C", 0.82), "dpad": ShowcaseRGBA("#353336", 0.82),
-                "shoulderL": ShowcaseRGBA("#403C3E", 0.84), "shoulderR": ShowcaseRGBA("#403C3E", 0.84),
-                "start": ShowcaseRGBA("#4A4447", 0.86), "select": ShowcaseRGBA("#4A4447", 0.86),
-                "home": ShowcaseRGBA("#4A4447", 0.86),
-                "stickL": ShowcaseRGBA("#3A3739", 0.88), "stickR": ShowcaseRGBA("#3A3739", 0.88),
-                "default": ShowcaseRGBA("#2B2A2C", 0.82)],
-        glyphs: ["default": ShowcaseRGBA("#FF9A4D"), "shoulderL": ShowcaseRGBA("#FFB27A"), "shoulderR": ShowcaseRGBA("#FFB27A")],
+        fills: ["face": ShowcaseRGBA("#7A2E20", 0.84), "dpad": ShowcaseRGBA("#5E2318", 0.84),
+                "shoulderL": ShowcaseRGBA("#4C1C14", 0.86), "shoulderR": ShowcaseRGBA("#4C1C14", 0.86),
+                "start": ShowcaseRGBA("#9A3B26", 0.88), "select": ShowcaseRGBA("#9A3B26", 0.88),
+                "home": ShowcaseRGBA("#9A3B26", 0.88),
+                "stickL": ShowcaseRGBA("#682719", 0.9), "stickR": ShowcaseRGBA("#682719", 0.9),
+                "default": ShowcaseRGBA("#7A2E20", 0.84)],
+        glyphs: ["default": ShowcaseRGBA("#FFD7A8")],
         outline: ShowcaseRGBA("#FF8A3D", 0.55),
         pressedAlphaBoost: 0.12,
-        shell: ShowcaseRGBA("#161516"))
+        shell: ShowcaseRGBA("#1A0C09"))
 
-    /// Refined: muted sage greens on a soft grey-green, with deep forest lettering.
+    /// Refined: deep sage and olive greens with forest lettering.
     public static let sage = ShowcaseColourFile(
         name: "Sage",
-        fills: ["face": ShowcaseRGBA("#E3EBDF", 0.80), "dpad": ShowcaseRGBA("#C3D1BC", 0.80),
-                "shoulderL": ShowcaseRGBA("#A9BBA1", 0.82), "shoulderR": ShowcaseRGBA("#A9BBA1", 0.82),
-                "start": ShowcaseRGBA("#4F6248", 0.86), "select": ShowcaseRGBA("#4F6248", 0.86),
-                "home": ShowcaseRGBA("#4F6248", 0.86),
-                "stickL": ShowcaseRGBA("#D2DDCC", 0.88), "stickR": ShowcaseRGBA("#D2DDCC", 0.88),
-                "default": ShowcaseRGBA("#E3EBDF", 0.80)],
-        glyphs: ["default": ShowcaseRGBA("#2E3D29"), "start": ShowcaseRGBA("#F1F5EE"),
-                 "select": ShowcaseRGBA("#F1F5EE"), "home": ShowcaseRGBA("#F1F5EE")],
-        outline: ShowcaseRGBA("#F3F7F0", 0.80),
+        fills: ["face": ShowcaseRGBA("#B9C9A7", 0.8), "dpad": ShowcaseRGBA("#93A884", 0.8),
+                "shoulderL": ShowcaseRGBA("#7C916D", 0.82), "shoulderR": ShowcaseRGBA("#7C916D", 0.82),
+                "start": ShowcaseRGBA("#3F5236", 0.86), "select": ShowcaseRGBA("#3F5236", 0.86),
+                "home": ShowcaseRGBA("#3F5236", 0.86),
+                "stickL": ShowcaseRGBA("#A5B894", 0.88), "stickR": ShowcaseRGBA("#A5B894", 0.88),
+                "default": ShowcaseRGBA("#B9C9A7", 0.8)],
+        glyphs: ["default": ShowcaseRGBA("#22301C"),
+                 "start": ShowcaseRGBA("#F1F5EE"), "select": ShowcaseRGBA("#F1F5EE"), "home": ShowcaseRGBA("#F1F5EE")],
+        outline: ShowcaseRGBA("#EEF3EA", 0.75),
         pressedAlphaBoost: 0.12)
 
     /// Refined: dusk indigo with peach lettering; the face buttons a shade lighter than the rest.
@@ -254,6 +254,35 @@ public enum ShowcaseColourPresets {
         outline: ShowcaseRGBA("#B9A8FF", 0.50),
         pressedAlphaBoost: 0.12,
         shell: ShowcaseRGBA("#14122A"))
+
+    /// Cheerful: butter yellow and sunflower, with a tangerine system row.
+    public static let sunny = ShowcaseColourFile(
+        name: "Sunny",
+        fills: ["face": ShowcaseRGBA("#FFE48A", 0.86), "dpad": ShowcaseRGBA("#FFD166", 0.86),
+                "shoulderL": ShowcaseRGBA("#FFB84D", 0.86), "shoulderR": ShowcaseRGBA("#FFB84D", 0.86),
+                "start": ShowcaseRGBA("#FF7A45", 0.9), "select": ShowcaseRGBA("#FF7A45", 0.9),
+                "home": ShowcaseRGBA("#FF7A45", 0.9),
+                "stickL": ShowcaseRGBA("#FFE9A8", 0.9), "stickR": ShowcaseRGBA("#FFE9A8", 0.9),
+                "default": ShowcaseRGBA("#FFE48A", 0.86)],
+        glyphs: ["default": ShowcaseRGBA("#5B3A00"),
+                 "start": ShowcaseRGBA("#FFFFFF"), "select": ShowcaseRGBA("#FFFFFF"), "home": ShowcaseRGBA("#FFFFFF")],
+        outline: ShowcaseRGBA("#FFF6D6", 0.85),
+        pressedAlphaBoost: 0.12)
+
+    /// Cheerful: four candy-coloured face buttons on pale pink, with a grape system row.
+    public static let candy = ShowcaseColourFile(
+        name: "Candy",
+        fills: ["A": ShowcaseRGBA("#F2557A", 0.88), "B": ShowcaseRGBA("#FFC857", 0.88), "X": ShowcaseRGBA("#4CC9F0", 0.88),
+                "Y": ShowcaseRGBA("#7BD389", 0.88), "dpad": ShowcaseRGBA("#F4E3F0", 0.84),
+                "shoulderL": ShowcaseRGBA("#E3CCF4", 0.86), "shoulderR": ShowcaseRGBA("#E3CCF4", 0.86),
+                "start": ShowcaseRGBA("#A970FF", 0.90), "select": ShowcaseRGBA("#A970FF", 0.90),
+                "home": ShowcaseRGBA("#A970FF", 0.90),
+                "stickL": ShowcaseRGBA("#F7E6F3", 0.90), "stickR": ShowcaseRGBA("#F7E6F3", 0.90),
+                "default": ShowcaseRGBA("#FBEFF6", 0.84)],
+        glyphs: ["default": ShowcaseRGBA("#3A1030"),
+                 "start": ShowcaseRGBA("#FFFFFF"), "select": ShowcaseRGBA("#FFFFFF"), "home": ShowcaseRGBA("#FFFFFF")],
+        outline: ShowcaseRGBA("#FFFFFF", 0.85),
+        pressedAlphaBoost: 0.12)
 }
 
 /// Every preset the showcase pad offers: the Wii U's own colours first, then variants and extras.
@@ -262,6 +291,7 @@ public enum ShowcaseColourPreset: String, CaseIterable, Identifiable, Sendable {
     case zeldaGold, famicom, snesAmerica
     case midnight, mint, smoke, roseGold
     case frost, ember, sage, dusk
+    case sunny, candy
 
     public var id: String { rawValue }
 
@@ -281,6 +311,8 @@ public enum ShowcaseColourPreset: String, CaseIterable, Identifiable, Sendable {
         case .ember:        return ShowcaseColourPresets.ember
         case .sage:         return ShowcaseColourPresets.sage
         case .dusk:         return ShowcaseColourPresets.dusk
+        case .sunny:        return ShowcaseColourPresets.sunny
+        case .candy:        return ShowcaseColourPresets.candy
         }
     }
 }
