@@ -10,6 +10,7 @@
 
 #ifndef ENABLE_WXWIDGETS
 #include "gui/uikit/NativeKeyboard.h"
+#include "gui/uikit/NativeDialogs.h"
 #endif
 
 #define SWKBD_FORM_STRING_MAX_LENGTH	(4096) // counted in 16-bit characters
@@ -102,7 +103,8 @@ static void swkbd_pollNativeInput()
 		return;
 	std::u16string text;
 	bool accepted = false;
-	if (!WindowSystem::PollNativeKeyboard(text, accepted))
+	// The app's own card (NativeDialogs) when it is taking dialogs, else the UIKit alert.
+	if (!NativeDialogs::PollKeyboard(text, accepted) && !WindowSystem::PollNativeKeyboard(text, accepted))
 		return;
 	const size_t length = std::min(text.size(), size_t(SWKBD_FORM_STRING_MAX_LENGTH - 1));
 	for (size_t i = 0; i < length; ++i)
@@ -114,6 +116,9 @@ static void swkbd_pollNativeInput()
 		swkbdInternalState->decideButtonWasPressed = true;
 #endif
 }
+
+// Guide text of the current input form, shown in the app's card while the field is empty.
+static std::u16string s_nativeHint;
 
 static void swkbd_showNativeInput(size_t cursor)
 {
@@ -131,6 +136,16 @@ static void swkbd_showNativeInput(size_t cursor)
 			limit = std::min(limit, fixedLimit);
 	}
 	limit = std::clamp(limit, 0, SWKBD_FORM_STRING_MAX_LENGTH - 1);
+	{
+		NativeDialogs::KeyboardRequest request;
+		request.text = text;
+		request.hint = s_nativeHint;
+		request.maxLength = static_cast<uint32_t>(limit);
+		// The game doesn't say single or multi line; long fields (messages) get a text area.
+		request.multiline = limit > 200 || text.find(u'\n') != std::u16string::npos;
+		if (NativeDialogs::PublishKeyboard(std::move(request)))
+			return;
+	}
 	WindowSystem::ShowNativeKeyboard(std::move(text), limit, cursor);
 #endif
 }
@@ -138,6 +153,7 @@ static void swkbd_showNativeInput(size_t cursor)
 static void swkbd_hideNativeInput()
 {
 #ifndef ENABLE_WXWIDGETS
+	NativeDialogs::WithdrawKeyboard();
 	WindowSystem::HideNativeKeyboard();
 #endif
 }
@@ -281,6 +297,12 @@ uint32 SwkbdAppearInputForm(const swkbdAppearArg_t* appearArg)
 		swkbdInternalState->formStringLength = 0;
 	}
 	swkbdInternalState->formStringBuffer[swkbdInternalState->formStringLength] = 0;
+	s_nativeHint.clear();
+	if (const uint16be* info = appearArg->infoText.GetPtr())
+	{
+		for (sint32 i = 0; i < 256 && (uint16)info[i] != 0; i++)
+			s_nativeHint.push_back((char16_t)(uint16)info[i]);
+	}
 	swkbd_showNativeInput(appearArg->cursorIndex);
 	return 1;
 }
@@ -301,6 +323,7 @@ uint32 SwkbdAppearKeyboard(const SwkbdKeyboardArg_t* keyboardArg)
 	swkbdInternalState->formStringBuffer[0] = '\0';
 	swkbdInternalState->formStringLength = 0;
 	swkbdInternalState->keyboardArg = *keyboardArg;
+	s_nativeHint.clear();
 	swkbd_showNativeInput(std::max<sint32>(0, keyboardArg->receiverArg.cursorPos));
 	return 1;
 }
