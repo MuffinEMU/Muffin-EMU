@@ -50,3 +50,14 @@ move_tag() {
     w gh api -X POST "repos/$REPO/git/refs" -f "ref=refs/tags/$tag" -f "sha=$sha"
   fi
 }
+
+# The version stamped into an IPA (CFBundleShortVersionString). An install source must list this
+# exact string or SideStore refuses the install ("does not match the version specified by the source").
+ipa_version() {
+  python3 -c '
+import plistlib, sys, zipfile
+z = zipfile.ZipFile(sys.argv[1])
+name = next(n for n in z.namelist() if n.count("/") == 2 and n.startswith("Payload/") and n.endswith(".app/Info.plist"))
+print(plistlib.loads(z.read(name))["CFBundleShortVersionString"])
+' "$1"
+}
