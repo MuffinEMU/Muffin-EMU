@@ -800,6 +800,13 @@ bool cemu_bridge_native_overlay(void);
 /// poll. Copy it; the pointer is per-thread. Call from the main thread.
 const char* cemu_bridge_native_overlay_text(void);
 
+/// Progress of the shader and pipeline cache loading screen, which the app draws natively
+/// (while cemu_bridge_native_overlay() is on the core leaves everything but the background
+/// image to it). Returns the phase: 0 not loading, 1 shaders, 2 pipelines. loaded and total
+/// are file counts for that phase (total can be 0). Cheap and thread-safe; either pointer
+/// may be NULL.
+int32_t cemu_bridge_cache_loading(uint32_t* loaded, uint32_t* total);
+
 // MARK: - Audio
 //
 // Eight of CemuConfig's audio fields, plain (not ConfigValue-wrapped) sint32/bool/enum

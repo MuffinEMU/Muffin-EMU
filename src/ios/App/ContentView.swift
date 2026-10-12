@@ -2213,6 +2213,10 @@ struct EmulatorViewOptimized: View {
             // display this layer cannot reach, so it hands back to the core's own drawing.
             NativeCoreOverlayView(active: nativeOverlayActive, topInset: overlayTopInset)
 
+            // The shader and pipeline cache loading screen: title, progress bar and counter, drawn
+            // here instead of by the core. The core still draws the game's boot image behind it.
+            NativeCacheLoadingView(active: nativeOverlayActive, tvFrame: touchLabScreens.tvFrame)
+
             VStack(spacing: 0) {
                 HStack(alignment: .center, spacing: 12) {
                     Button(action: {

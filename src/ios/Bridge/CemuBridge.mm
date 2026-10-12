@@ -2933,6 +2933,17 @@ const char* cemu_bridge_native_overlay_text(void) {
     return text.c_str();
 }
 
+int32_t cemu_bridge_cache_loading(uint32_t* loaded, uint32_t* total) {
+    uint32 loadedCount = 0;
+    uint32 totalCount = 0;
+    const uint32 phase = LatteShaderCache_GetNativeProgress(loadedCount, totalCount);
+    if (loaded)
+        *loaded = loadedCount;
+    if (total)
+        *total = totalCount;
+    return (int32_t)phase;
+}
+
 // MARK: - Audio
 //
 // tv_audio_enabled/pad_audio_enabled/tv_channels/pad_channels/tv_volume/pad_volume/
