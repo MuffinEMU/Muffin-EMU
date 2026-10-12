@@ -64,6 +64,10 @@ public final class ArcPad: ControlScheme {
     /// Called whenever lock, fine-tune or calibration state changes, so a settings UI can
     /// rebind. Not called for ordinary presses.
     public var onSettingsChange: (() -> Void)?
+    /// For the view drawing this pad: called on the same changes, so it redraws even when the
+    /// change came from a button or a settings row and no touch is on the pad. Separate from
+    /// `onSettingsChange` so a host binding that never knocks the view's own hook out.
+    public var onStateChange: (() -> Void)?
     /// The hands as laid out (radius is the one actually used, which may be smaller than
     /// the fitted one when the screen has no room for it).
     public private(set) var hands: [ArcHand] = []
@@ -166,6 +170,18 @@ public final class ArcPad: ControlScheme {
 
     /// Old name for `resetToDefault`.
     public func resetCalibration() { resetToDefault() }
+
+    // MARK: Availability
+
+    public enum Action: Sendable { case calibrate, fineTune }
+
+    /// Why calibrating or fine-tuning can't start right now, in words for a settings row, or nil
+    /// when it can. `isLive` is whether an Arc pad is on screen (a game is running).
+    public static func blocker(for action: Action, isLive: Bool, isLocked: Bool) -> String? {
+        if !isLive { return action == .calibrate ? "Start a game to calibrate" : "Start a game to fine-tune" }
+        if isLocked { return action == .calibrate ? "Unlock Arc positions to recalibrate" : "Unlock Arc positions to fine-tune" }
+        return nil
+    }
 
     // MARK: Calibration
 
@@ -431,7 +447,7 @@ public final class ArcPad: ControlScheme {
     private var orientation: String { Self.orientationKey(context.size) }
 
     private func save() { onProfiles?(profiles) }
-    private func notify() { onSettingsChange?() }
+    private func notify() { onSettingsChange?(); onStateChange?() }
     private func relayout() { if context.size != .zero { layout(context) } }
 
     // MARK: Persistence

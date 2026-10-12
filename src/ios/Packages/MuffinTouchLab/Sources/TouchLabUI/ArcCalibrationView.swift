@@ -115,9 +115,8 @@ public final class ArcCalibrationView: UIView {
 
     private func refresh() {
         guard let phase = scheme.calibrationPhase else {
-            scheme.drawsPrompts = true
-            scheme.onSettingsChange = previousHandler
-            removeFromSuperview()
+            // Calibration ended from outside (locked, reset): close the card the same way Cancel does.
+            finish(false)
             return
         }
         stepLabel.text = scheme.calibrationStep
@@ -147,7 +146,11 @@ public final class ArcCalibrationView: UIView {
         finish(false)
     }
 
+    private var finished = false
+
     private func finish(_ accepted: Bool) {
+        guard !finished else { return }
+        finished = true
         scheme.drawsPrompts = true
         scheme.onSettingsChange = previousHandler
         removeFromSuperview()
@@ -159,16 +162,20 @@ public extension TouchPadView {
     /// The pad's scheme when it is Arc.
     var arcScheme: ArcPad? { engine.scheme as? ArcPad }
 
-    /// Starts Arc's guided calibration and shows the prompt card over this pad (as a
-    /// sibling above it, since the pad takes touches itself). Returns false when the scheme
-    /// is not Arc, positions are locked, or the pad is not in a view yet.
+    /// Starts Arc's guided calibration and shows the prompt card on top of this pad (a subview,
+    /// so it moves and sizes with the pad, with `hitTest` giving its buttons their touches).
+    /// Returns false when the scheme is not Arc, positions are locked, or the pad is not on
+    /// screen yet.
     @discardableResult
     func presentArcCalibration(completion: ((Bool) -> Void)? = nil) -> Bool {
-        guard let arc = arcScheme, let host = superview, arc.startCalibration() else { return false }
+        guard let arc = arcScheme, window != nil else { return false }
+        if arc.isCalibrating, let existing = arcOverlay as? ArcCalibrationView, existing.superview === self { return true }
+        guard arc.startCalibration() else { return false }
         let overlay = ArcCalibrationView(scheme: arc)
-        overlay.frame = frame
+        overlay.frame = bounds
         overlay.onFinished = completion
-        host.insertSubview(overlay, aboveSubview: self)
+        addSubview(overlay)
+        arcOverlay = overlay
         return true
     }
 }

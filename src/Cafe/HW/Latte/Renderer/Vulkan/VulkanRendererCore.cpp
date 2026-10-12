@@ -1183,6 +1183,30 @@ void VulkanRenderer::draw_setRenderPass()
 		return;
 	}
 	draw_endRenderPass();
+	{
+		uint32 colourCount = 0, c0dims = 0, c0fmt = 0, depthFmt = 0;
+		for (auto& cb : fboVk->colorBuffer)
+		{
+			if (!cb.texture)
+				continue;
+			if (colourCount++ == 0)
+			{
+				sint32 w, h;
+				cb.texture->baseTexture->GetEffectiveSize(w, h, cb.texture->firstMip);
+				c0dims = (((uint32)w & 0xFFFF) << 16) | ((uint32)h & 0xFFFF);
+				c0fmt = (uint32)cb.texture->baseTexture->format;
+			}
+		}
+		if (fboVk->depthBuffer.texture)
+			depthFmt = ((uint32)fboVk->depthBuffer.texture->baseTexture->format & 0xFFFF) | (fboVk->depthBuffer.hasStencil ? 0x80000000u : 0u);
+		TraceOp(OpKind::RenderPass, colourCount, c0dims, c0fmt, depthFmt);
+		if (colourCount > 1)
+			cemuLog_logOnce(LogType::Force, "Vulkan: first render pass with {} colour targets this session (frame {})", colourCount, (uint32)LatteGPUState.frameCounter);
+		if (depthFmt & 0x80000000u)
+			cemuLog_logOnce(LogType::Force, "Vulkan: first render pass with a depth+stencil target this session (frame {}, game format {:04x})", (uint32)LatteGPUState.frameCounter, depthFmt & 0xFFFF);
+		if ((c0dims >> 16) > 2048 || (c0dims & 0xFFFF) > 2048)
+			cemuLog_logOnce(LogType::Force, "Vulkan: first render pass with a target over 2048 px this session (frame {}, {}x{})", (uint32)LatteGPUState.frameCounter, c0dims >> 16, c0dims & 0xFFFF);
+	}
 	if (m_state.descriptorSetsChanged)
 		sync_inputTexturesChanged();
 
@@ -1433,6 +1457,17 @@ void VulkanRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32
 	}
 
 	auto vkObjPipeline = pipeline_info->m_vkrObjPipeline;
+	{
+		const bool streamoutOn = LatteGPUState.contextRegister[mmVGT_STRMOUT_EN] != 0;
+		const uint32 traceFlags = (hostIndexType != INDEX_TYPE::NONE ? 1u : 0u) | (streamoutOn ? 2u : 0u) | (geometryShader ? 4u : 0u) | (vkObjPipeline->GetPipeline() == VK_NULL_HANDLE ? 8u : 0u);
+		TraceOp(vkObjPipeline->GetPipeline() == VK_NULL_HANDLE ? OpKind::DrawSkipped : OpKind::Draw, count, instanceCount, traceFlags);
+		if (streamoutOn)
+			cemuLog_logOnce(LogType::Force, "Vulkan: first draw with stream-out this session (frame {}, {} vertices); stream-out is emulated with a storage buffer", (uint32)LatteGPUState.frameCounter, count);
+		if (geometryShader)
+			cemuLog_logOnce(LogType::Force, "Vulkan: first draw with a geometry shader this session (frame {}, pipeline {})", (uint32)LatteGPUState.frameCounter, vkObjPipeline->GetPipeline() == VK_NULL_HANDLE ? "skipped, none on this device" : "built");
+		if (vkObjPipeline->GetPipeline() == VK_NULL_HANDLE)
+			cemuLog_logOnce(LogType::Force, "Vulkan: first draw skipped for want of a pipeline (frame {}, {} vertices, geometry shader {}, stream-out {})", (uint32)LatteGPUState.frameCounter, count, geometryShader ? "yes" : "no", streamoutOn ? "yes" : "no");
+	}
 	if (vkObjPipeline->GetPipeline() == VK_NULL_HANDLE)
 	{
 		// invalid/uninitialized pipeline (still compiling, failed, or skipped because the device can't run it, e.g. no geometry shader).

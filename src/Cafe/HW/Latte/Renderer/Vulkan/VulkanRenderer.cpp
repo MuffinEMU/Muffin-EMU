@@ -2230,6 +2230,37 @@ void VulkanRenderer::Shutdown()
 void IOSBridge_VulkanDeviceLost(const char* why);
 #endif
 
+void VulkanRenderer::TraceOp(OpKind kind, uint32 a, uint32 b, uint32 c, uint32 d)
+{
+	const uint64 seq = m_opTraceSeq.fetch_add(1, std::memory_order_relaxed);
+	m_opTrace[seq % kOpTraceSize] = {seq + 1, (uint32)LatteGPUState.frameCounter, (uint8)kind, a, b, c, d};
+}
+
+void VulkanRenderer::DumpOpTrace()
+{
+	static const char* names[] = {"draw", "draw skipped (no pipeline)", "render pass", "texture upload", "readback", "submit"};
+	const uint64 total = m_opTraceSeq.load();
+	const uint64 first = total > kOpTraceSize ? total - kOpTraceSize : 0;
+	cemuLog_log(LogType::Force, "Vulkan: the last {} recorded operations before the device was lost (oldest first):", total - first);
+	for (uint64 i = first; i < total; i++)
+	{
+		const OpTraceEntry e = m_opTrace[i % kOpTraceSize];
+		if (e.seq != i + 1)
+			continue;
+		switch ((OpKind)e.kind)
+		{
+		case OpKind::Draw: case OpKind::DrawSkipped:
+			cemuLog_log(LogType::Force, "  #{} frame {} {}: {} vertices x {} instances, flags {:#x}", e.seq, e.frame, names[e.kind], e.a, e.b, e.c); break;
+		case OpKind::RenderPass:
+			cemuLog_log(LogType::Force, "  #{} frame {} render pass: {} colour target(s), first {}x{} fmt {:04x}, depth fmt {:04x}{}", e.seq, e.frame, e.a, e.b >> 16, e.b & 0xFFFF, e.c, e.d & 0xFFFF, (e.d >> 31) ? " + stencil" : ""); break;
+		case OpKind::TextureUpload:
+			cemuLog_log(LogType::Force, "  #{} frame {} texture upload: {}x{} mip {} fmt {:04x}, {} bytes", e.seq, e.frame, e.a >> 16, e.a & 0xFFFF, e.b, e.c, e.d); break;
+		default:
+			cemuLog_log(LogType::Force, "  #{} frame {} {} {} {} {} {}", e.seq, e.frame, names[e.kind], e.a, e.b, e.c, e.d); break;
+		}
+	}
+}
+
 void VulkanRenderer::HandleDeviceLost(const char* what)
 {
 	if (m_deviceLost.exchange(true))
@@ -2239,6 +2270,7 @@ void VulkanRenderer::HandleDeviceLost(const char* what)
 	w.gpuError.store(true);
 	w.gpuErrorCode.store((int32_t)VK_ERROR_DEVICE_LOST);
 	w.gpuPresumedLost.store(true);
+	DumpOpTrace();
 #if BOOST_OS_IOS
 	IOSBridge_VulkanDeviceLost(what);
 #endif
@@ -2668,6 +2700,7 @@ void VulkanRenderer::SubmitCommandBuffer(VkSemaphore signalSemaphore, VkSemaphor
 {
 	draw_endRenderPass();
 
+	TraceOp(OpKind::Submit, m_recordedDrawcalls);
 	occlusionQuery_notifyEndCommandBuffer();
 
 	vkEndCommandBuffer(m_state.currentCommandBuffer);
@@ -4340,10 +4373,75 @@ void VulkanRenderer::texture_clearDepthSlice(LatteTexture* hostTexture, uint32 s
 	barrier_image<ANY_TRANSFER, ANY_TRANSFER | IMAGE_READ | IMAGE_WRITE>(vkTexture, subresourceRange, VK_IMAGE_LAYOUT_GENERAL);
 }
 
+// Block size and bytes per block of the formats GetTextureFormatInfoVK() hands out, or false for one it doesn't know.
+static bool VulkanUploadBlockInfo(VkFormat fmt, uint32& blockW, uint32& blockH, uint32& bytesPerBlock)
+{
+	blockW = blockH = 1;
+	switch (fmt)
+	{
+	case VK_FORMAT_BC1_RGBA_SRGB_BLOCK: case VK_FORMAT_BC1_RGBA_UNORM_BLOCK: case VK_FORMAT_BC4_SNORM_BLOCK: case VK_FORMAT_BC4_UNORM_BLOCK:
+		blockW = blockH = 4; bytesPerBlock = 8; return true;
+	case VK_FORMAT_BC2_SRGB_BLOCK: case VK_FORMAT_BC2_UNORM_BLOCK: case VK_FORMAT_BC3_SRGB_BLOCK: case VK_FORMAT_BC3_UNORM_BLOCK:
+	case VK_FORMAT_BC5_SNORM_BLOCK: case VK_FORMAT_BC5_UNORM_BLOCK: case VK_FORMAT_ASTC_4x4_UNORM_BLOCK: case VK_FORMAT_ASTC_4x4_SRGB_BLOCK:
+		blockW = blockH = 4; bytesPerBlock = 16; return true;
+	case VK_FORMAT_R4G4_UNORM_PACK8: case VK_FORMAT_R8_SNORM: case VK_FORMAT_R8_UINT: case VK_FORMAT_R8_UNORM:
+		bytesPerBlock = 1; return true;
+	case VK_FORMAT_A1R5G5B5_UNORM_PACK16: case VK_FORMAT_R4G4B4A4_UNORM_PACK16: case VK_FORMAT_R5G6B5_UNORM_PACK16: case VK_FORMAT_D16_UNORM:
+	case VK_FORMAT_R16_SFLOAT: case VK_FORMAT_R16_SNORM: case VK_FORMAT_R16_UINT: case VK_FORMAT_R16_UNORM: case VK_FORMAT_R8G8_SNORM: case VK_FORMAT_R8G8_UNORM:
+		bytesPerBlock = 2; return true;
+	case VK_FORMAT_A2B10G10R10_UNORM_PACK32: case VK_FORMAT_B10G11R11_UFLOAT_PACK32: case VK_FORMAT_D24_UNORM_S8_UINT: case VK_FORMAT_D32_SFLOAT:
+	case VK_FORMAT_D32_SFLOAT_S8_UINT: // the depth aspect is the larger of the two copies
+	case VK_FORMAT_R16G16_SFLOAT: case VK_FORMAT_R16G16_UNORM: case VK_FORMAT_R32_SFLOAT: case VK_FORMAT_R32_UINT:
+	case VK_FORMAT_R8G8B8A8_SINT: case VK_FORMAT_R8G8B8A8_SNORM: case VK_FORMAT_R8G8B8A8_SRGB: case VK_FORMAT_R8G8B8A8_UINT: case VK_FORMAT_R8G8B8A8_UNORM:
+		bytesPerBlock = 4; return true;
+	case VK_FORMAT_R16G16B16A16_SFLOAT: case VK_FORMAT_R16G16B16A16_SNORM: case VK_FORMAT_R16G16B16A16_UINT: case VK_FORMAT_R16G16B16A16_UNORM:
+	case VK_FORMAT_R32G32_SFLOAT: case VK_FORMAT_R32G32_UINT:
+		bytesPerBlock = 8; return true;
+	case VK_FORMAT_R32G32B32A32_SFLOAT: case VK_FORMAT_R32G32B32A32_UINT:
+		bytesPerBlock = 16; return true;
+	default:
+		return false;
+	}
+}
+
 void VulkanRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, sint32 height, sint32 depth, void* pixelData, sint32 sliceIndex, sint32 mipIndex, uint32 compressedImageSize)
 {
 	auto vkTexture = (LatteTextureVk*)hostTexture;
 	auto vkImageObj = vkTexture->GetImageObj();
+
+	FormatInfoVK texFormatInfo;
+	GetTextureFormatInfoVK(hostTexture->format, hostTexture->isDepth, hostTexture->dim, 0, 0, &texFormatInfo);
+
+	// The copy below reads width x height texels out of the staging buffer and writes them into the level. Apple GPUs fault
+	// (a GPU address fault that loses the whole device) when either runs past its allocation, where other drivers return zero,
+	// and the Metal renderer guards exactly this. So: never write outside the level, and never read past the staging allocation.
+	if (width <= 0 || height <= 0 || mipIndex < 0 || mipIndex >= (sint32)hostTexture->mipLevels)
+	{
+		cemuLog_logOnce(LogType::Force, "Vulkan: skipped a texture upload with an impossible size ({}x{} mip {} of {}, format {:04x})", width, height, mipIndex, (sint32)hostTexture->mipLevels, (uint32)hostTexture->format);
+		return;
+	}
+	sint32 levelWidth, levelHeight;
+	hostTexture->GetSize(levelWidth, levelHeight, mipIndex);
+	uint32 blockW = 1, blockH = 1, bytesPerBlock = 0;
+	const bool knownLayout = VulkanUploadBlockInfo(texFormatInfo.vkImageFormat, blockW, blockH, bytesPerBlock);
+	// source rows keep the length the decoder wrote, even when the level is narrower than the slice
+	const uint32 sourceRowTexels = (uint32)(((uint32)width + blockW - 1) / blockW * blockW);
+	uint32 copyWidth = std::min<uint32>(width, levelWidth);
+	uint32 copyHeight = std::min<uint32>(height, levelHeight);
+	if (copyWidth != (uint32)width || copyHeight != (uint32)height)
+		cemuLog_logOnce(LogType::Force, "Vulkan: a texture upload was larger than its level ({}x{} into {}x{}, mip {}, format {:04x}); copying the part that fits", width, height, levelWidth, levelHeight, mipIndex, (uint32)hostTexture->format);
+	uint64 requiredBytes = 0;
+	if (knownLayout)
+	{
+		const uint64 rows = (copyHeight + blockH - 1) / blockH;
+		const uint64 rowBytes = (uint64)(sourceRowTexels / blockW) * bytesPerBlock;
+		const uint64 lastRowBytes = (uint64)((copyWidth + blockW - 1) / blockW) * bytesPerBlock;
+		requiredBytes = (rows - 1) * rowBytes + lastRowBytes;
+		if (requiredBytes > compressedImageSize)
+			cemuLog_logOnce(LogType::Force, "Vulkan: a texture upload had less data than the slice needs ({} of {} bytes, {}x{} mip {}, format {:04x}); the missing part is zero", compressedImageSize, requiredBytes, width, height, mipIndex, (uint32)hostTexture->format);
+	}
+
+	TraceOp(OpKind::TextureUpload, (((uint32)width & 0xFFFF) << 16) | ((uint32)height & 0xFFFF), (uint32)mipIndex, (uint32)hostTexture->format, compressedImageSize);
 	vkImageObj->flagForCurrentCommandBuffer();
 
 	draw_endRenderPass();
@@ -4351,17 +4449,16 @@ void VulkanRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, 
 	VkMemoryRequirements memRequirements;
 	vkGetImageMemoryRequirements(m_logicalDevice, vkImageObj->m_image, &memRequirements);
 
-	uint32 uploadSize = compressedImageSize;// memRequirements.size;
+	const uint32 uploadSize = (uint32)std::max<uint64>(compressedImageSize, requiredBytes);
 	uint32 uploadAlignment = memRequirements.alignment;
 
 	VKRSynchronizedRingAllocator& vkMemAllocator = memoryManager->getStagingAllocator();
 
 	auto uploadResv = vkMemAllocator.AllocateBufferMemory(uploadSize, uploadAlignment);
 	memcpy(uploadResv.memPtr, pixelData, compressedImageSize);
+	if (uploadSize > compressedImageSize)
+		memset(uploadResv.memPtr + compressedImageSize, 0, uploadSize - compressedImageSize);
 	vkMemAllocator.FlushReservation(uploadResv);
-
-	FormatInfoVK texFormatInfo;
-	GetTextureFormatInfoVK(hostTexture->format, hostTexture->isDepth, hostTexture->dim, 0, 0, &texFormatInfo);
 
 	bool is3DTexture = hostTexture->Is3DTexture();
 
@@ -4377,8 +4474,9 @@ void VulkanRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, 
 	if (texFormatInfo.vkImageAspect == VK_IMAGE_ASPECT_COLOR_BIT || texFormatInfo.vkImageAspect == VK_IMAGE_ASPECT_DEPTH_BIT)
 	{
 		imageRegion[0].bufferOffset = uploadResv.bufferOffset;
-		imageRegion[0].imageExtent.width = width;
-		imageRegion[0].imageExtent.height = height;
+		imageRegion[0].bufferRowLength = knownLayout ? sourceRowTexels : 0;
+		imageRegion[0].imageExtent.width = copyWidth;
+		imageRegion[0].imageExtent.height = copyHeight;
 		imageRegion[0].imageExtent.depth = 1;
 		imageRegion[0].imageOffset.z = is3DTexture ? sliceIndex : 0;
 
@@ -4395,8 +4493,9 @@ void VulkanRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, 
 
 		// depth only copy
 		imageRegion[0].bufferOffset = uploadResv.bufferOffset;
-		imageRegion[0].imageExtent.width = width;
-		imageRegion[0].imageExtent.height = height;
+		imageRegion[0].bufferRowLength = knownLayout ? sourceRowTexels : 0;
+		imageRegion[0].imageExtent.width = copyWidth;
+		imageRegion[0].imageExtent.height = copyHeight;
 		imageRegion[0].imageExtent.depth = 1;
 
 		imageRegion[0].imageSubresource.mipLevel = mipIndex;
@@ -4413,8 +4512,9 @@ void VulkanRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, 
 
 		// depth copy
 		imageRegion[0].bufferOffset = uploadResv.bufferOffset;
-		imageRegion[0].imageExtent.width = width;
-		imageRegion[0].imageExtent.height = height;
+		imageRegion[0].bufferRowLength = knownLayout ? sourceRowTexels : 0;
+		imageRegion[0].imageExtent.width = copyWidth;
+		imageRegion[0].imageExtent.height = copyHeight;
 		imageRegion[0].imageExtent.depth = 1;
 
 		imageRegion[0].imageSubresource.mipLevel = mipIndex;
@@ -4424,8 +4524,9 @@ void VulkanRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, 
 
 		// stencil copy
 		imageRegion[1].bufferOffset = uploadResv.bufferOffset;
-		imageRegion[1].imageExtent.width = width;
-		imageRegion[1].imageExtent.height = height;
+		imageRegion[1].bufferRowLength = knownLayout ? sourceRowTexels : 0;
+		imageRegion[1].imageExtent.width = copyWidth;
+		imageRegion[1].imageExtent.height = copyHeight;
 		imageRegion[1].imageExtent.depth = 1;
 
 		imageRegion[1].imageSubresource.mipLevel = mipIndex;

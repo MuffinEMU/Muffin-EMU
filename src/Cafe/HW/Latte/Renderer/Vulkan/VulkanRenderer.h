@@ -189,7 +189,17 @@ public:
 	// this latches a flag, tells the platform layer to stop the title (on iOS: the bridge, which also remembers that Vulkan
 	// failed), and from then on every wait and submit in this renderer completes immediately instead of touching the dead device.
 	void HandleDeviceLost(const char* what);
+	// Last operations recorded before a device loss, so the log names what the GPU was asked to do (see DumpOpTrace).
+	enum class OpKind : uint8 { Draw, DrawSkipped, RenderPass, TextureUpload, Readback, Submit };
+	void TraceOp(OpKind kind, uint32 a = 0, uint32 b = 0, uint32 c = 0, uint32 d = 0);
+	void DumpOpTrace();
 	uint64 GetTextureBudgetBytes() const { return m_textureBudgetBytes; } // 0 = no cap
+private:
+	struct OpTraceEntry { uint64 seq; uint32 frame; uint8 kind; uint32 a, b, c, d; };
+	static constexpr uint32 kOpTraceSize = 48;
+	OpTraceEntry m_opTrace[kOpTraceSize]{};
+	std::atomic<uint64> m_opTraceSeq{0};
+public:
 	bool IsDeviceLost() const { return m_deviceLost.load(std::memory_order_acquire); }
 
 	void GetDeviceFeatures();
