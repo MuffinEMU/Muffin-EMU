@@ -38,6 +38,8 @@ struct OnScreenControlsSection: View {
     private var hapticsEnabled = ControllerLayoutSettings.defaultHaptics
     @AppStorage(ControllerLayoutSettings.autoHideWithControllerKey)
     private var autoHideWithController = ControllerLayoutSettings.defaultAutoHideWithController
+    @AppStorage(ControllerLayoutSettings.pauseWhileEditingKey)
+    private var pauseWhileEditing = ControllerLayoutSettings.defaultPauseWhileEditing
     @AppStorage(HiddenScreenSettings.hideControlsInHomeMenuKey)
     private var hideControlsInHomeMenu = false
     @AppStorage(PreviewPadStore.enabledKey)
@@ -239,6 +241,17 @@ struct OnScreenControlsSection: View {
                 Label("New pad system (preview)", systemImage: "sparkles")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
+
+            Toggle(isOn: $pauseWhileEditing) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Pause while moving the controls")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    Text("The game waits while you move or adjust the on-screen controls, and carries on when you tap Done.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .tint(MuffinTheme.pixelBlue)
 
             Toggle(isOn: $hideControlsInHomeMenu) {
                 VStack(alignment: .leading, spacing: 2) {
