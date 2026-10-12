@@ -7,6 +7,7 @@
 #include <thread>
 #include <vector>
 #include "LatteTextureLoader.h"
+#include "LatteTextureASTCCache.h"
 #include "PerfTelemetry.h"
 #include "Common/DeviceCapabilities.h"
 #if defined(__APPLE__)
@@ -389,12 +390,52 @@ static constexpr size_t kAstcScratchBudgetBytes = 8u * 1024u * 1024u;
 // needs more is allocated for the one call.
 static constexpr size_t kAstcScratchKeepBytes = 2u * 1024u * 1024u;
 
-template<typename BandDecodeFn>
-static void decodeBandsAndCompressASTC(LatteTextureLoaderCtx* tl, uint8* outputData, astcenc_profile profile, BandDecodeFn decodeBand)
+// Which decoder made an image, for the transcode cache key (with the profile in the low bit).
+enum class ASTCSourceKind : uint32 { BC1 = 1, BC2, BC3, BC4U, BC4S, BC5U, BC5S };
+
+// The cache key: two independent 64-bit hashes of the source BC blocks, read the way the decoders read
+// them, plus the size and decoder. False for a block size the decoders never see (nothing is cached then).
+static bool astcSourceKey(LatteTextureLoaderCtx* tl, ASTCSourceKind kind, astcenc_profile profile, ASTCCacheKey& key)
 {
-    // Counted here because this is the one place every BC to ASTC transcode (BC1 to BC5) passes through.
-    PerfTelemetry::Get().textureTranscodes.fetch_add(1, std::memory_order_relaxed);
+    const uint32 blockBytes = tl->bpp / 8;
+    if (blockBytes != 8 && blockBytes != 16)
+        return false;
+    uint64 a = 0x243F6A8885A308D3ull ^ ((uint64)tl->width << 32 | (uint32)tl->height);
+    uint64 b = 0x13198A2E03707344ull ^ (uint64)kind;
+    for (sint32 y = 0; y < tl->height; y += tl->stepY)
+    {
+        for (sint32 x = 0; x < tl->width; x += tl->stepX)
+        {
+            const uint8* block = LatteTextureLoader_GetInput(tl, x, y);
+            for (uint32 i = 0; i < blockBytes; i += 8)
+            {
+                uint64 v;
+                memcpy(&v, block + i, 8);
+                a = (a ^ v) * 0x9E3779B97F4A7C15ull;
+                a ^= a >> 29;
+                b += v * 0xC2B2AE3D27D4EB4Full;
+                b = ((b << 31) | (b >> 33)) * 0x165667B19E3779F9ull;
+            }
+        }
+    }
+    key = ASTCCacheKey{a, b, (uint32)tl->width, (uint32)tl->height, ((uint32)kind << 1) | (profile == ASTCENC_PRF_LDR_SRGB ? 1u : 0u)};
+    return true;
+}
+
+template<typename BandDecodeFn>
+static void decodeBandsAndCompressASTC(LatteTextureLoaderCtx* tl, uint8* outputData, astcenc_profile profile, ASTCSourceKind kind, BandDecodeFn decodeBand)
+{
+    // Timed here because this is the one place every BC to ASTC transcode (BC1 to BC5) passes through. The time
+    // includes cache lookups; textureTranscodes counts only the images actually encoded.
     PerfTelemetry::ScopedTimer transcodeTimer(PerfTelemetry::Get().textureTranscodeNs);
+    ASTCCacheKey cacheKey{};
+    const bool cacheable = astcSourceKey(tl, kind, profile, cacheKey);
+    if (cacheable && LatteTextureASTCCache_Lookup(cacheKey, outputData, astcCompressedImageSize(tl->width, tl->height)))
+    {
+        PerfTelemetry::Get().textureTranscodeCacheHits.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    PerfTelemetry::Get().textureTranscodes.fetch_add(1, std::memory_order_relaxed);
 
     const sint32 width = tl->width;
     const sint32 height = tl->height;
@@ -444,19 +485,21 @@ static void decodeBandsAndCompressASTC(LatteTextureLoaderCtx* tl, uint8* outputD
             return;
         }
     }
+    if (cacheable)
+        LatteTextureASTCCache_Store(cacheKey, outputData, astcCompressedImageSize(width, height));
 }
 
 template<astcenc_profile Profile, typename DecodeFn>
-static void decodeRGBAAndCompressASTC(LatteTextureLoaderCtx* tl, uint8* outputData, DecodeFn fn)
+static void decodeRGBAAndCompressASTC(LatteTextureLoaderCtx* tl, uint8* outputData, ASTCSourceKind kind, DecodeFn fn)
 {
-    decodeBandsAndCompressASTC(tl, outputData, Profile, [&](uint8* rgba8, sint32 y0, sint32 y1) {
+    decodeBandsAndCompressASTC(tl, outputData, Profile, kind, [&](uint8* rgba8, sint32 y0, sint32 y1) {
         decodeBCToRGBA8Image(fn, tl, rgba8, y0, y1);
     });
 }
 
 static void decodeBC4AndCompressASTC(LatteTextureLoaderCtx* tl, uint8* outputData, bool isSigned)
 {
-    decodeBandsAndCompressASTC(tl, outputData, ASTCENC_PRF_LDR, [&](uint8* rgba8, sint32 y0, sint32 y1) {
+    decodeBandsAndCompressASTC(tl, outputData, ASTCENC_PRF_LDR, isSigned ? ASTCSourceKind::BC4S : ASTCSourceKind::BC4U, [&](uint8* rgba8, sint32 y0, sint32 y1) {
         if (isSigned)
             decodeBC4ToRGBA8Image(decodeBC4Block_SNORM, tl, rgba8, true, y0, y1);
         else
@@ -466,7 +509,7 @@ static void decodeBC4AndCompressASTC(LatteTextureLoaderCtx* tl, uint8* outputDat
 
 static void decodeBC5AndCompressASTC(LatteTextureLoaderCtx* tl, uint8* outputData, bool isSigned)
 {
-    decodeBandsAndCompressASTC(tl, outputData, ASTCENC_PRF_LDR, [&](uint8* rgba8, sint32 y0, sint32 y1) {
+    decodeBandsAndCompressASTC(tl, outputData, ASTCENC_PRF_LDR, isSigned ? ASTCSourceKind::BC5S : ASTCSourceKind::BC5U, [&](uint8* rgba8, sint32 y0, sint32 y1) {
         if (isSigned)
             decodeBC5ToRGBA8Image(decodeBC5Block_SNORM, tl, rgba8, true, y0, y1);
         else
@@ -484,7 +527,7 @@ public:
 
     void decode(LatteTextureLoaderCtx* tl, uint8* outputData) override
     {
-        decodeRGBAAndCompressASTC<Profile>(tl, outputData, decodeBC1Block);
+        decodeRGBAAndCompressASTC<Profile>(tl, outputData, ASTCSourceKind::BC1, decodeBC1Block);
     }
 
     void decodePixelToRGBA(uint8* blockData, uint8* out, uint8 ox, uint8 oy) override
@@ -511,7 +554,7 @@ public:
 
     void decode(LatteTextureLoaderCtx* tl, uint8* outputData) override
     {
-        decodeRGBAAndCompressASTC<Profile>(tl, outputData, decodeBC2Block_UNORM);
+        decodeRGBAAndCompressASTC<Profile>(tl, outputData, ASTCSourceKind::BC2, decodeBC2Block_UNORM);
     }
 
     void decodePixelToRGBA(uint8* blockData, uint8* out, uint8 ox, uint8 oy) override
@@ -544,7 +587,7 @@ public:
 
     void decode(LatteTextureLoaderCtx* tl, uint8* outputData) override
     {
-        decodeRGBAAndCompressASTC<Profile>(tl, outputData, decodeBC3Block_UNORM);
+        decodeRGBAAndCompressASTC<Profile>(tl, outputData, ASTCSourceKind::BC3, decodeBC3Block_UNORM);
     }
 
     void decodePixelToRGBA(uint8* blockData, uint8* out, uint8 ox, uint8 oy) override

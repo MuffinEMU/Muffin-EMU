@@ -48,6 +48,8 @@ namespace PerfTelemetry
 		// encode runs, so it also includes the re-encode of copied raw blocks, which textureDecodes does not.
 		std::atomic<uint32_t> textureTranscodes{0};
 		std::atomic<uint64_t> textureTranscodeNs{0};
+		// BC images whose ASTC came from the on-disk transcode cache instead of the encoder.
+		std::atomic<uint32_t> textureTranscodeCacheHits{0};
 
 		// Latte (GPU) thread breakdown, wall nanoseconds on that thread. The first three are disjoint
 		// slices of a draw; the rest are parts of those slices (see ios_perf_log_window for the layout).
