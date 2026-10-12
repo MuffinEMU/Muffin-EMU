@@ -730,7 +730,43 @@ enum MuffinThemePresets {
         shadowLight: "#3A2010", shadowDark: "#000000"
     )
 
+    static let retroPixel = MuffinThemeDefinition(
+        id: "retro-pixel", name: "Retro Pixel", iconId: "retro-pixel",
+        backgroundTopLight: "#7990FF", backgroundTopDark: "#2E4099",
+        backgroundBottomLight: "#2A33C8", backgroundBottomDark: "#151A64",
+        muffinTopLightLight: "#F2AE5A", muffinTopLightDark: "#F2AE5A",
+        muffinTopDarkLight: "#8F4F1C", muffinTopDarkDark: "#9C6437",
+        creamLight: "#F4F5FA", creamDark: "#252526",
+        wrapperLight: "#DADFF2", wrapperDark: "#3D3E44",
+        blueberryNavyLight: "#2A33C8", blueberryNavyDark: "#7F85DE",
+        pixelBlueLight: "#E8283E", pixelBlueDark: "#F17E8B",
+        blushPinkLight: "#FF5A7A", blushPinkDark: "#FF9CAF",
+        brownDarkestLight: "#05050C", brownDarkestDark: "#F6F6F8",
+        brownDarkLight: "#0A0C1C", brownDarkDark: "#EDEDF1",
+        brownMidLight: "#121430", brownMidDark: "#DDDEE5",
+        sparkleCreamLight: "#FBFBFD", sparkleCreamDark: "#FBFBFD",
+        shadowLight: "#070712", shadowDark: "#000000"
+    )
+
+    static let proGoldVipGlow = MuffinThemeDefinition(
+        id: "pro-gold-vip-glow", name: "Gold VIP Glow", iconId: "pro-gold-vip-glow",
+        backgroundTopLight: "#F8C522", backgroundTopDark: "#7B5F04",
+        backgroundBottomLight: "#B47C17", backgroundBottomDark: "#4C3409",
+        muffinTopLightLight: "#F7CD61", muffinTopLightDark: "#F7CD61",
+        muffinTopDarkLight: "#AD9044", muffinTopDarkDark: "#D4B053",
+        creamLight: "#FDF7EA", creamDark: "#291F0A",
+        wrapperLight: "#FAEDCD", wrapperDark: "#3F3110",
+        blueberryNavyLight: "#999D25", blueberryNavyDark: "#D2D666",
+        pixelBlueLight: "#A94519", pixelBlueDark: "#D68866",
+        blushPinkLight: "#D6A94F", blushPinkDark: "#D6B166",
+        brownDarkestLight: "#211906", brownDarkestDark: "#FEFAF0",
+        brownDarkLight: "#47350E", brownDarkDark: "#FCF2DB",
+        brownMidLight: "#7F6019", brownMidDark: "#F9E6BC",
+        sparkleCreamLight: "#FFFCF6", sparkleCreamDark: "#FFFCF6",
+        shadowLight: "#392B0B", shadowDark: "#000000"
+    )
+
     static let all: [MuffinThemeDefinition] = [
-        bakery, adhdAwareness, audhdAwareness, autismAwareness, bisexualPride, blueberryBlast, dark, disabilityPride, doubleChocolate, equality, fixTheWorld, galaxySpace, happy, holidayFrost, lemonZest, lesbianPride, mentalHealthPride, mintMatcha, neonCyber, nonbinaryPride, proDiamondIce, proGoldVip, proHolographic, proRoyalVelvet, proAurora, progressPride, pumpkinSpice, rainbowPride, retro, spookyHalloween, strawberry, summerBeach, transgenderPride, cherryBlossom, cookiesAndCream, campfireSmores, underTheSea, rainyDay, cafeLatte
+        bakery, adhdAwareness, audhdAwareness, autismAwareness, bisexualPride, blueberryBlast, dark, disabilityPride, doubleChocolate, equality, fixTheWorld, galaxySpace, happy, holidayFrost, lemonZest, lesbianPride, mentalHealthPride, mintMatcha, neonCyber, nonbinaryPride, proDiamondIce, proGoldVip, proHolographic, proRoyalVelvet, proAurora, progressPride, pumpkinSpice, rainbowPride, retro, spookyHalloween, strawberry, summerBeach, transgenderPride, cherryBlossom, cookiesAndCream, campfireSmores, underTheSea, rainyDay, cafeLatte, retroPixel, proGoldVipGlow
     ]
 }

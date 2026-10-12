@@ -18,6 +18,7 @@ struct IconPickerView: View {
     /// silence, which is indistinguishable from a button that doesn't work - the lock
     /// badge says the icon IS locked, but nothing said that's why the tap was ignored.
     @State private var lockedMessage: String?
+    @State private var style: IconStyle = IconStyle.current
 
     var body: some View {
         // NavigationStack needs iOS 16+; this project's deployment target is 15.0.
@@ -36,10 +37,24 @@ struct IconPickerView: View {
                         .transition(.opacity)
                     }
 
+                    // Revamped icons or the originals. Switching also swaps the icon in use for its
+                    // other version, so the home screen follows the choice.
+                    Picker("Icon style", selection: $style) {
+                        ForEach(IconStyle.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 16)
+                    .onChange(of: style) { newStyle in
+                        IconStyle.current = newStyle
+                        applyStyleToCurrentIcon(newStyle)
+                    }
+
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 16)], spacing: 16) {
                         ForEach(IconManifest.all) { icon in
                             IconOptionCard(
                                 icon: icon,
+                                style: style,
                                 isSelected: isSelected(icon),
                                 isLocked: icon.isPro && !Entitlements.hasProPlan,
                                 onSelect: { select(icon) }
@@ -67,7 +82,24 @@ struct IconPickerView: View {
     }
 
     private func isSelected(_ icon: AppIconOption) -> Bool {
-        icon.id == "original" ? currentIconName == nil : currentIconName == icon.alternateIconName
+        icon.id == "original" ? currentIconName == nil : IconManifest.id(forAlternateIconName: currentIconName) == icon.id
+    }
+
+    /// After a style switch, move the icon in use to its version in the new style, if it has one.
+    private func applyStyleToCurrentIcon(_ newStyle: IconStyle) {
+        guard let id = IconManifest.id(forAlternateIconName: currentIconName),
+              let icon = IconManifest.all.first(where: { $0.id == id }),
+              icon.classic != nil,
+              !(icon.isPro && !Entitlements.hasProPlan) else { return }
+        let name = icon.alternateIconName(newStyle)
+        guard name != currentIconName else { return }
+        UIApplication.shared.setAlternateIconName(name) { error in
+            if let error {
+                errorMessage = "Couldn't switch icon: \(error.localizedDescription)"
+                return
+            }
+            currentIconName = name
+        }
     }
 
     private func select(_ icon: AppIconOption) {
@@ -78,7 +110,7 @@ struct IconPickerView: View {
             }
             return
         }
-        let name = icon.id == "original" ? nil : icon.alternateIconName
+        let name = icon.id == "original" ? nil : icon.alternateIconName(style)
         guard name != currentIconName else { return }
         withAnimation(.easeOut(duration: 0.18)) { lockedMessage = nil }
         ScreenHaptics.selectionChanged()
@@ -95,6 +127,7 @@ struct IconPickerView: View {
 
 private struct IconOptionCard: View {
     let icon: AppIconOption
+    let style: IconStyle
     let isSelected: Bool
     let isLocked: Bool
     let onSelect: () -> Void
@@ -138,7 +171,7 @@ private struct IconOptionCard: View {
                         .foregroundColor(MuffinTheme.brownDarkest)
                         .lineLimit(1)
 
-                    Text(icon.tagline)
+                    Text(icon.tagline(style))
                         .font(.system(size: 11, weight: .regular, design: .rounded))
                         .foregroundColor(MuffinTheme.brownMid)
                         .lineLimit(3)
@@ -160,7 +193,7 @@ private struct IconOptionCard: View {
 
     @ViewBuilder
     private var iconThumbnail: some View {
-        if let uiImage = IconOptionCard.previewImage(for: icon) {
+        if let uiImage = IconOptionCard.previewImage(for: icon, style: style) {
             Image(uiImage: uiImage).resizable().scaledToFill()
         } else {
             // Still possible, and still better than an empty card: name the icon rather
@@ -193,8 +226,8 @@ private struct IconOptionCard: View {
     /// App-Icon-type restriction and loads via UIImage(named:) exactly like any other
     /// image asset. AppIcon itself gets one too (AppIcon-preview), since the "original"
     /// card hit the exact same restriction.
-    static func previewImage(for icon: AppIconOption) -> UIImage? {
-        let assetName = icon.id == "original" ? "AppIcon" : icon.alternateIconName
+    static func previewImage(for icon: AppIconOption, style: IconStyle) -> UIImage? {
+        let assetName = icon.id == "original" ? "AppIcon" : icon.alternateIconName(style)
         if let cached = previewCache[assetName] {
             return cached
         }

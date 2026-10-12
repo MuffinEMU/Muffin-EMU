@@ -16,8 +16,7 @@ import SwiftUI
 struct ThemePickerView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var store = MuffinThemeStore.shared
-    private let currentIconId = UIApplication.shared.alternateIconName
-        .map { $0.replacingOccurrences(of: "AltIcon-", with: "") } ?? "original"
+    private let currentIconId = IconManifest.id(forAlternateIconName: UIApplication.shared.alternateIconName) ?? "original"
 
     private var orderedThemes: [MuffinThemeDefinition] {
         let all = MuffinThemePresets.all
