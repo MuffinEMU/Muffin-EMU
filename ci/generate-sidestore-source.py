@@ -492,8 +492,15 @@ def branch_is_live(repo, token, branch):
 
 
 def experimental_version(rel):
-    """YYYY.M.D.HHMM from when the release was published. Four parts, so it sorts above nightly's
-    three-part date and above every vX.Y, and two experiments the same day still order."""
+    """YYYY.M.D.HHMM. Four parts, so it sorts above nightly's three-part date and above every vX.Y,
+    and two experiments the same day still order.
+
+    The version stamped into the app wins, read from the "App version" line publish-experimental.sh
+    writes: SideStore refuses an install whose app version differs from the listing. Releases made
+    before that line existed fall back to when the release was published."""
+    m = re.search(r"\*\*App version:\*\* ([0-9][0-9.]*)", rel.get("body") or "")
+    if m:
+        return m.group(1)
     t = rel.get("published_at") or rel.get("created_at") or "1970-01-01T00:00:00Z"
     date, _, clock = t.partition("T")
     y, mo, d = (date.split("-") + ["0", "0", "0"])[:3]

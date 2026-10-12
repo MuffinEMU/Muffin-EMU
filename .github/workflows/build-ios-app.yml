@@ -675,6 +675,13 @@ jobs:
             fi
             LABEL="$VER"; RELEASE=true
             [ "$PUBLISH" = true ] || LABEL="$VER+$(echo "$GITHUB_SHA" | cut -c1-7)"
+          elif [ "$MUFFIN_CHANNEL" = "experimental" ]; then
+            # The Experimental source lists each build as YYYY.M.D.HHMM, and SideStore refuses an install
+            # whose app version differs from the listing. Stamp the same form here; publish-experimental.sh
+            # records it in the release notes and the source generator lists exactly that string.
+            VER=$(date -u '+%Y %m %d %H%M' | awk '{ printf "%d.%d.%d.%s", $1, $2, $3, $4 }')
+            TAG="auto-${GITHUB_SHA}"
+            LABEL=$(echo "$GITHUB_SHA" | cut -c1-7); RELEASE=false
           else
             VER=$(./ci/version.sh)
             TAG="auto-${GITHUB_SHA}"
