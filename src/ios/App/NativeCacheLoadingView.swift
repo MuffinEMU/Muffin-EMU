@@ -142,15 +142,12 @@ struct NativeCacheLoadingView: View {
     let tvFrame: CGRect?
 
     @State private var state = CacheLoadingState()
-    /// Cleared once the loading has been seen and has ended, or after `maxTicks` with none.
+    /// Cleared once the loading has been seen and has ended. Until then it polls, however long
+    /// boot takes: a read is one atomic load.
     @State private var polling = true
     @State private var seenLoading = false
-    @State private var ticks = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// 3 minutes at 4 Hz: boot normally reaches the cache loading well inside this, and a title
-    /// with no caches never shows it at all.
-    private static let maxTicks = 720
     private static let margin: CGFloat = 16
 
     var body: some View {
@@ -173,7 +170,6 @@ struct NativeCacheLoadingView: View {
             guard isActive else { return }
             polling = true
             seenLoading = false
-            ticks = 0
             state = CacheLoadingState()
         }
     }
@@ -186,8 +182,6 @@ struct NativeCacheLoadingView: View {
         } else if seenLoading {
             polling = false
         }
-        ticks += 1
-        if ticks >= Self.maxTicks { polling = false }
     }
 
     private func card(in proxy: GeometryProxy) -> some View {
