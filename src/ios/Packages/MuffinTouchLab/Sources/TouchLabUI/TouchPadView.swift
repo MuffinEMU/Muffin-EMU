@@ -19,11 +19,11 @@ public final class TouchPadView: UIView {
     public let engine: PadEngine
     public var hapticsEnabled = true
     /// Whole-pad opacity; controls, not the view, so hit testing is unaffected.
-    public var controlOpacity: CGFloat = 0.85 { didSet { setNeedsDisplay() } }
+    public var controlOpacity: CGFloat = 0.85 { didSet { invalidatePad(full: true) } }
     /// Colours for the classic schemes (see `PadStyle`); nil = Classic.
-    public var colourPreset: ShowcaseColourPreset? { didSet { setNeedsDisplay() } }
+    public var colourPreset: ShowcaseColourPreset? { didSet { invalidatePad(full: true) } }
     /// The polished look (see `PadSettings.showcaseStyle`); off draws the earlier flat look.
-    public var showcaseStyle = true { didSet { if showcaseStyle != oldValue { relayout(); setNeedsDisplay() } } }
+    public var showcaseStyle = true { didSet { if showcaseStyle != oldValue { relayout(); invalidatePad(full: true) } } }
     /// Called after every input change, for HUDs and diagnostics.
     public var onChange: (() -> Void)?
     /// Where the GamePad image is, in this view's coordinates; see LayoutContext.
@@ -58,7 +58,7 @@ public final class TouchPadView: UIView {
                 pinchOrigin = nil
                 pinch.isEnabled = zone.isEditing
             }
-            setNeedsDisplay()
+            invalidatePad(full: true)
         }
     }
     private var editDrag: (key: String, start: CGPoint, origin: PadEdit, finger: TouchID)?
@@ -102,7 +102,7 @@ public final class TouchPadView: UIView {
             guard isInputEnabled != oldValue else { return }
             if !isInputEnabled { dropAll() } else { relayout(force: true) }
             updateAmbient()
-            setNeedsDisplay()
+            invalidatePad(full: true)
         }
     }
 
@@ -118,6 +118,17 @@ public final class TouchPadView: UIView {
     private let impact = UIImpactFeedbackGenerator(style: .light)
     private let snapFeedback = UISelectionFeedbackGenerator()
     private var lastPressed: Set<PadButton> = []
+    /// The still part of the Showcase scene, kept as a bitmap so a stick drag redraws only the knob.
+    private let cache = ShowcaseCache()
+    /// The scene as last built, and its split; `parts` is nil when it must be drawn whole.
+    private struct ShownScene {
+        var scene: ShowcaseScene
+        var parts: ShowcaseSceneParts?
+        var size: CGSize = .zero
+    }
+    private var shown: ShownScene?
+    /// A Showcase press is still easing, so the display link keeps the frames coming.
+    private var pressEasing = false
     /// Arc's calibration card, when showing. A subview of the pad (not a sibling in the host's
     /// hierarchy, which a SwiftUI wrapper may not route touches into); `hitTest` hands it the
     /// touches that land on its buttons.
@@ -359,8 +370,8 @@ public final class TouchPadView: UIView {
         lastPressed = pressed
         // Arc's fine-tune snap: one light tick each time a dragged control settles on a guide.
         if (engine.scheme as? ArcPad)?.takeSnapTick() == true, hapticsEnabled { snapFeedback.selectionChanged() }
+        if redraw { invalidatePad() }
         updateDisplayLink()
-        if redraw { setNeedsDisplay() }
         scheduleGlowRedraw()
         onChange?()
     }
@@ -373,23 +384,25 @@ public final class TouchPadView: UIView {
         let delay = max(0.005, expiry - engine.clock())
         glowTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
             self?.glowTimer = nil
-            self?.setNeedsDisplay()
+            self?.invalidatePad()
         }
     }
 
     private func updateDisplayLink() {
-        if engine.needsTicks, displayLink == nil {
+        // A press still easing needs a frame each refresh too, though the scheme itself needs no ticks.
+        let ticking = engine.needsTicks || pressEasing
+        if ticking, displayLink == nil {
             let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
             link.add(to: .main, forMode: .common)
             displayLink = link
-        } else if !engine.needsTicks, let link = displayLink {
+        } else if !ticking, let link = displayLink {
             link.invalidate()
             displayLink = nil
         }
     }
 
     @objc private func tick(_ link: CADisplayLink) {
-        engine.tick(time: link.timestamp)
+        if engine.needsTicks { engine.tick(time: link.timestamp) }
         changed()
     }
 
@@ -407,7 +420,7 @@ public final class TouchPadView: UIView {
         next[key] = edit
         edits = next
         editSession?.onEdits(next, final)
-        setNeedsDisplay()
+        invalidatePad(full: true)
     }
 
     private func select(_ key: String?, in zone: ZonePad) {
@@ -416,7 +429,7 @@ public final class TouchPadView: UIView {
         editSession?.selection = key
         editSession?.onSelect(key)
         snapFeedback.selectionChanged()
-        setNeedsDisplay()
+        invalidatePad(full: true)
     }
 
     private func editBegan(_ touches: Set<UITouch>, _ zone: ZonePad) {
@@ -486,6 +499,71 @@ public final class TouchPadView: UIView {
         }
     }
 
+    // MARK: Showcase scene cache
+
+    /// The Showcase look as a scene, for the schemes that wear it; nil for the flat look and Arc.
+    /// Building it steps the press easing, so it is built once per change, not once per draw.
+    private func makeScene() -> ShowcaseScene? {
+        if let showcase = engine.scheme as? ShowcasePad {
+            let scene = showcase.scene(pressed: engine.litButtons(), sticks: engine.mixer.sticks,
+                                       opacity: controlOpacity, time: CACurrentMediaTime(),
+                                       reduceMotion: UIAccessibility.isReduceMotionEnabled)
+            pressEasing = showcase.isAnimatingPress
+            return scene
+        }
+        pressEasing = false
+        if showcaseStyle && PadStyle.appliesTo(engine.scheme.info.id) {
+            return PadStyle.scene(elements: engine.render(), size: bounds.size,
+                                  look: PadStyle.look(colourPreset), opacity: controlOpacity)
+        }
+        return nil
+    }
+
+    /// Rebuilds the scene and brings the cache to it. Returns the area of the view that now looks
+    /// different (nil: none, `.infinite`: all of it).
+    private func refreshScene() -> CGRect? {
+        guard let scene = makeScene() else {
+            shown = nil
+            cache.reset()
+            return .infinite
+        }
+        let parts = scene.split()
+        // A knob that something later in the scene overlaps is not the topmost thing: draw the scene whole.
+        guard parts.knobsOnTop else {
+            shown = ShownScene(scene: scene, parts: nil, size: bounds.size)
+            cache.reset()
+            return .infinite
+        }
+        var dirty: CGRect? = cache.update(parts.base, size: bounds.size, scale: contentScaleFactor)
+        if let old = shown, let oldParts = old.parts, old.size == bounds.size {
+            if oldParts.opacity != parts.opacity { dirty = .infinite }
+            if oldParts.knobs != parts.knobs {
+                // The knobs moved: their old and new areas, shadows included.
+                var area = CGRect.null
+                for p in oldParts.knobs + parts.knobs { area = area.union(p.bounds) }
+                if !area.isNull { dirty = Self.merged(dirty, area) }
+            }
+        } else {
+            dirty = .infinite
+        }
+        shown = ShownScene(scene: scene, parts: parts, size: bounds.size)
+        return dirty
+    }
+
+    private static func merged(_ a: CGRect?, _ b: CGRect) -> CGRect {
+        guard let a else { return b }
+        return a.isInfinite ? a : a.union(b)
+    }
+
+    /// The pad's content changed: redraw what is different. `full` also redraws what the scene does not
+    /// hold (edit outlines) and anything a setting changed everywhere.
+    private func invalidatePad(full: Bool = false) {
+        let dirty = refreshScene()
+        if full { setNeedsDisplay(); return }
+        guard let dirty else { return }
+        if dirty.isInfinite { setNeedsDisplay() } else { setNeedsDisplay(dirty.insetBy(dx: -1, dy: -1)) }
+    }
+
     // MARK: Drawing
 
     public override func draw(_ rect: CGRect) {
@@ -495,20 +573,17 @@ public final class TouchPadView: UIView {
     }
 
     private func drawPad(_ g: CGContext) {
-        // Showcase has its own look (shadow, rim, dish, octagonal gate), as a scene to draw.
-        if let showcase = engine.scheme as? ShowcasePad {
-            ShowcaseDrawing.draw(showcase.scene(pressed: engine.litButtons(), sticks: engine.mixer.sticks,
-                                                opacity: controlOpacity, time: CACurrentMediaTime(),
-                                                reduceMotion: UIAccessibility.isReduceMotionEnabled),
-                                 in: g)
-            // A press still easing: draw again next frame.
-            if showcase.isAnimatingPress { DispatchQueue.main.async { [weak self] in self?.setNeedsDisplay() } }
-            return
+        // Showcase has its own look (shadow, rim, dish, octagonal gate), as a scene to draw. The scene
+        // was built when the pad last changed; a size the pad has just been given needs a fresh one.
+        if shown == nil || shown?.size != bounds.size || (shown?.parts != nil && !cache.matches(size: bounds.size, scale: contentScaleFactor)) {
+            _ = refreshScene()
         }
-        if showcaseStyle && PadStyle.appliesTo(engine.scheme.info.id) {
-            let scene = PadStyle.scene(elements: engine.render(), size: bounds.size,
-                                       look: PadStyle.look(colourPreset), opacity: controlOpacity)
-            ShowcaseDrawing.draw(scene, in: g)
+        if let shown {
+            if let parts = shown.parts {
+                cache.composite(knobs: parts.knobs, opacity: parts.opacity, in: g)
+            } else {
+                ShowcaseDrawing.draw(shown.scene, in: g)
+            }
             return
         }
         for e in engine.render() {

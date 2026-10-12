@@ -73,7 +73,7 @@ enum ShowcaseDrawing {
         g.restoreGState()
     }
 
-    private static func draw(_ p: ShowcasePrimitive, in g: CGContext) {
+    static func draw(_ p: ShowcasePrimitive, in g: CGContext) {
         let shape = path(p.shape)
         if let f = p.fill {
             if let s = p.shadow {
