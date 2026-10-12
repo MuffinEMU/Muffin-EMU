@@ -121,6 +121,8 @@ public struct PadSettings: Equatable, Sendable {
     /// The polished look for every scheme but Showcase (which is always Showcase-styled). Off is
     /// the flat look the schemes had before it, drawn by the old path unchanged.
     public var showcaseStyle: Bool
+    /// Controls the player has moved or resized, for the schemes that offer editing (Zone).
+    public var edits: PadEdits
 
     public static let defaultOpacity: CGFloat = 0.85
 
@@ -133,7 +135,9 @@ public struct PadSettings: Equatable, Sendable {
                 stickSpacing: CGFloat = 0,
                 shoulderOffset: CGFloat = 0,
                 colourPreset: ShowcaseColourPreset? = nil,
-                showcaseStyle: Bool = true) {
+                showcaseStyle: Bool = true,
+                edits: PadEdits = PadEdits()) {
+        self.edits = edits
         self.colourPreset = colourPreset
         self.showcaseStyle = showcaseStyle
         self.stick = stick

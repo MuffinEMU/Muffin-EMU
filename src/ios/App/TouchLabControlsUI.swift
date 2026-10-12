@@ -299,7 +299,9 @@ struct TouchLabLayoutPanel: View {
     @ViewBuilder private var rows: some View {
         TouchLabStylePicker()
 
-        PanelCaption(text: "\(TouchLabSettings.summary(scheme)) These styles don't support dragging individual buttons. Nothing here reaches the game.")
+        PanelCaption(text: "\(TouchLabSettings.summary(scheme)) \(scheme == TouchLabSettings.zoneStyleID ? "" : "These styles don't support dragging individual buttons. ")Nothing here reaches the game.")
+
+        if scheme == TouchLabSettings.zoneStyleID { ZoneEditRows(gameID: gameID) }
 
         PanelSliderRow("Button size", leadingIcon: "minus.magnifyingglass", trailingIcon: "plus.magnifyingglass",
                        value: $controlScale,

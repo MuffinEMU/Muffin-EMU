@@ -127,6 +127,9 @@ public struct LayoutContext: Equatable, Sendable {
     /// The polished "Showcase style" look (see `PadStyle`, and Arc's own refined look). Off draws the
     /// flat look the schemes had before it. Drawing only: no layout or input depends on it.
     public var showcaseStyle: Bool
+    /// What the player has moved and resized, for the schemes that offer editing (Zone). Empty
+    /// is the layout exactly as it comes.
+    public var edits: PadEdits
 
     public init(size: CGSize,
                 safeInsets: Insets = .zero,
@@ -138,8 +141,10 @@ public struct LayoutContext: Equatable, Sendable {
                 shoulderOffset: CGFloat = 0,
                 calibration: StickCalibrations = StickCalibrations(),
                 tolerance: PadTolerance? = nil,
-                showcaseStyle: Bool = true) {
+                showcaseStyle: Bool = true,
+                edits: PadEdits = PadEdits()) {
         self.showcaseStyle = showcaseStyle
+        self.edits = edits
         self.size = size
         self.safeInsets = safeInsets
         self.videoRects = videoRects
@@ -158,7 +163,7 @@ public struct LayoutContext: Equatable, Sendable {
         self.init(size: size, safeInsets: safeInsets, videoRects: videoRects, touchscreenRect: touchscreenRect,
                   scale: settings.scale, stick: settings.stick, stickSpacing: settings.stickSpacing,
                   shoulderOffset: settings.shoulderOffset, calibration: settings.calibration,
-                  tolerance: settings.tolerance, showcaseStyle: settings.showcaseStyle)
+                  tolerance: settings.tolerance, showcaseStyle: settings.showcaseStyle, edits: settings.edits)
     }
 
     public var bounds: CGRect { CGRect(origin: .zero, size: size) }

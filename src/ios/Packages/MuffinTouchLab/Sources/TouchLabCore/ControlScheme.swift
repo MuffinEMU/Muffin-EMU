@@ -99,9 +99,14 @@ public struct PadControl {
     public var priority: Int
     /// Takes part in between-button chords (thumb across the gap presses both).
     public var chords: Bool
+    /// A fixed stick's drawn knob radius, when the layout sized it itself. nil = the scheme's
+    /// own (`knobRadius`, a size from the pad's unit before any fitting).
+    public var knob: CGFloat?
 
     public init(_ kind: Kind, shape: PadShape, role: RenderElement.Role, label: String = "",
-                group: Int = 0, cluster: Int = -1, reach: CGFloat = 0, priority: Int = 1, chords: Bool = false) {
+                group: Int = 0, cluster: Int = -1, reach: CGFloat = 0, priority: Int = 1, chords: Bool = false,
+                knob: CGFloat? = nil) {
+        self.knob = knob
         self.kind = kind
         self.shape = shape
         self.role = role
@@ -545,13 +550,14 @@ open class ControlScheme: TouchScheme {
                 }
                 if let click {
                     out.append(RenderElement(shape: .circle(center: o, radius: clickRadius), role: .dot,
-                                             lit: pressed.contains(click)))
+                                             label: c.label, lit: pressed.contains(click)))
                 }
 
             case let .stick(_, travel, click):
                 let t = active[i]
                 // The base stays put unless a finger has moved it (relative centre, follow).
                 let base = t?.origin ?? c.shape.center
+                let knobRadius = c.knob ?? self.knobRadius
                 out.append(RenderElement(shape: .circle(center: base, radius: travel + knobRadius), role: .stickBase,
                                          lit: t != nil))
                 out.append(RenderElement(shape: .circle(center: base + (t?.knob ?? .zero), radius: knobRadius),

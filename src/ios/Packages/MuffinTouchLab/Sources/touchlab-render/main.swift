@@ -39,6 +39,36 @@ for info in SchemeCatalog.all where info.id != ShowcasePad.schemeInfo.id {
         }
     }
 }
+// Zone with edits: the face buttons moved in and made a little bigger, the left stick pulled toward
+// the d-pad, ZL smaller and HOME moved. One request, resolved by each device's own layout (an edit
+// that does not fit there is cut back), on a phone, a small iPad and a large one.
+do {
+    for name in ["iPhone SE", "iPhone 16 Pro Max", "iPad mini", "iPad Pro 13"] {
+        guard let device = TargetDevice.all.first(where: { $0.name == name }) else { continue }
+        for display in TargetDevice.Display.allCases {
+            var ctx = device.context(display)
+            let probe = ZonePad()
+            probe.layout(ctx)
+            var edits = PadEdits()
+            for (key, ask) in [(GamePadEditing.Key.face, PadEdit(dx: -0.6, dy: -0.3, scale: 1.15)),
+                               (GamePadEditing.Key.leftStick, PadEdit(dx: 0.8, dy: 0.5, scale: 0.9)),
+                               ("c.zl", PadEdit(dx: 0.2, dy: 0.2, scale: 0.85)),
+                               ("c.home", PadEdit(dx: 3, dy: -0.4, scale: 1.2))] {
+                var held = ctx; held.edits = edits
+                let p = ZonePad(); p.layout(held)
+                edits[key] = p.resolveEdit(ask, for: key, start: .identity)
+            }
+            ctx.edits = edits
+            let engine = PadEngine(scheme: ZonePad(), output: NullOutput(), context: ctx)
+            let title = "Zone edited - \(device.name) - \(display.rawValue)"
+            let scene = PadStyle.scene(elements: engine.render(), size: ctx.size)
+            let svg = ShowcaseSVG.svg(scene: scene, videoRects: ctx.videoRects, safe: ctx.safeBounds, title: title)
+            let slug = device.name.lowercased().replacingOccurrences(of: " ", with: "-")
+            let file = "zone-edited-\(slug)-\(display.rawValue).svg"
+            try svg.write(toFile: "\(dir)/\(file)", atomically: true, encoding: .utf8)
+        }
+    }
+}
 // Showcase: its own previews, on the five review devices in both orientations. Native lays out
 // its own picture, so it is drawn once; Fit is drawn around each host layout.
 do {

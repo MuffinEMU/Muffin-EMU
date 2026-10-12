@@ -2046,6 +2046,7 @@ do {
 
 runArcPolishChecks()
 runShowcaseFitChecks()
+runZoneChecks()
 runArcCalibrationFlowChecks()
 
 // MARK: Showcase style off = the flat look from before the polish
