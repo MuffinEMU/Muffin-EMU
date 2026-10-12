@@ -407,3 +407,93 @@ func runArcPolishChecks() {
         check(saved?.swapHands == true, "arc polish: a changed option is reported for saving")
     }
 }
+
+// Arc calibration as the settings rows drive it: realistic sweeps in view points, Done saving and
+// applying, the lock, redraw notifications, and the messages for what can't start.
+
+func runArcCalibrationFlowChecks() {
+    func sweep(_ pivot: CGPoint, _ side: ArcSide, radius: CGFloat, from: CGFloat, to: CGFloat, spacing: CGFloat, wobble: CGFloat) -> [CGPoint] {
+        let steps = max(12, Int(radius * abs(to - from) / spacing))
+        return arcPoints(pivot, side, radius, from: from, to: to, steps: steps, jitter: wobble)
+    }
+    func lift(_ eng: PadEngine, id: Int, _ pts: [CGPoint], t0: Double) {
+        eng.began(id, at: pts[0], time: t0)
+        for (i, p) in pts.enumerated().dropFirst() { eng.moved(id, to: p, time: t0 + Double(i) * 0.008) }
+        eng.ended(id, at: pts[pts.count - 1], time: t0 + Double(pts.count) * 0.008)
+    }
+
+    // Real thumbs: pivots a little off the corner, reach from about 4 to 9 buttons, 120 Hz samples a
+    // few points apart, a few points of finger noise. Every Arc device, both orientations.
+    var devices = arcDevices()
+    devices += TargetDevice.portraitVariants
+    for d in devices {
+        let c = d.context(.stacked)
+        let u = c.unit, w = c.size.width, h = c.size.height
+        for (reach, offset) in [(4.2, 0.2), (6.5, 0.6), (9.0, 1.0)] as [(CGFloat, CGFloat)] {
+            let arc = ArcPad()
+            let eng = PadEngine(scheme: arc, output: Recorder(), context: c)
+            var refreshes = 0
+            arc.onStateChange = { refreshes += 1 }
+            check(arc.startCalibration(), "arc flow \(d.name): calibration starts")
+            check(refreshes > 0, "arc flow \(d.name): starting calibration tells the view to redraw")
+            let lp = CGPoint(x: 0.3 * u, y: h + offset * u), rp = CGPoint(x: w - 0.3 * u, y: h + offset * u)
+            lift(eng, id: 1, sweep(lp, .left, radius: reach * u, from: 0.25, to: 1.2, spacing: 4, wobble: 3), t0: 1)
+            check(arc.calibrationPhase == .right, "arc flow \(d.name) reach \(reach): left sweep accepted (\(arc.calibrationNote ?? "no note"))")
+            lift(eng, id: 2, sweep(rp, .right, radius: reach * u, from: 0.25, to: 1.2, spacing: 4, wobble: 3), t0: 6)
+            check(arc.calibrationPhase == .review, "arc flow \(d.name) reach \(reach): right sweep accepted (\(arc.calibrationNote ?? "no note"))")
+        }
+    }
+
+    // Done: saved through onProfiles, locked, applied to the pad, and a new pad loads the same layout.
+    do {
+        let d = TargetDevice.all.first { $0.name == "iPad mini" }!
+        let c = d.context(.stacked)
+        let u = c.unit, w = c.size.width, h = c.size.height
+        let arc = ArcPad()
+        var saved: [String: ArcProfile]?
+        var saves = 0
+        arc.onProfiles = { saved = $0; saves += 1 }
+        let eng = PadEngine(scheme: arc, output: Recorder(), context: c)
+        arc.startCalibration()
+        lift(eng, id: 1, sweep(CGPoint(x: 0.3 * u, y: h + 0.5 * u), .left, radius: 6 * u, from: 0.25, to: 1.2, spacing: 4, wobble: 3), t0: 1)
+        lift(eng, id: 2, sweep(CGPoint(x: w - 0.3 * u, y: h + 0.5 * u), .right, radius: 6 * u, from: 0.25, to: 1.2, spacing: 4, wobble: 3), t0: 6)
+        let before = arc.controls.first { $0.button == .a }!.shape.center
+        check(saves == 0, "arc flow: nothing is saved before Done")
+        arc.acceptCalibration()
+        check(saves == 1 && saved != nil, "arc flow: Done saves once")
+        check(!arc.isCalibrating && arc.isLocked, "arc flow: Done ends calibration and locks")
+        let after = arc.controls.first { $0.button == .a }!.shape.center
+        check(after != before, "arc flow: Done re-lays the pad out on the new arc")
+        let reloaded = ArcPad(profiles: ArcPad.decode(ArcPad.encode(saved ?? [:])))
+        _ = PadEngine(scheme: reloaded, output: Recorder(), context: c)
+        check(reloaded.isLocked && reloaded.controls.first { $0.button == .a }!.shape.center == after,
+              "arc flow: a pad built from the saved profiles has the same layout")
+        // Locked: no calibration, no fine-tune, and the messages say so.
+        check(!arc.startCalibration(), "arc flow: locked refuses to calibrate")
+        check(!arc.setFineTuning(true) && !arc.isFineTuning, "arc flow: locked refuses to fine-tune")
+        arc.setLocked(false)
+        check(!arc.isLocked && arc.setFineTuning(true) && arc.isFineTuning, "arc flow: unlocked allows fine-tuning")
+        arc.setFineTuning(false)
+        check(arc.startCalibration(), "arc flow: unlocked allows calibrating again")
+        arc.cancelCalibration()
+        check(arc.hasCalibration, "arc flow: cancelling keeps the saved calibration")
+        arc.setLocked(true)
+        arc.resetToDefault()
+        check(!arc.isLocked && !arc.hasCalibration, "arc flow: reset clears calibration and lock")
+    }
+
+    // Options survive a round trip, and a calibration in the profile JSON the app stores.
+    do {
+        var o = ArcOptions()
+        o.swapHands = true
+        o.idleFadeSeconds = 12
+        check(ArcOptions.decode(ArcOptions.encode(o)) == o, "arc flow: options round-trip through their stored JSON")
+    }
+
+    // What the settings rows say when they can't start something.
+    check(ArcPad.blocker(for: .calibrate, isLive: true, isLocked: false) == nil, "arc flow: calibrating is open when live and unlocked")
+    check(ArcPad.blocker(for: .calibrate, isLive: false, isLocked: false) == "Start a game to calibrate", "arc flow: no game, calibrate message")
+    check(ArcPad.blocker(for: .calibrate, isLive: true, isLocked: true) == "Unlock Arc positions to recalibrate", "arc flow: locked, calibrate message")
+    check(ArcPad.blocker(for: .fineTune, isLive: true, isLocked: true) == "Unlock Arc positions to fine-tune", "arc flow: locked, fine-tune message")
+    check(ArcPad.blocker(for: .fineTune, isLive: false, isLocked: true) == "Start a game to fine-tune", "arc flow: no game wins over locked")
+}

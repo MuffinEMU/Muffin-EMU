@@ -48,8 +48,8 @@ do {
     }
     func draw(_ device: TargetDevice, display: TargetDevice.Display, mode: ShowcaseLayout.DisplayMode,
               colour: ShowcaseColourPreset = .wiiUWhite, backdrop: ShowcaseSVG.Backdrop = .dark, demo: Bool = false,
-              glass: Bool = false, opacity: CGFloat = PadSettings.defaultOpacity, name: String) throws {
-        let ctx = device.context(display)
+              glass: Bool = false, opacity: CGFloat = PadSettings.defaultOpacity, context: LayoutContext? = nil, name: String) throws {
+        let ctx = context ?? device.context(display)
         let pad = ShowcasePad()
         pad.pointsPerInch = device.showcasePointsPerInch
         pad.displayMode = mode
@@ -57,6 +57,10 @@ do {
         pad.glass = glass
         let engine = PadEngine(scheme: pad, output: NullOutput(), context: ctx)
         if demo { ShowcaseDemo.press(engine, pad) }
+        if ProcessInfo.processInfo.environment["DUMP"] != nil, name.contains("12.9") {
+            print("== \(name) \(pad.arrangement) life \(pad.lifeSizeFraction) video \(ctx.videoRects) safe \(ctx.safeBounds)")
+            for c in pad.controls { let b = c.shape.boundingBox; print(String(format: "  %@ x %.0f-%.0f y %.0f-%.0f", c.label, b.minX, b.maxX, b.minY, b.maxY)) }
+        }
         let scene = pad.scene(pressed: engine.mixer.pressed, sticks: engine.mixer.sticks, opacity: opacity)
         let rects = pad.pictureRect.map { [$0] } ?? ctx.videoRects
         let size = String(format: "%.0f%% of life size", Double(pad.lifeSizeFraction) * 100)
@@ -89,6 +93,14 @@ do {
     try draw(pro, display: .stacked, mode: .fit, colour: .midnight, backdrop: .light, demo: true, glass: true, name: "light-glass-midnight-ipad-pro-11-fit")
     try draw(pro, display: .stacked, mode: .fit, demo: true, opacity: 0.35, name: "low-opacity-ipad-pro-11-fit")
     try draw(pro, display: .stacked, mode: .fit, backdrop: .light, demo: true, opacity: 0.35, name: "light-low-opacity-ipad-pro-11-fit")
+    // The 12.9-inch iPad: the picture as the host has it, and the same screen with a 4:3 picture
+    // letterboxed under a top bar, which leaves a thin strip below.
+    for device in TargetDevice.showcaseExtras {
+        let s = slug(device.name)
+        try draw(device, display: .single, mode: .fit, name: "\(s)-fit-single")
+        try draw(device, display: .single, mode: .fit, context: device.letterboxed43, name: "\(s)-fit-letterboxed")
+        try draw(device, display: .single, mode: .fit, demo: true, context: device.letterboxed43, name: "\(s)-fit-letterboxed-held")
+    }
     // Fit's packing where the old fitter floated over the picture.
     let se = TargetDevice.showcaseReview.first { $0.name == "iPhone SE" }!
     try draw(se, display: .stacked, mode: .fit, demo: true, name: "packed-iphone-se-fit-stacked")

@@ -23,6 +23,40 @@ enum ShowcaseFitSolver {
         var rightUnit: CGFloat
     }
 
+    /// Smallest share of the wanted (life-size) button size a packed pad may have.
+    /// No packed control comes closer than this to the edge of the safe area.
+    static let minimumEdge: CGFloat = 8
+    static let minimumLifeShare: CGFloat = 0.7
+
+    /// Whether a packed result still reads as the GamePad: buttons at least 70% of the size asked
+    /// for, each side stacked over at least 2.2 buttons of height and the face diamond not squashed.
+    /// Anything else is a strip of tiny controls.
+    static func keepsGamePad(_ r: Result, wanted: CGFloat) -> Bool {
+        guard min(r.leftUnit, r.rightUnit) >= minimumLifeShare * wanted - 0.01 else { return false }
+        func centre(_ id: String) -> CGPoint? {
+            switch r.placements[id] {
+            case let .circle(c, _)?: return c
+            case let .pill(c, _, _)?: return c
+            case let .cross(c, _, _)?: return c
+            default: return nil
+            }
+        }
+        guard let dpad = centre("dpad"), let sl = centre("stickL"), let sr = centre("stickR"),
+              let x = centre("X"), let b = centre("B"), let a = centre("A"), let y = centre("Y") else { return false }
+        let uL = r.leftUnit, uR = r.rightUnit
+        // The face diamond keeps its shape (the hardware's is 1.9 buttons tall).
+        guard b.y - x.y >= 1.5 * uR, abs(a.y - y.y) < 0.5 * uR else { return false }
+        // Each side must stack: cluster, stick and shoulders spread over at least 2.2 buttons of
+        // height. Packed into one band they are the single row of tiny controls this guards against.
+        func spans(_ ids: [String], _ extra: CGPoint, _ u: CGFloat) -> Bool {
+            let ys = ids.compactMap { centre($0)?.y } + [extra.y]
+            return (ys.max() ?? 0) - (ys.min() ?? 0) >= 2.2 * u
+        }
+        guard spans(["stickL", "L", "ZL"], dpad, uL),
+              spans(["stickR", "R", "ZR"], CGPoint(x: a.x, y: (x.y + b.y) / 2), uR) else { return false }
+        return true
+    }
+
     private struct Margins { var edge: CGFloat, clear: CGFloat, gap: CGFloat }   // in D
     private static let faceHalfHeights: [CGFloat] = [ShowcaseHardware.faceHalfY, 0.8, 0.68, 0.62]
     private static let tiers = [Margins(edge: 0.30, clear: 0.25, gap: 0.15), Margins(edge: 0.12, clear: 0.10, gap: 0.08),
@@ -122,8 +156,8 @@ enum ShowcaseFitSolver {
                                 faceHalfY fy: CGFloat) -> Result? {
         let G = ShowcaseHardware.self
         let um = min(uL, uR)
-        let edge = m.edge * um
-        var pk = Packer(safe: safe, avoid: avoid, edge: m.edge * um, clear: m.clear * um, gap: m.gap * um)
+        let edge = max(m.edge * um, minimumEdge)
+        var pk = Packer(safe: safe, avoid: avoid, edge: edge, clear: m.clear * um, gap: m.gap * um)
         var out: [String: ShowcaseLayout.Placement] = [:]
         let armX = G.stickArm * cos(G.stickArmAngle), armY = G.stickArm * sin(G.stickArmAngle)
 

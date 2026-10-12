@@ -426,8 +426,9 @@ struct TouchLabPadOverlay: View {
                  // Rebuild the scheme only when something that shapes it changes - never on
                  // Adaptive's own learning writes (that would drop every held press).
                  revision: revision,
-                 // Arc's fine-tune drags buttons, so the pad takes touches then even with the layout panel open.
-                 enabled: enabled || arcLive.isFineTuning,
+                 // Arc's fine-tune drags buttons and its calibration takes a sweep from each thumb, so the
+                 // pad takes touches for both even if the layout panel is still open.
+                 enabled: enabled || arcLive.isFineTuning || arcLive.isCalibrating,
                  rectSpace: .window,
                  extraInsets: Insets(top: topInset),
                  makeScheme: makeScheme)
@@ -570,6 +571,13 @@ final class ArcLive: ObservableObject {
     }
 
     var isFineTuning: Bool { isLive && (scheme?.isFineTuning ?? false) }
+
+    var isCalibrating: Bool { isLive && (scheme?.isCalibrating ?? false) }
+
+    /// Why calibrating or fine-tuning can't start right now (nil when it can), in plain words.
+    func blocker(for action: ArcPad.Action) -> String? {
+        ArcPad.blocker(for: action, isLive: isLive, isLocked: isLocked)
+    }
 
     func setLocked(_ on: Bool) {
         if let scheme, isLive {

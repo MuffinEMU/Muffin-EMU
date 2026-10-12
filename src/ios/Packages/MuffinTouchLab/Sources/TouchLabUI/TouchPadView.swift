@@ -88,10 +88,15 @@ public final class TouchPadView: UIView {
     private let impact = UIImpactFeedbackGenerator(style: .light)
     private let snapFeedback = UISelectionFeedbackGenerator()
     private var lastPressed: Set<PadButton> = []
+    /// Arc's calibration card, when showing. A subview of the pad (not a sibling in the host's
+    /// hierarchy, which a SwiftUI wrapper may not route touches into); `hitTest` hands it the
+    /// touches that land on its buttons.
+    weak var arcOverlay: UIView?
 
     public init(scheme: TouchScheme, output: PadOutput) {
         engine = PadEngine(scheme: scheme, output: output, context: LayoutContext(size: .zero))
         super.init(frame: .zero)
+        bindArcRedraw()
         isMultipleTouchEnabled = true
         isOpaque = false
         backgroundColor = .clear
@@ -124,8 +129,17 @@ public final class TouchPadView: UIView {
 
     public func setScheme(_ scheme: TouchScheme) {
         engine.setScheme(scheme)
+        bindArcRedraw()
         relayout(force: true)
         updateAmbient()
+    }
+
+    /// Arc changes state from outside the touch path too (a settings row starts calibration, a
+    /// card button says Done); the pad must redraw then, or it shows the old state until a finger lands.
+    private func bindArcRedraw() {
+        (engine.scheme as? ArcPad)?.onStateChange = { [weak self] in
+            DispatchQueue.main.async { self?.changed() }
+        }
     }
 
     // MARK: Layout
@@ -174,6 +188,8 @@ public final class TouchPadView: UIView {
     public override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         guard isInputEnabled, isUserInteractionEnabled, !isHidden, alpha > 0.01,
               self.point(inside: point, with: event) else { return nil }
+        if let overlay = arcOverlay, overlay.superview === self,
+           let hit = overlay.hitTest(convert(point, to: overlay), with: event) { return hit }
         // Only touches a control (or the GamePad touchscreen) wants. A pad that took every
         // touch while a thumb was down would block the host's own buttons - pause, back -
         // for as long as a stick was held, and gain nothing: an unclaimed touch is
