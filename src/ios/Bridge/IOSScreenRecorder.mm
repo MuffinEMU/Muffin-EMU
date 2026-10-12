@@ -8,7 +8,7 @@
 //  "Record screen" (HOME menu). See IOSScreenRecorder.h.
 //
 //  Video: the Metal renderer draws the picture it is about to present a second time, with the same
-//  shader, into an IOSurface-backed pixel buffer of the game's own render size (BeginFrame hands out that
+//  shader, into an IOSurface-backed pixel buffer at least 1080 lines tall (BeginFrame hands out that
 //  buffer's texture), inside the command buffer it is already building. The command buffer's completion
 //  handler gives the buffer to the writer queue (EndFrame). Nothing here waits on the encoder: when it is
 //  behind, or the pool has no free buffer, the frame is skipped and counted.
@@ -52,6 +52,8 @@ namespace
 	constexpr int kMaxFramesInFlight = 4;
 	constexpr double kMinFrameInterval = 0.014; // about 70 per second at most
 	constexpr uint32_t kMaxSide = 7680;
+	constexpr uint32_t kMinShortSide = 1080; // Wii U pictures are 720p (TV) or 480p (GamePad); files are at least Full HD
+	constexpr uint32_t kMaxLongSide = 3840;
 
 	struct AudioSlot
 	{
@@ -125,12 +127,25 @@ namespace
 		return std::max<uint32_t>(16, std::min(value, kMaxSide) & ~1u);
 	}
 
-	// Bits per second for a picture of this size at game speed: about a tenth of a bit per pixel per frame
+	// The file's size for a picture of this size: scaled up, keeping its shape, until the short side is
+	// 1080 (a 1280x720 TV picture becomes 1920x1080), without scaling the long side past 4K. A picture
+	// already that big (a resolution graphic pack) keeps its own size.
+	void OutputSize(uint32_t sourceWidth, uint32_t sourceHeight, uint32_t& width, uint32_t& height)
+	{
+		const double shortSide = std::min(sourceWidth, sourceHeight);
+		const double longSide = std::max(sourceWidth, sourceHeight);
+		double scale = std::max(1.0, kMinShortSide / shortSide);
+		scale = std::min(scale, std::max(1.0, kMaxLongSide / longSide));
+		width = EvenSide((uint32_t)std::lround(sourceWidth * scale));
+		height = EvenSide((uint32_t)std::lround(sourceHeight * scale));
+	}
+
+	// Bits per second for a picture of this size at 60 frames a second: about a tenth of a bit per pixel per frame
 	// for HEVC, more for H.264, within the range an encoder is comfortable with.
 	NSInteger BitRate(uint32_t width, uint32_t height, bool hevc)
 	{
 		const double bitsPerPixel = hevc ? 0.12 : 0.19;
-		const double rate = (double)width * height * 30.0 * bitsPerPixel;
+		const double rate = (double)width * height * 60.0 * bitsPerPixel;
 		return (NSInteger)std::min(std::max(rate, 4.0e6), 80.0e6);
 	}
 
@@ -454,8 +469,7 @@ namespace IOSScreenRecorder
 			if (!session->sized)
 			{
 				id<MTLDevice> device = (__bridge id<MTLDevice>)mtlDevice;
-				session->width = EvenSide(sourceWidth);
-				session->height = EvenSide(sourceHeight);
+				OutputSize(sourceWidth, sourceHeight, session->width, session->height);
 				NSDictionary* poolAttributes = @{(id)kCVPixelBufferPoolMinimumBufferCountKey: @3};
 				NSDictionary* bufferAttributes = @{
 					(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA),

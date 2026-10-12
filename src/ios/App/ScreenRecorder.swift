@@ -4,7 +4,7 @@ import UIKit
 /// "Record screen" in the HOME menu: saves the picture the game is showing to an MP4, with the game's sound.
 ///
 /// The picture is taken inside the renderer (ios/Bridge/IOSScreenRecorder.mm, reached through
-/// cemu_bridge_screen_record_*), at the game's own render resolution, so it holds neither the on-screen
+/// cemu_bridge_screen_record_*), at 1080p or higher, so it holds neither the on-screen
 /// controls nor this app's overlays. Which screen it follows is the main output, the TV or the GamePad
 /// according to the Screen Layout, and a layout change mid-recording keeps recording the same file at
 /// the size it started with. This side picks the file name, keeps the clock for the red indicator, watches

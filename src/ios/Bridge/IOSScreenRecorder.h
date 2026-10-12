@@ -5,8 +5,8 @@
 
 //
 //  IOSScreenRecorder.h
-//  "Record screen" (HOME menu): saves the picture the game is showing, in the game's own render
-//  resolution, with the game's sound, to an MP4. See IOSScreenRecorder.mm for how.
+//  "Record screen" (HOME menu): saves the picture the game is showing, at 1080p or the game's own
+//  render resolution if that is higher, with the game's sound, to an MP4. See IOSScreenRecorder.mm for how.
 //
 #pragma once
 
