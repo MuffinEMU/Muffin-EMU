@@ -497,6 +497,10 @@ public:
     void ProcessFinishedCommandBuffers();
 
     bool AcquireDrawable(bool mainWindow);
+#if BOOST_OS_IOS
+    // "Record screen": draws the picture just presented into the recording's own buffer. See IOSScreenRecorder.mm.
+    void EncodeScreenRecordingFrame(MTL::Texture* source, MTL::RenderPipelineState* pipeline, uint8 shaderType, bool useLinearTexFilter, bool padView);
+#endif
 
 	bool CheckIfRenderPassNeedsFlush(LatteDecompilerShader* shader);
 	bool BindStageResources(MTL::RenderCommandEncoder* renderCommandEncoder, LatteDecompilerShader* shader, bool usesGeometryShader, MTL::ComputeCommandEncoder* computeCommandEncoder = nullptr);

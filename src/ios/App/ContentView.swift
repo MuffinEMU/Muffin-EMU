@@ -2100,6 +2100,7 @@ struct EmulatorViewOptimized: View {
                 },
                 swapScreens: swapScreensFromHomeMenu,
                 toggleRecording: { AudioRecorder.shared.toggle(gameName: gameName) },
+                toggleScreenRecording: { ScreenRecorder.shared.toggle(gameName: gameName) },
                 scanAmiibo: { showAmiibo = true }
             )
         )
@@ -2761,6 +2762,7 @@ struct EmulatorViewOptimized: View {
         .onDisappear {
             launchLog.stop()
             AudioRecorder.shared.stop()
+            ScreenRecorder.shared.stop()
             OrientationPolicy.setInGame(false)
             // The pad can no longer vanish mid-press while a title runs, so the only
             // way out from under a held finger is leaving the emulator entirely. Each
@@ -2806,6 +2808,7 @@ struct EmulatorViewOptimized: View {
             } else {
                 // A recording ends when the app leaves the foreground, finished properly.
                 AudioRecorder.shared.stop()
+                ScreenRecorder.shared.stop()
                 // Released on every trip out of .active, paused or not. A touch in
                 // progress when the app resigns active is cancelled by UIKit, which does
                 // not reliably deliver the gesture's end, so without this a held button or
@@ -2850,7 +2853,8 @@ struct EmulatorViewOptimized: View {
         // with on-screen controls sitting right where it appears.
         .hidingSystemOverlaysDuringPlay()
         .modifier(HeatNoticeModifier { gameManager.showLaunchNotice($0) })
-        // Red "Recording 0:42" while Record audio (HOME menu) is on.
+        // Red "Recording 0:42" while Record audio or Record screen (HOME menu) is on. It is a SwiftUI overlay, so the
+        // screen recording, which is taken from the game's own picture, never contains it.
         .overlay(alignment: .top) {
             RecordingIndicator()
                 .padding(.top, overlayTopInset + 8)

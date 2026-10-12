@@ -17,6 +17,7 @@
 #include "Common/precompiled.h"
 #include "audio/IAudioAPI.h"
 #include "audio/iOSAudioRecorder.h"
+#include "IOSScreenRecorder.h"
 #include <cxxabi.h>
 #include <typeinfo>
 #import "CemuBridge.h"
@@ -2978,6 +2979,27 @@ bool cemu_bridge_audio_record_active(void) {
 
 double cemu_bridge_audio_record_seconds(void) {
     return IOSAudioRecorder::Seconds();
+}
+
+// "Record screen" (HOME menu). See IOSScreenRecorder.mm.
+bool cemu_bridge_screen_record_start(const char* path) {
+    return IOSScreenRecorder::Start(path);
+}
+
+bool cemu_bridge_screen_record_stop(void) {
+    return IOSScreenRecorder::Stop();
+}
+
+bool cemu_bridge_screen_record_active(void) {
+    return IOSScreenRecorder::g_active.load(std::memory_order_relaxed);
+}
+
+double cemu_bridge_screen_record_seconds(void) {
+    return IOSScreenRecorder::Seconds();
+}
+
+bool cemu_bridge_screen_record_failed(void) {
+    return IOSScreenRecorder::Failed();
 }
 
 void cemu_bridge_set_pad_audio_enabled(bool enabled) {

@@ -45,6 +45,18 @@
 
 #define EVENT_VALUE_WRAP 4096
 
+#if BOOST_OS_IOS
+// "Record screen" (HOME menu). Defined in ios/Bridge/IOSScreenRecorder.mm, which is in the app's bridge, not this library.
+namespace IOSScreenRecorder
+{
+	extern std::atomic<bool> g_active;
+	bool BeginFrame(void* mtlDevice, bool padView, uint32_t sourceWidth, uint32_t sourceHeight, bool srgb,
+	                void** outTexture, void** outToken, uint32_t* outWidth, uint32_t* outHeight);
+	void EndFrame(void* token);
+	void AbortFrame(void* token);
+}
+#endif
+
 #if MUFFIN_AUDIT_HOOKS
 // MuffinEMU Audit (tools/audit-app). Defined in ios/Bridge/IOSAuditMetal.cpp, which only the audit
 // build of the core compiles. With the flag off none of this exists.
@@ -973,7 +985,54 @@ void MetalRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutput
     renderCommandEncoder->drawPrimitives(MTL::PrimitiveTypeTriangle, NS::UInteger(0), NS::UInteger(3));
 
     EndEncoding();
+
+#if BOOST_OS_IOS
+    // "Record screen": the same picture again, at the game's own size, for the recording. Nothing but this check
+    // when no recording is on.
+    if (IOSScreenRecorder::g_active.load(std::memory_order_relaxed))
+        EncodeScreenRecordingFrame(presentTexture, renderPipelineState, shaderType, useLinearTexFilter, padView);
+#endif
 }
+
+#if BOOST_OS_IOS
+void MetalRenderer::EncodeScreenRecordingFrame(MTL::Texture* source, MTL::RenderPipelineState* pipeline, uint8 shaderType, bool useLinearTexFilter, bool padView)
+{
+    if (!source || !pipeline)
+        return;
+
+    void* targetTexture = nullptr;
+    void* token = nullptr;
+    uint32_t width = 0, height = 0;
+    if (!IOSScreenRecorder::BeginFrame(m_device, padView, (uint32_t)source->width(), (uint32_t)source->height(), m_state.m_usesSRGB,
+                                       &targetTexture, &token, &width, &height))
+        return;
+
+    NS_STACK_SCOPED MTL::RenderPassDescriptor* renderPassDescriptor = MTL::RenderPassDescriptor::alloc()->init();
+    auto colorAttachment = renderPassDescriptor->colorAttachments()->object(0);
+    colorAttachment->setTexture(static_cast<MTL::Texture*>(targetTexture));
+    colorAttachment->setLoadAction(MTL::LoadActionDontCare);
+    colorAttachment->setStoreAction(MTL::StoreActionStore);
+
+    auto renderCommandEncoder = GetTemporaryRenderCommandEncoder(renderPassDescriptor);
+    // The completion handler has to go on before EndEncoding, which can commit the command buffer.
+    auto commandBuffer = GetCommandBuffer();
+    commandBuffer->addCompletedHandler([token](MTL::CommandBuffer*) { IOSScreenRecorder::EndFrame(token); });
+
+    renderCommandEncoder->setRenderPipelineState(pipeline);
+    renderCommandEncoder->setFragmentTexture(source, 0);
+    renderCommandEncoder->setFragmentSamplerState((useLinearTexFilter ? m_linearSampler : m_nearestSampler), 0);
+    if (shaderType == 2)
+    {
+        float outputSize[2] = {(float)width, (float)height};
+        renderCommandEncoder->setFragmentBytes(outputSize, sizeof(outputSize), 0);
+    }
+    renderCommandEncoder->setViewport(MTL::Viewport{0.0, 0.0, (double)width, (double)height, 0.0, 1.0});
+    renderCommandEncoder->setScissorRect(MTL::ScissorRect{0, 0, width, height});
+    renderCommandEncoder->drawPrimitives(MTL::PrimitiveTypeTriangle, NS::UInteger(0), NS::UInteger(3));
+
+    EndEncoding();
+}
+#endif
 
 bool MetalRenderer::BeginFrame(bool mainWindow)
 {

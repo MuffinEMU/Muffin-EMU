@@ -1394,6 +1394,24 @@ bool cemu_bridge_audio_record_active(void);
 /// Seconds of audio written to the current (or last) recording.
 double cemu_bridge_audio_record_seconds(void);
 
+/// "Record screen" (HOME menu): saves the picture the game is showing (the main output, which is the TV
+/// or the GamePad according to the Screen Layout) at the game's own render size, with the TV audio, to
+/// an MP4 (HEVC, or H.264 where HEVC is not available) at `path`. The folder must exist. Returns false
+/// when a recording is already on. The file is opened when the first picture arrives.
+bool cemu_bridge_screen_record_start(const char* path);
+
+/// Stops the recording and finishes the file. Blocks until the encoder has closed it, so call it off the
+/// main thread. Returns true when a playable file was written; the file is removed otherwise.
+bool cemu_bridge_screen_record_stop(void);
+
+bool cemu_bridge_screen_record_active(void);
+
+/// Seconds since the first picture of the current recording.
+double cemu_bridge_screen_record_seconds(void);
+
+/// True when the writer hit an error (storage full, for one); the caller should stop.
+bool cemu_bridge_screen_record_failed(void);
+
 int cemu_bridge_input_button_mapping_count(void);
 
 /// Which controller profile the GamePad is on ("default" when none was loaded). Owned by

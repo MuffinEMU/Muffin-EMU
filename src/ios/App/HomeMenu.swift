@@ -34,6 +34,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
     case externalDisplay
     case moveControls
     case recordAudio
+    case recordScreen
     case scanAmiibo
     case recentreAim
     case quit
@@ -61,6 +62,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
         case .externalDisplay: return "External display"
         case .moveControls: return "Move controls"
         case .recordAudio: return "Record audio"
+        case .recordScreen: return "Record screen"
         case .scanAmiibo: return "Scan amiibo"
         case .recentreAim: return "Recentre aim"
         case .quit: return "Quit game"
@@ -75,6 +77,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
         case .externalDisplay: return "tv"
         case .moveControls: return "arrow.up.and.down.and.arrow.left.and.right"
         case .recordAudio: return "record.circle"
+        case .recordScreen: return "video.circle"
         case .scanAmiibo: return "wave.3.right"
         case .recentreAim: return "scope"
         case .quit: return "xmark.circle"
@@ -89,6 +92,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
         case .externalDisplay: return "Opens the external display settings, the same ones as in Settings > Display."
         case .moveControls: return "Closes the menu and lets you drag the on-screen controls."
         case .recordAudio: return "Records the game's sound to an M4A file in the Recordings folder in Files. Choose it again to stop."
+        case .recordScreen: return "Records the screen the game is showing, at the game's own resolution and with its sound, to a video in the Recordings folder in Files. Choose it again to stop."
         case .scanAmiibo: return "Opens a list of amiibo files to scan. The game has to be asking for an amiibo."
         case .recentreAim: return "Takes the way you are holding the device now as straight ahead, then goes back to the game."
         case .quit: return "Asks before leaving the game."
@@ -172,6 +176,7 @@ struct HomeMenuActions {
     let quit: () -> Void
     let swapScreens: () -> Void
     let toggleRecording: () -> Void
+    let toggleScreenRecording: () -> Void
     let scanAmiibo: () -> Void
 }
 
@@ -210,6 +215,7 @@ struct HomeMenuOverlay: View {
 
     private enum Page { case root, layout, external, confirmQuit }
     @ObservedObject private var recorder = AudioRecorder.shared
+    @ObservedObject private var screenRecorder = ScreenRecorder.shared
     @State private var page = Page.root
     @State private var focus = 0
     @State private var rowsHeight: CGFloat = 280
@@ -375,6 +381,10 @@ struct HomeMenuOverlay: View {
             // Stays open, so the checkmark shows it took; Resume carries on with the game.
             var row = make(actions.toggleRecording)
             row.isSelected = recorder.isRecording
+            return row
+        case .recordScreen:
+            var row = make(actions.toggleScreenRecording)
+            row.isSelected = screenRecorder.isRecording
             return row
         case .scanAmiibo: return make(actions.scanAmiibo)
         case .recentreAim:
