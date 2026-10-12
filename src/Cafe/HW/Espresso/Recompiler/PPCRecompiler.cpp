@@ -933,6 +933,38 @@ bool PPCRecompiler_makeRecompiledFunctionActive(uint32 initialEntryPoint, PPCFun
     }
     
     
+    // register ranges first: this is the only step that allocates, and nothing is published until it has succeeded.
+    // On bad_alloc the ranges stored so far are removed again, the jump table is untouched, the lock is released and the
+    // function keeps running in the interpreter (its entry stays marked visited so it is not queued again).
+    size_t registeredRanges = 0;
+    try
+    {
+        for (auto& r : ppcRecFunc->list_ranges)
+        {
+            r.storedRange = rangeStore_ppcRanges.storeRange(ppcRecFunc, r.ppcAddress, r.ppcAddress + r.ppcSize);
+            registeredRanges++;
+        }
+    }
+    catch (const std::bad_alloc&)
+    {
+        size_t undone = 0;
+        for (auto& r : ppcRecFunc->list_ranges)
+        {
+            if (undone++ >= registeredRanges)
+                break;
+            rangeStore_ppcRanges.deleteRange(r.storedRange);
+            r.storedRange = nullptr;
+        }
+        for (uint32 v = range.startAddress; v < (range.startAddress + range.length); v += 4)
+        {
+            if (v != initialEntryPoint && ppcRecompilerInstanceData->ppcRecompilerDirectJumpTable[v / 4] == PPCRecompiler_leaveRecompilerCode_visited)
+                ppcRecompilerInstanceData->ppcRecompilerDirectJumpTable[v / 4] = PPCRecompiler_leaveRecompilerCode_unvisited;
+        }
+        PPCRecompilerState.recompilerSpinlock.unlock();
+        delete ppcRecFunc;
+        throw;
+    }
+
     // update jump table
     for (auto& itr : entryPoints)
     {
@@ -951,16 +983,11 @@ bool PPCRecompiler_makeRecompiledFunctionActive(uint32 initialEntryPoint, PPCFun
             ppcRecompilerInstanceData->ppcRecompilerDirectJumpTable[v / 4] = PPCRecompiler_leaveRecompilerCode_unvisited;
     }
     
-    // register ranges
-    for (auto& r : ppcRecFunc->list_ranges)
-    {
-        r.storedRange = rangeStore_ppcRanges.storeRange(ppcRecFunc, r.ppcAddress, r.ppcAddress + r.ppcSize);
-    }
     PPCRecompilerState.recompilerSpinlock.unlock();
     return true;
 }
 
-void PPCRecompiler_recompileAtAddress(uint32 address)
+static void PPCRecompiler_recompileAtAddressImpl(uint32 address)
 {
 	cemu_assert_debug(ppcRecompilerInstanceData->ppcRecompilerDirectJumpTable[address / 4] == PPCRecompiler_leaveRecompilerCode_visited);
 
@@ -1007,11 +1034,42 @@ void PPCRecompiler_recompileAtAddress(uint32 address)
 	{
 		return; // recompilation failed
 	}
-	bool r = PPCRecompiler_makeRecompiledFunctionActive(address, range, func, functionEntryPoints);
+	try
+	{
+		PPCRecompiler_makeRecompiledFunctionActive(address, range, func, functionEntryPoints);
+	}
+	catch (const std::bad_alloc&)
+	{
+		// makeRecompiledFunctionActive has already rolled back (ranges unregistered, jump table untouched, lock released, function freed)
+		static std::atomic<uint32> s_activateOomCount{0};
+		if (s_activateOomCount.fetch_add(1) < 3)
+			cemuLog_log(LogType::Force, "Recompiler: out of memory activating the function at {:08x}; it runs in the interpreter", address);
+		return;
+	}
 	PerfTelemetry::Get().jitBlocks.fetch_add(1, std::memory_order_relaxed);
 	PerfTelemetry::Get().jitCompileNs.fetch_add(PerfTelemetry::NowNs() - compileStartNs, std::memory_order_relaxed);
 }
 
+
+void PPCRecompiler_recompileAtAddress(uint32 address)
+{
+	// Runs on worker threads: no exception may escape (std::terminate). Allocations outside the compile step (boundary tracker,
+	// entry set, entry point vectors) are covered here; the function simply stays in the interpreter.
+	try
+	{
+		PPCRecompiler_recompileAtAddressImpl(address);
+	}
+	catch (const std::bad_alloc&)
+	{
+		static std::atomic<uint32> s_outerOomCount{0};
+		if (s_outerOomCount.fetch_add(1) < 3)
+			cemuLog_log(LogType::Force, "Recompiler: out of memory preparing the function at {:08x}; it runs in the interpreter", address);
+	}
+	catch (const std::exception& e)
+	{
+		cemuLog_log(LogType::Force, "Recompiler: exception while compiling the function at {:08x} ({}); it runs in the interpreter", address, e.what());
+	}
+}
 
 /*
 void PPCRecompiler_thread()

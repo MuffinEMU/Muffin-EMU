@@ -2299,6 +2299,7 @@ void MetalRenderer::streamout_rendererFinishDrawcall()
 
 void MetalRenderer::draw_beginSequence()
 {
+    PerfTelemetry::ScopedTimer beginTimer(PerfTelemetry::Get().gpuBeginNs);
     m_state.m_skipDrawSequence = false;
 
     // After a GPU error iOS ignores this app's GPU work; recording more only grows memory.
@@ -2338,7 +2339,10 @@ void MetalRenderer::draw_beginSequence()
             m_state.m_skipDrawSequence = true;
             return; // no render target
         }
-        LatteTexture_updateTextures();
+        {
+            PerfTelemetry::ScopedTimer texTimer(PerfTelemetry::Get().gpuTexUpdateNs);
+            LatteTexture_updateTextures();
+        }
         if (!LatteGPUState.repeatTextureInitialization)
             break;
     }
@@ -2356,6 +2360,8 @@ void MetalRenderer::draw_beginSequence()
 
 void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 instanceCount, uint32 count, MPTR indexDataMPTR, Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE indexType, bool isFirst)
 {
+    PerfTelemetry::ScopedTimer execTimer(PerfTelemetry::Get().gpuExecNs);
+    PerfTelemetry::Get().gpuDraws.fetch_add(1, std::memory_order_relaxed);
     if (m_state.m_skipDrawSequence)
     {
         LatteGPUState.drawCallCounter++;
@@ -2421,7 +2427,10 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     uint32 indexMin = 0;
     uint32 indexMax = 0;
     Renderer::IndexAllocation indexAllocation;
-    LatteIndices_decode(memory_getPointerFromVirtualOffset(indexDataMPTR), indexType, count, primitiveMode, indexMin, indexMax, hostIndexType, hostIndexCount, indexAllocation);
+    {
+        PerfTelemetry::ScopedTimer indexTimer(PerfTelemetry::Get().gpuIndexNs);
+        LatteIndices_decode(memory_getPointerFromVirtualOffset(indexDataMPTR), indexType, count, primitiveMode, indexMin, indexMax, hostIndexType, hostIndexCount, indexAllocation);
+    }
     auto indexAllocationMtl = static_cast<MetalSynchronizedHeapAllocator::AllocatorReservation*>(indexAllocation.rendererInternal);
     const sint32 signedBaseVertex = static_cast<sint32>(baseVertex);
     if (indexAllocationMtl && hostIndexType != INDEX_TYPE::NONE)
@@ -2459,11 +2468,15 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     }
 
     // Buffer cache
+    const uint64 bufferStart = PerfTelemetry::NowNs();
     if (m_memoryManager->UseHostMemoryForCache())
     {
         // direct memory access (Wii U memory space imported as a buffer), update buffer bindings
-        LatteBufferCache_processDCFlushQueue();
-        LatteBufferCache_processDeallocations();
+        {
+            PerfTelemetry::ScopedTimer flushTimer(PerfTelemetry::Get().gpuFlushNs);
+            LatteBufferCache_processDCFlushQueue();
+            LatteBufferCache_processDeallocations();
+        }
         draw_updateVertexBuffersDirectAccess(minVertexIndex, maxVertexIndex, baseInstance, instanceCount, fetchVertexManually);
         if (vertexShader)
             draw_updateUniformBuffersDirectAccess(vertexShader, mmSQ_VTX_UNIFORM_BLOCK_START);
@@ -2483,12 +2496,17 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     if (usesGeometryShader)
         PrepareUniformBufferSizes(geometryShader);
     PrepareUniformBufferSizes(pixelShader);
+    PerfTelemetry::Get().gpuBufferNs.fetch_add(PerfTelemetry::NowNs() - bufferStart, std::memory_order_relaxed);
 
     // Render pass
+    const uint64 passStart = PerfTelemetry::NowNs();
     auto renderCommandEncoder = GetRenderCommandEncoder();
+    PerfTelemetry::Get().gpuPassNs.fetch_add(PerfTelemetry::NowNs() - passStart, std::memory_order_relaxed);
 
     // Render pipeline state
+    const uint64 pipelineStart = PerfTelemetry::NowNs();
     PipelineObject* pipelineObj = m_pipelineCache->GetRenderPipelineState(fetchShader, vertexShader, geometryShader, pixelShader, m_state.m_lastUsedFBO.m_attachmentsInfo, m_state.m_activeFBO.m_attachmentsInfo, m_state.m_activeFBO.m_fbo->m_size, count, LatteGPUState.contextNew);
+    PerfTelemetry::Get().gpuPipelineNs.fetch_add(PerfTelemetry::NowNs() - pipelineStart, std::memory_order_relaxed);
     if (!pipelineObj->m_pipeline)
         return;
 
@@ -2819,9 +2837,12 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     LatteStreamout_PrepareDrawcall(streamoutVertexCount, instanceCount);
 
     // Uniform buffers, textures and samplers
-    if (!BindStageResources(renderCommandEncoder, vertexShader, usesGeometryShader) ||
-        (usesGeometryShader && geometryShader && !BindStageResources(renderCommandEncoder, geometryShader, usesGeometryShader)) ||
-        !BindStageResources(renderCommandEncoder, pixelShader, usesGeometryShader))
+    const uint64 bindStart = PerfTelemetry::NowNs();
+    const bool stageResourcesBound = BindStageResources(renderCommandEncoder, vertexShader, usesGeometryShader) &&
+        (!(usesGeometryShader && geometryShader) || BindStageResources(renderCommandEncoder, geometryShader, usesGeometryShader)) &&
+        BindStageResources(renderCommandEncoder, pixelShader, usesGeometryShader);
+    PerfTelemetry::Get().gpuBindNs.fetch_add(PerfTelemetry::NowNs() - bindStart, std::memory_order_relaxed);
+    if (!stageResourcesBound)
     {
         streamout_rendererFinishDrawcall();
         LatteGPUState.drawCallCounter++;
@@ -2922,6 +2943,7 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
 
 void MetalRenderer::draw_endSequence()
 {
+    PerfTelemetry::ScopedTimer endTimer(PerfTelemetry::Get().gpuEndNs);
     LatteDecompilerShader* pixelShader = LatteSHRC_GetActivePixelShader();
     // post-drawcall logic
     if (pixelShader)
@@ -4066,6 +4088,9 @@ bool MetalRenderer::AcquireDrawable(bool mainWindow)
         return false;
 
 #if BOOST_OS_IOS
+    // Backgrounded: nothing can be shown, and waiting for a drawable only stalls the GPU thread.
+    if (!layer.GetDrawable() && PerfTelemetry::AppInBackground().load(std::memory_order_relaxed))
+        return false;
     const auto outputBit = mainWindow ? 1u : 2u;
     if (!layer.GetDrawable() && !(WindowSystem::GetWindowInfo().visible_outputs.load() & outputBit))
         return false;

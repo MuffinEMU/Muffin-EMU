@@ -58,6 +58,9 @@ public:
         m_ranges.clear();
     }
 
+    // Sorted by start; pieces are page aligned and never overlap.
+    const std::vector<Range>& Ranges() const { return m_ranges; }
+
 private:
     std::vector<Range> m_ranges;
 };

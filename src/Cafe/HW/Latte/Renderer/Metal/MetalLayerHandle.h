@@ -46,6 +46,12 @@ private:
     double m_lastGoodWidth = 0.0;
     double m_lastGoodHeight = 0.0;
     uint32_t m_acquireCount = 0;
+    // A layer whose drawables do not come back (not on screen, display not consuming them, app in the
+    // background) makes nextDrawable() block for up to a second per call. After one such call the next few
+    // acquires are skipped outright, so the GPU thread keeps rendering and that output simply is not
+    // presented for a moment, instead of the whole emulation running at one frame per second.
+    uint32_t m_skipAcquires = 0;
+    uint32_t m_starvedCount = 0;
 
     void RecordLayerState() const;
     void RepairLayer();
