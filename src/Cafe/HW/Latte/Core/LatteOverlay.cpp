@@ -375,16 +375,16 @@ void LatteOverlay_RenderNotifications(ImVec2& position, ImVec2& pivot, sint32 di
 					if (s_shader_count_async > 0 && GetConfig().async_compile) // the latter condition is to never show async count when async isn't enabled. Since it can be confusing to the user
 					{
 						if(s_shader_count > 1)
-							ImGui::Text("Compiled %d new shaders... (%d async)", s_shader_count, s_shader_count_async);
+							ImGui::Text("Building %d new shaders... (%d in the background)", s_shader_count, s_shader_count_async);
 						else
-							ImGui::Text("Compiled %d new shader... (%d async)", s_shader_count, s_shader_count_async);
+							ImGui::Text("Building %d new shader... (%d in the background)", s_shader_count, s_shader_count_async);
 					}
 					else
 					{
 						if (s_shader_count > 1)
-							ImGui::Text("Compiled %d new shaders...", s_shader_count);
+							ImGui::Text("Building %d new shaders...", s_shader_count);
 						else
-							ImGui::Text("Compiled %d new shader...", s_shader_count);
+							ImGui::Text("Building %d new shader...", s_shader_count);
 					}
 
 					position.y += (ImGui::GetWindowSize().y + 10.0f) * direction;
@@ -900,16 +900,16 @@ static void OverlayNative_CollectNotifications(std::vector<std::string>& notific
 				if (s_shader_count_async > 0 && GetConfig().async_compile)
 				{
 					if (s_shader_count > 1)
-						notifications.emplace_back(OverlayNativeFormat("Compiled %d new shaders... (%d async)", s_shader_count, s_shader_count_async));
+						notifications.emplace_back(OverlayNativeFormat("Building %d new shaders... (%d in the background)", s_shader_count, s_shader_count_async));
 					else
-						notifications.emplace_back(OverlayNativeFormat("Compiled %d new shader... (%d async)", s_shader_count, s_shader_count_async));
+						notifications.emplace_back(OverlayNativeFormat("Building %d new shader... (%d in the background)", s_shader_count, s_shader_count_async));
 				}
 				else
 				{
 					if (s_shader_count > 1)
-						notifications.emplace_back(OverlayNativeFormat("Compiled %d new shaders...", s_shader_count));
+						notifications.emplace_back(OverlayNativeFormat("Building %d new shaders...", s_shader_count));
 					else
-						notifications.emplace_back(OverlayNativeFormat("Compiled %d new shader...", s_shader_count));
+						notifications.emplace_back(OverlayNativeFormat("Building %d new shader...", s_shader_count));
 				}
 			}
 		}
@@ -945,9 +945,9 @@ static void OverlayNative_CollectNotifications(std::vector<std::string>& notific
 					notifications.emplace_back(OverlayNativeFormat("Compiled %d new pipeline%s... TotalSync: %" PRIu64 "ms", s_pipeline_count, s_pipeline_count > 1 ? "s" : "", totalTime));
 #else
 				if (s_pipeline_count_async > 0)
-					notifications.emplace_back(OverlayNativeFormat("Compiled %d new pipeline%s... (%d async)", s_pipeline_count, s_pipeline_count > 1 ? "s" : "", s_pipeline_count_async));
+					notifications.emplace_back(OverlayNativeFormat("Building %d new pipeline%s... (%d in the background)", s_pipeline_count, s_pipeline_count > 1 ? "s" : "", s_pipeline_count_async));
 				else
-					notifications.emplace_back(OverlayNativeFormat("Compiled %d new pipeline%s...", s_pipeline_count, s_pipeline_count > 1 ? "s" : ""));
+					notifications.emplace_back(OverlayNativeFormat("Building %d new pipeline%s...", s_pipeline_count, s_pipeline_count > 1 ? "s" : ""));
 #endif
 			}
 		}

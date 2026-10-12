@@ -202,7 +202,7 @@ struct CustomServersSettingsSection: View {
                 locked ? "Servers can't be changed while a game is running. Close the game first."
                        : "Tap a server to make it the active Custom server, then pick Custom under Network Service. Swipe to delete.",
                 title: "Custom servers",
-                text: "A custom server is a community-run replacement for Nintendo's Wii U online services. Whoever runs it gives you a network_services.xml file, or the addresses to enter here.\n\nThe active server is copied to Documents/mlc/network_services.xml, the same file desktop Cemu reads.\n\nCustom doesn't need a linked account or otp.bin and seeprom.bin: the server decides what it needs. Pretendo does need them.")
+                text: "A custom server is a community-run replacement for Nintendo's Wii U online services. Whoever runs it gives you a network_services.xml file, or the addresses to enter here.\n\nThe active server is saved to Documents/mlc/network_services.xml.\n\nCustom doesn't need a linked account or otp.bin and seeprom.bin: the server decides what it needs. Pretendo does need them.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         .onAppear(perform: reload)

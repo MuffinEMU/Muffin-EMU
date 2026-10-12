@@ -5,6 +5,7 @@
 #include "Cafe/OS/libs/coreinit/coreinit_Alarm.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Time.h"
 #include "Cafe/HW/Espresso/PPCCallback.h"
+#include "Cafe/HW/Latte/Core/LatteOverlay.h"
 
 namespace camera
 {
@@ -180,6 +181,12 @@ namespace camera
 
 	sint32 CAMInit(uint32 cameraId, CAMInitInfo_t* camInitInfo, uint32be* error)
 	{
+#if BOOST_OS_IOS
+		// The game gets an empty camera. Say so once per launch, so a game that quietly goes without it doesn't look broken.
+		static std::atomic_bool s_cameraNoticeShown{ false };
+		if (!s_cameraNoticeShown.exchange(true))
+			LatteOverlay_pushNotification("This game uses the Wii U camera, which MuffinEMU doesn't support on iPhone or iPad. The game will carry on without it.", 8000);
+#endif
 		CameraInstance* camInstance = new CameraInstance(camInitInfo->width, camInitInfo->height, camInitInfo->handlerFuncPtr);
 		*error = 0; // Hunter's Trophy 2 will fail to boot if we don't set this
 		std::unique_lock<std::recursive_mutex> _lock(g_mutex_camera);
