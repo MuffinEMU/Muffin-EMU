@@ -213,14 +213,17 @@ enum TouchLabSettings {
 
     /// Showcase's colour preset and how it takes the screen (fit around the picture, or native size).
     static let showcaseColourKey = "muffin.touchlab.showcase.colour"
-    static let defaultShowcaseColour = ShowcaseColourPreset.wiiUWhite.rawValue
+    /// "" is the Classic look the other styles wear; the Wii U colours are presets after it.
+    static let defaultShowcaseColour = ""
     static let showcaseDisplayKey = "muffin.touchlab.showcase.display"
     static let defaultShowcaseDisplay = ShowcaseLayout.DisplayMode.fit.rawValue
-    /// The same preset names in both pickers; the classic styles add "Classic" in front.
-    static let showcaseColourOptions: [(value: String, title: String)] =
+    /// The same choices in both pickers: Classic, then the presets.
+    private static let presetColourOptions: [(value: String, title: String)] =
         ShowcaseColourPreset.allCases.map { ($0.rawValue, $0.file.name) }
+    static let showcaseColourOptions: [(value: String, title: String)] =
+        [(defaultShowcaseColour, PadStyle.name(nil))] + presetColourOptions
     static let classicColourOptions: [(value: String, title: String)] =
-        [(defaultClassicColour, PadStyle.name(nil))] + showcaseColourOptions
+        [(defaultClassicColour, PadStyle.name(nil))] + presetColourOptions
     static let showcaseDisplayOptions: [(value: String, title: String)] =
         ShowcaseLayout.DisplayMode.allCases.map { ($0.rawValue, $0.title) }
 
@@ -515,7 +518,7 @@ struct TouchLabPadOverlay: View {
             return pad
         case ShowcasePad.schemeInfo.id:
             let pad = ShowcasePad()
-            pad.colourPreset = ShowcaseColourPreset(rawValue: showcaseColour) ?? .wiiUWhite
+            pad.colourPreset = ShowcaseColourPreset(rawValue: showcaseColour)
             pad.displayMode = ShowcaseLayout.DisplayMode(rawValue: showcaseDisplay) ?? .fit
             pad.glass = showcaseGlass
             // The same measured (or calibrated) points per inch the standard pad is sized from.

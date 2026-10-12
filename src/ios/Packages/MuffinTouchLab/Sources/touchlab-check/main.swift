@@ -1462,6 +1462,11 @@ do {
         }
         check(unit(0.8) < unit(1) - 1 && unit(1) <= unit(1.2) + 0.01, "showcase: the shared scale resizes the pad (\(unit(0.8)), \(unit(1)), \(unit(1.2)))")
         let pad = ShowcasePad(); pad.pointsPerInch = 132; pad.layout(d.context(.stacked))
+        // Classic (the default) is drawn at the setting itself, as the other styles are.
+        check(abs(pad.scene(pressed: [], sticks: [:]).opacity - Double(PadSettings.defaultOpacity)) < 1e-9
+              && abs(pad.scene(pressed: [], sticks: [:], opacity: 0.3).opacity - 0.3) < 1e-9,
+              "showcase: Classic scene opacity is the shared opacity")
+        pad.colourPreset = .wiiUWhite
         let def = pad.scene(pressed: [], sticks: [:])
         check(abs(def.opacity - 0.94) < 1e-9 && pad.scene(pressed: [], sticks: [:], opacity: 1).opacity <= 1
               && abs(pad.scene(pressed: [], sticks: [:], opacity: 0.3).opacity - 0.94 * 0.3 / 0.85) < 1e-9,

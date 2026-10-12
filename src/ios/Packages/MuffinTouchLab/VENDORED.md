@@ -4,7 +4,7 @@
 
 The on-screen control schemes offered under Settings > On-screen Controls > Control style
 (Zone, Float, Adaptive, Frame, Racing, Arc, Showcase), with the shared pad settings every scheme reads.
-Vendored from MuffinEMU-TouchLab at commit `0ba4b8e768e4c36f7cfecab1dbb516003d035c35` on its main, copied with the same steps as
+Vendored from MuffinEMU-TouchLab at commit `cb3682cb494d4dfe69213ffa203cef99f6b67e72` on its main, copied with the same steps as
 `tools/export-to-muffinemu.sh`. Left out on purpose: `NearestHit.swift` and its checks, which belong
 to the Experimental touch work and are not in this release.
 

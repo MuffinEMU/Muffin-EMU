@@ -56,6 +56,11 @@ public enum PadStyle {
         return PadLook(colours: preset.file, lit: nil, litInk: ShowcaseRGBA("#1A1400"), dish: nil, tint: tint)
     }
 
+    /// An imported `.muffinclr`, drawn the way the presets are.
+    public static func custom(_ file: ShowcaseColourFile) -> PadLook {
+        PadLook(colours: file, lit: nil, litInk: ShowcaseRGBA("#1A1400"), dish: nil, tint: tint)
+    }
+
     public static func name(_ preset: ShowcaseColourPreset?) -> String { preset?.file.name ?? "Classic" }
 
     /// Every choice a settings screen offers, in order: Classic first.

@@ -51,14 +51,18 @@ public final class ShowcasePad: ControlScheme {
     // MARK: Settings (the showcase pad's three)
 
     public var layoutPreset: ShowcaseLayoutPreset = .native { didSet { settingChanged() } }
-    public var colourPreset: ShowcaseColourPreset = .wiiUWhite {
+    /// nil (the default) is the Classic look the other styles wear: translucent pale buttons,
+    /// dark stick wells, dark system buttons and a yellow held state.
+    public var colourPreset: ShowcaseColourPreset? = nil {
         // As in the showcase, picking a preset drops an imported colour file.
         didSet { customColours = nil }
     }
     /// An imported `.muffinclr`. Wins over `colourPreset` until a preset is picked again.
     public var customColours: ShowcaseColourFile?
     public var displayMode: ShowcaseLayout.DisplayMode = .fit { didSet { settingChanged() } }
-    public var colours: ShowcaseColourFile { customColours ?? colourPreset.file }
+    public var colours: ShowcaseColourFile { look.colours }
+    /// The colours plus the Classic look's held fill and stick well, when it is the one in use.
+    public var look: PadLook { customColours.map { PadStyle.custom($0) } ?? PadStyle.look(colourPreset) }
     /// Optional glass look: bodies a little see-through, a sheen across the top of each button.
     /// Off by default; works with any colour preset or `.muffinclr`.
     public var glass: Bool = false

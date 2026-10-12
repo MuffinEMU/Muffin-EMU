@@ -77,7 +77,7 @@ do {
             .replacingOccurrences(of: ")", with: "")
     }
     func draw(_ device: TargetDevice, display: TargetDevice.Display, mode: ShowcaseLayout.DisplayMode,
-              colour: ShowcaseColourPreset = .wiiUWhite, backdrop: ShowcaseSVG.Backdrop = .dark, demo: Bool = false,
+              colour: ShowcaseColourPreset? = nil, backdrop: ShowcaseSVG.Backdrop = .dark, demo: Bool = false,
               glass: Bool = false, opacity: CGFloat = PadSettings.defaultOpacity, context: LayoutContext? = nil, name: String) throws {
         let ctx = context ?? device.context(display)
         let pad = ShowcasePad()
