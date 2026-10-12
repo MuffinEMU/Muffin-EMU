@@ -548,6 +548,11 @@ struct TouchLabPadOverlay: View {
 struct TouchLabScreenState: Equatable {
     fileprivate var screens = TouchLabScreens(frames: [:])
     init() {}
+
+    /// The TV view's frame in global coordinates, once it has been laid out.
+    var tvFrame: CGRect? {
+        screens.frames[.tv].flatMap { $0.width > 1 && $0.height > 1 ? $0 : nil }
+    }
 }
 
 extension View {

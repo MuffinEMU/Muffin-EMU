@@ -19,3 +19,9 @@ struct LatteShaderCachePipelineRekey
 void LatteShaderCache_TranslatePipelineEntry(uint64 name1, uint64 name2, std::vector<uint8>& blob, std::vector<LatteShaderCachePipelineRekey>& rekeys);
 // Writes the queued entries to the pipeline cache file in one batch, then empties the list.
 void LatteShaderCache_ApplyPipelineRekeys(class FileCache* pipelineCache, std::vector<LatteShaderCachePipelineRekey>& rekeys);
+
+#if BOOST_OS_IOS
+// What the app's native loading screen draws while the cached shaders and pipelines load.
+// Returns the phase: 0 not loading, 1 shaders, 2 pipelines. loaded/total are file counts for that phase.
+uint32 LatteShaderCache_GetNativeProgress(uint32& loaded, uint32& total);
+#endif

@@ -3,6 +3,9 @@
 #include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/HW/Latte/Core/LatteShader.h"
 #include "Cafe/HW/Latte/Core/LatteShaderCache.h"
+#if BOOST_OS_IOS
+#include "Cafe/HW/Latte/Core/LatteOverlay.h"
+#endif
 #include "Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompiler.h"
 #include "Cafe/HW/Latte/Core/FetchShader.h"
 #include "Cemu/FileCache/FileCache.h"
@@ -70,6 +73,27 @@ struct
 	uint32 loadedPipelines;
 	sint32 pipelineFileCount;
 }g_shaderCacheLoaderState;
+
+#if BOOST_OS_IOS
+// What the app's native loading screen shows. One word so the app never reads a phase with the
+// counts of another: phase in bits 62-63, loaded in bits 31-61, total in bits 0-30.
+static std::atomic<uint64> s_nativeLoadProgress{ 0 };
+
+static void LatteShaderCache_SetNativeProgress(uint32 phase, sint32 loaded, sint32 total)
+{
+	const uint64 loadedBits = (uint64)(uint32)std::clamp<sint32>(loaded, 0, 0x7FFFFFFF);
+	const uint64 totalBits = (uint64)(uint32)std::clamp<sint32>(total, 0, 0x7FFFFFFF);
+	s_nativeLoadProgress.store(((uint64)phase << 62) | (loadedBits << 31) | totalBits, std::memory_order_relaxed);
+}
+
+uint32 LatteShaderCache_GetNativeProgress(uint32& loaded, uint32& total)
+{
+	const uint64 value = s_nativeLoadProgress.load(std::memory_order_relaxed);
+	loaded = (uint32)((value >> 31) & 0x7FFFFFFF);
+	total = (uint32)(value & 0x7FFFFFFF);
+	return (uint32)(value >> 62);
+}
+#endif
 
 FileCache* s_shaderCacheGeneric = nullptr;	// contains hardware and version independent shader information
 
@@ -872,6 +896,9 @@ void LatteShaderCache_Load()
 	if (g_renderer->GetType() == RendererAPI::Vulkan || g_renderer->GetType() == RendererAPI::Metal)
         LatteShaderCache_LoadPipelineCache(cacheTitleId);
 #endif
+#if BOOST_OS_IOS
+	LatteShaderCache_SetNativeProgress(0, 0, 0); // loading screen over
+#endif
 	ShaderCacheGuard_AfterLoad(cacheTitleId, numDamagedShaders == 0 && s_shaderCacheGeneric->GetDamagedEntryCount() == 0 && FileCache::GetDamagedEntryTotal() == s_guardDamageBase);
 
 
@@ -915,6 +942,12 @@ void LatteShaderCache_ShowProgress(const std::function <bool(void)>& loadUpdateF
 		bool r = loadUpdateFunc();
 		if (!r)
 			break;
+#if BOOST_OS_IOS
+		if (isPipelines)
+			LatteShaderCache_SetNativeProgress(2, (sint32)g_shaderCacheLoaderState.loadedPipelines, g_shaderCacheLoaderState.pipelineFileCount);
+		else
+			LatteShaderCache_SetNativeProgress(1, g_shaderCacheLoaderState.loadedShaderFiles, g_shaderCacheLoaderState.shaderFileCount);
+#endif
 
 		// in order to slightly speed up shader loading, we don't update the display if little time passed
 		// this also avoids delayed loading in case third party software caps the framerate at 30
@@ -936,6 +969,14 @@ void LatteShaderCache_ShowProgress(const std::function <bool(void)>& loadUpdateF
 			// render background texture
 			LatteShaderCache_drawBackgroundImage(g_shaderCacheLoaderState.textureTVId, 1280, 720);
 
+#if BOOST_OS_IOS
+			// the app draws the title, bar and counters itself (sharp at full resolution); only the background image stays here
+			const bool drawProgressUI = !g_overlayNativeOnIOS.load(std::memory_order_relaxed);
+#else
+			const bool drawProgressUI = true;
+#endif
+			if (drawProgressUI)
+			{
 			const auto progress_font = ImGui_GetFont(window_size.y / 32.0f); // = 24 by default
 			const auto shader_count_font = ImGui_GetFont(window_size.y / 48.0f); // = 16
 
@@ -1015,6 +1056,7 @@ void LatteShaderCache_ShowProgress(const std::function <bool(void)>& loadUpdateF
 				ImGui::End();
 				ImGui::PopStyleColor();
 				ImGui::PopFont();
+			}
 			}
 			g_renderer->ImguiEnd();
 			lastFrameUpdate = tick_cached();
