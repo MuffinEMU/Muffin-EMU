@@ -39,6 +39,35 @@ public final class TouchPadView: UIView {
     public var calibration = StickCalibrations() { didSet { relayout() } }
     /// See LayoutContext.tolerance.
     public var tolerance: PadTolerance? { didSet { relayout() } }
+    /// See LayoutContext.edits.
+    public var edits = PadEdits() { didSet { if edits != oldValue { relayout() } } }
+
+    /// Moving and resizing controls, when the scheme offers it (Zone). Set while the host's edit
+    /// panel is open: touches then move the control they land on instead of pressing it.
+    public var editSession: PadEditSession? {
+        didSet {
+            guard let zone = engine.scheme as? ZonePad else { return }
+            let was = zone.isEditing
+            zone.isEditing = editSession != nil
+            zone.editGranularity = editSession?.granularity ?? zone.editGranularity
+            zone.editSelection = editSession?.selection
+            if zone.isEditing != was {
+                // Whatever the pad is holding goes: the next touch moves a control, it does not press one.
+                engine.cancelAll()
+                editDrag = nil
+                pinchOrigin = nil
+                pinch.isEnabled = zone.isEditing
+            }
+            setNeedsDisplay()
+        }
+    }
+    private var editDrag: (key: String, start: CGPoint, origin: PadEdit, finger: TouchID)?
+    private var pinchOrigin: PadEdit?
+    private lazy var pinch: UIPinchGestureRecognizer = {
+        let g = UIPinchGestureRecognizer(target: self, action: #selector(pinched(_:)))
+        g.isEnabled = false
+        return g
+    }()
 
     /// Every shared setting at once; the same values for every scheme.
     public var settings: PadSettings {
@@ -46,7 +75,7 @@ public final class TouchPadView: UIView {
             PadSettings(stick: stickTuning, calibration: calibration, tolerance: tolerance, scale: scale,
                         opacity: controlOpacity, haptics: hapticsEnabled, stickSpacing: stickSpacing,
                         shoulderOffset: shoulderOffset, colourPreset: colourPreset,
-                        showcaseStyle: showcaseStyle)
+                        showcaseStyle: showcaseStyle, edits: edits)
         }
         set {
             if stickTuning != newValue.stick { stickTuning = newValue.stick }
@@ -58,6 +87,7 @@ public final class TouchPadView: UIView {
             if controlOpacity != newValue.opacity { controlOpacity = newValue.opacity }
             if colourPreset != newValue.colourPreset { colourPreset = newValue.colourPreset }
             if showcaseStyle != newValue.showcaseStyle { showcaseStyle = newValue.showcaseStyle }
+            if edits != newValue.edits { edits = newValue.edits }
             hapticsEnabled = newValue.haptics
         }
     }
@@ -98,6 +128,7 @@ public final class TouchPadView: UIView {
         super.init(frame: .zero)
         bindArcRedraw()
         isMultipleTouchEnabled = true
+        addGestureRecognizer(pinch)
         isOpaque = false
         backgroundColor = .clear
         contentMode = .redraw
@@ -132,6 +163,10 @@ public final class TouchPadView: UIView {
         bindArcRedraw()
         relayout(force: true)
         updateAmbient()
+        // A new Zone starts as the panel left things: still editing, same selection.
+        let session = editSession
+        editSession = nil
+        editSession = session
     }
 
     /// Arc changes state from outside the touch path too (a settings row starts calibration, a
@@ -175,7 +210,7 @@ public final class TouchPadView: UIView {
                                 videoRects: videoRects.map(toLocal), touchscreenRect: touchscreenRect.map(toLocal),
                                 scale: scale, stick: stickTuning, stickSpacing: stickSpacing,
                                 shoulderOffset: shoulderOffset, calibration: calibration, tolerance: tolerance,
-                                showcaseStyle: showcaseStyle)
+                                showcaseStyle: showcaseStyle, edits: edits)
         if force || ctx != engine.context {
             engine.setContext(ctx)
             if force { engine.scheme.layout(ctx) }
@@ -194,12 +229,15 @@ public final class TouchPadView: UIView {
         // touch while a thumb was down would block the host's own buttons - pause, back -
         // for as long as a stick was held, and gain nothing: an unclaimed touch is
         // dropped anyway.
+        // Editing: only a control takes a touch (the GamePad screen under the pad is not being played).
+        if editingZone != nil { return engine.scheme.claims(point) ? self : nil }
         return engine.claims(point) ? self : nil
     }
 
     private func id(_ t: UITouch) -> TouchID { ObjectIdentifier(t).hashValue }
 
     public override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if let zone = editingZone { editBegan(touches, zone); return }
         // No other finger is down, so anything the engine still holds is a leaked touch whose end never arrived.
         if let all = event?.allTouches {
             if all.count == touches.count { engine.cancelAll() }
@@ -213,6 +251,7 @@ public final class TouchPadView: UIView {
     }
 
     public override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if let zone = editingZone { editMoved(touches, zone); return }
         for t in touches {
             // Coalesced touches: every intermediate sample, so a fast flick across two
             // buttons or a quick stick snap is not reduced to its endpoints.
@@ -225,6 +264,7 @@ public final class TouchPadView: UIView {
     }
 
     public override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if editingZone != nil { editEnded(touches); return }
         for t in touches { engine.ended(id(t), at: t.location(in: self), time: t.timestamp) }
         if let all = event?.allTouches { reconcile(with: all) }
         changed()
@@ -237,6 +277,7 @@ public final class TouchPadView: UIView {
     }
 
     public override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if editingZone != nil { editEnded(touches); return }
         for t in touches { engine.cancelled(id(t), time: t.timestamp) }
         changed()
     }
@@ -352,10 +393,108 @@ public final class TouchPadView: UIView {
         changed()
     }
 
+    // MARK: Editing
+
+    /// The Zone pad while it is being edited.
+    private var editingZone: ZonePad? {
+        guard editSession != nil, let zone = engine.scheme as? ZonePad, zone.isEditing else { return nil }
+        return zone
+    }
+
+    /// Takes `edit` for `key` as the layout now: the pad moves at once, and the host is told.
+    private func setEdit(_ edit: PadEdit, for key: String, final: Bool) {
+        var next = engine.context.edits
+        next[key] = edit
+        edits = next
+        editSession?.onEdits(next, final)
+        setNeedsDisplay()
+    }
+
+    private func select(_ key: String?, in zone: ZonePad) {
+        guard zone.editSelection != key else { return }
+        zone.editSelection = key
+        editSession?.selection = key
+        editSession?.onSelect(key)
+        snapFeedback.selectionChanged()
+        setNeedsDisplay()
+    }
+
+    private func editBegan(_ touches: Set<UITouch>, _ zone: ZonePad) {
+        guard editDrag == nil, let t = touches.first else { return }
+        let p = t.location(in: self)
+        guard let key = zone.editTarget(at: p) else { return }
+        select(key, in: zone)
+        editDrag = (key, p, zone.currentEdit(for: key), id(t))
+    }
+
+    private func editMoved(_ touches: Set<UITouch>, _ zone: ZonePad) {
+        guard let drag = editDrag, let t = touches.first(where: { id($0) == drag.finger }) else { return }
+        let u = max(zone.editUnit, 1)
+        let here = t.location(in: self)
+        let now = zone.currentEdit(for: drag.key)
+        let want = PadEdit(dx: drag.origin.dx + (here.x - drag.start.x) / u,
+                           dy: drag.origin.dy + (here.y - drag.start.y) / u, scale: now.scale)
+        let got = zone.resolveEdit(want, for: drag.key, start: now)
+        if got != now { setEdit(got, for: drag.key, final: false) }
+    }
+
+    private func editEnded(_ touches: Set<UITouch>) {
+        guard let drag = editDrag, touches.contains(where: { id($0) == drag.finger }) else { return }
+        editDrag = nil
+        editSession?.onEdits(engine.context.edits, true)
+    }
+
+    @objc private func pinched(_ g: UIPinchGestureRecognizer) {
+        guard let zone = editingZone else { return }
+        switch g.state {
+        case .began:
+            if zone.editSelection == nil { select(zone.editTarget(at: g.location(in: self)), in: zone) }
+            if let key = zone.editSelection { pinchOrigin = zone.currentEdit(for: key) }
+        case .changed:
+            guard let key = zone.editSelection, let origin = pinchOrigin else { return }
+            let now = zone.currentEdit(for: key)
+            let want = PadEdit(dx: now.dx, dy: now.dy, scale: origin.scale * g.scale)
+            let got = zone.resolveEdit(want, for: key, start: now)
+            if got != now { setEdit(got, for: key, final: false) }
+        case .ended, .cancelled, .failed:
+            pinchOrigin = nil
+            editSession?.onEdits(engine.context.edits, true)
+        default:
+            break
+        }
+    }
+
+    /// Dashed outlines round everything that can be picked, a solid one round what is picked.
+    private func drawEditOutlines(_ g: CGContext) {
+        guard let zone = editingZone else { return }
+        let accent = UIColor(red: 0.35, green: 0.78, blue: 0.98, alpha: 1)
+        for o in zone.editOutlines() {
+            let rect = o.rect.insetBy(dx: -5, dy: -5)
+            let radius = min(14, min(rect.width, rect.height) / 2)
+            let path = UIBezierPath(roundedRect: rect, cornerRadius: radius)
+            if o.selected {
+                accent.withAlphaComponent(0.16).setFill()
+                path.fill()
+                accent.setStroke()
+                path.lineWidth = 2.5
+            } else {
+                UIColor.white.withAlphaComponent(0.6).setStroke()
+                path.lineWidth = 1.5
+                path.setLineDash([4, 4], count: 2, phase: 0)
+            }
+            path.stroke()
+        }
+    }
+
     // MARK: Drawing
 
     public override func draw(_ rect: CGRect) {
         guard let g = UIGraphicsGetCurrentContext() else { return }
+        drawPad(g)
+        drawEditOutlines(g)
+    }
+
+    private func drawPad(_ g: CGContext) {
         // Showcase has its own look (shadow, rim, dish, octagonal gate), as a scene to draw.
         if let showcase = engine.scheme as? ShowcasePad {
             ShowcaseDrawing.draw(showcase.scene(pressed: engine.litButtons(), sticks: engine.mixer.sticks,
@@ -377,6 +516,26 @@ public final class TouchPadView: UIView {
             else if e.style == .refined { PadDrawing.drawRefined(e, in: g, opacity: controlOpacity) }
             else { PadDrawing.draw(e, in: g, opacity: controlOpacity) }
         }
+    }
+}
+
+/// What the host tells the pad while the player is editing it, and how the pad reports back.
+public struct PadEditSession {
+    /// What a tap picks: one control, or its whole cluster.
+    public var granularity: PadEditGranularity
+    /// The picked target's key, if any.
+    public var selection: String?
+    /// A control or cluster was picked.
+    public var onSelect: (String?) -> Void
+    /// The edits changed; `final` once the finger lifts, so the host can save then and not on every frame.
+    public var onEdits: (PadEdits, Bool) -> Void
+
+    public init(granularity: PadEditGranularity, selection: String?,
+                onSelect: @escaping (String?) -> Void, onEdits: @escaping (PadEdits, Bool) -> Void) {
+        self.granularity = granularity
+        self.selection = selection
+        self.onSelect = onSelect
+        self.onEdits = onEdits
     }
 }
 
@@ -526,6 +685,10 @@ public struct TouchPad: UIViewRepresentable {
     public var tolerance: PadTolerance?
     public var colourPreset: ShowcaseColourPreset?
     public var showcaseStyle = true
+    /// See `LayoutContext.edits`.
+    public var edits = PadEdits()
+    /// Set while the player is editing the pad (Zone); nil otherwise.
+    public var editSession: PadEditSession?
     public var rectSpace: TouchPadView.RectSpace
     public var extraInsets: Insets
     public var onChange: ((PadEngine) -> Void)?
@@ -571,6 +734,7 @@ public struct TouchPad: UIViewRepresentable {
         self.tolerance = settings.tolerance
         self.colourPreset = settings.colourPreset
         self.showcaseStyle = settings.showcaseStyle
+        self.edits = settings.edits
     }
 
     public final class Coordinator {
@@ -603,6 +767,8 @@ public struct TouchPad: UIViewRepresentable {
         if view.tolerance != tolerance { view.tolerance = tolerance }
         if view.colourPreset != colourPreset { view.colourPreset = colourPreset }
         if view.showcaseStyle != showcaseStyle { view.showcaseStyle = showcaseStyle }
+        if view.edits != edits { view.edits = edits }
+        view.editSession = editSession
         if view.isInputEnabled != enabled { view.isInputEnabled = enabled }
         if view.touchscreenRect != touchscreenRect { view.touchscreenRect = touchscreenRect }
         if view.videoRects != videoRects { view.videoRects = videoRects }
