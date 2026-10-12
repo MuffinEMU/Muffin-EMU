@@ -66,7 +66,7 @@ public enum PadStyle {
                              opacity: CGFloat = PadSettings.defaultOpacity) -> ShowcaseScene {
         var b = ClassicBuilder(look: look)
         for e in elements { b.add(e) }
-        return ShowcaseScene(size: size, opacity: Double(opacity), primitives: b.out)
+        return ShowcaseScene(size: size, opacity: Double(opacity), primitives: b.out, knobs: b.knobs)
     }
 
     /// The one corner rule for every rectangle: about a quarter of its short side, never more than 18.
@@ -87,6 +87,9 @@ struct ClassicBuilder {
     let look: PadLook
     let sb: SceneBuilder
     var out: [ShowcasePrimitive] = []
+    /// Where each stick knob sits in `out`, and the dish of the stick it belongs to.
+    var knobs: [ShowcaseKnob] = []
+    private var lastDish: (centre: CGPoint, radius: CGFloat)?
     var colours: ShowcaseColourFile { look.colours }
 
     init(look: PadLook) {
@@ -237,6 +240,7 @@ struct ClassicBuilder {
 
         case .stickBase:
             guard case .circle(let c, let R) = e.shape else { return }
+            lastDish = (c, R)
             let fill = bodyFill(id, lit: false, alpha: 1)
             let dish = look.dish ?? fill.withAlpha(0.42)
             let engaged = dish.withAlpha(min(1, dish.a * (e.lit ? 1.3 : 1)))
@@ -250,6 +254,7 @@ struct ClassicBuilder {
                                   strokeWidth: w), fade: k)
 
         case .stickKnob:
+            let knobStart = out.count
             body(e.shape, id: id, lit: e.lit, fade: k, shadow: ShowcaseShadow(blur: 2.6, dy: 2, opacity: 0.34))
             if case .circle(let c, let r) = e.shape {
                 put(ShowcasePrimitive(shape: .circle(c, r * 0.52), fill: nil,
@@ -258,6 +263,9 @@ struct ClassicBuilder {
             if !e.label.isEmpty {
                 text(e.label, at: box.center, size: PadStyle.TypeScale.button(box.height * 0.8), colour: ink(id, lit: e.lit).withAlpha(0.9), fade: k)
             }
+            // A knob stays inside its dish; without one, allow it a generous reach.
+            let dish = lastDish ?? (box.center, 2 * max(box.width, box.height))
+            knobs.append(ShowcaseKnob(range: knobStart..<out.count, centre: dish.centre, reach: dish.radius + 4))
 
         case .guide, .handle:
             // Arc's own roles; the shared look is never applied to Arc.

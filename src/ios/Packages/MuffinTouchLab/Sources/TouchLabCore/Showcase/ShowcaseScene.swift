@@ -55,6 +55,86 @@ public struct ShowcaseScene: Equatable {
     /// Whole-pad opacity; the video shows faintly through, as in the showcase.
     public var opacity: Double
     public var primitives: [ShowcasePrimitive]
+    /// The stick knobs inside `primitives`, for a drawer that moves them without redrawing the rest
+    /// (see `split()`). A drawer that does not care ignores this and draws `primitives` whole.
+    public var knobs: [ShowcaseKnob] = []
+}
+
+/// One stick knob inside a scene: its primitives (body, rim, gloss, mark, label) are
+/// `primitives[range]`; its ink never leaves the disc of radius `reach` round `centre` (the stick's
+/// dish, plus what the knob's shadow adds at full travel).
+public struct ShowcaseKnob: Equatable {
+    public var range: Range<Int>
+    public var centre: CGPoint
+    public var reach: CGFloat
+
+    /// True when `box` comes within the knob's disc.
+    public func touches(_ box: CGRect) -> Bool {
+        let dx = max(box.minX - centre.x, 0, centre.x - box.maxX)
+        let dy = max(box.minY - centre.y, 0, centre.y - box.maxY)
+        return dx * dx + dy * dy < reach * reach
+    }
+}
+
+/// A scene cut into what holds still while a stick is dragged and what moves with it.
+public struct ShowcaseSceneParts: Equatable {
+    public var size: CGSize
+    public var opacity: Double
+    /// Everything but the knobs, in drawing order.
+    public var base: [ShowcasePrimitive]
+    /// The knobs' primitives, in drawing order.
+    public var knobs: [ShowcasePrimitive]
+    /// True when drawing `knobs` after all of `base` looks exactly like the scene: nothing drawn
+    /// after a knob in the scene touches that knob's region. When false, draw the scene whole.
+    public var knobsOnTop: Bool
+}
+
+extension ShowcaseScene {
+    /// The same picture as `base` then `knobs`, so a drawer can cache `base` and redraw only the knobs
+    /// while a stick moves. The drawing logic stays in the scene builders; this only partitions the list.
+    public func split() -> ShowcaseSceneParts {
+        var inKnob = [Bool](repeating: false, count: primitives.count)
+        for k in knobs { for i in k.range where i < inKnob.count { inKnob[i] = true } }
+        var base: [ShowcasePrimitive] = [], moving: [ShowcasePrimitive] = []
+        var onTop = true
+        for (i, p) in primitives.enumerated() {
+            if inKnob[i] { moving.append(p); continue }
+            base.append(p)
+            if onTop, knobs.contains(where: { i >= $0.range.upperBound && $0.touches(p.bounds) }) { onTop = false }
+        }
+        return ShowcaseSceneParts(size: size, opacity: opacity, base: base, knobs: moving, knobsOnTop: onTop)
+    }
+}
+
+extension ShowcasePrimitive {
+    /// Where this primitive can put ink: the shape, its stroke, its shadow and its text, rounded up
+    /// generously. A drawer uses it to know which primitives a changed area needs.
+    public var bounds: CGRect {
+        var box: CGRect
+        switch shape {
+        case .circle(let c, let r): box = CGRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r)
+        case .rect(let r, _): box = r
+        case .path(let cmds):
+            var lo = CGPoint(x: CGFloat.greatestFiniteMagnitude, y: CGFloat.greatestFiniteMagnitude), hi = CGPoint(x: -CGFloat.greatestFiniteMagnitude, y: -CGFloat.greatestFiniteMagnitude)
+            func add(_ p: CGPoint) { lo.x = min(lo.x, p.x); lo.y = min(lo.y, p.y); hi.x = max(hi.x, p.x); hi.y = max(hi.y, p.y) }
+            for c in cmds {
+                switch c {
+                case .move(let a), .line(let a): add(a)
+                case .quad(let a, let b): add(a); add(b)
+                case .close: break
+                }
+            }
+            box = lo.x <= hi.x ? CGRect(x: lo.x, y: lo.y, width: hi.x - lo.x, height: hi.y - lo.y) : .zero
+        }
+        var pad: CGFloat = 1 + strokeWidth / 2
+        if let s = shadow { pad += s.blur * 2 + abs(s.dy) }
+        box = box.insetBy(dx: -pad, dy: -pad)
+        if let t = text {
+            let half = textSize * 0.75 * CGFloat(max(t.count, 1)) + 4
+            box = box.union(CGRect(x: box.midX - half, y: box.midY - textSize * 1.2, width: 2 * half, height: textSize * 2.4))
+        }
+        return box
+    }
 }
 
 // MARK: - Colour helpers
@@ -140,7 +220,7 @@ extension ShowcasePad {
             default: break
             }
         }
-        return ShowcaseScene(size: context.size, opacity: b.sceneOpacity, primitives: b.out)
+        return ShowcaseScene(size: context.size, opacity: b.sceneOpacity, primitives: b.out, knobs: b.knobs)
     }
 }
 
@@ -150,6 +230,8 @@ struct SceneBuilder {
     /// The shared opacity setting, and what the scene is drawn at because of it.
     let opacity: CGFloat
     var out: [ShowcasePrimitive] = []
+    /// Where each stick's knob sits in `out`.
+    var knobs: [ShowcaseKnob] = []
     private let amounts: [PadButton: CGFloat]?
     private let pressed: Set<PadButton>
 
@@ -350,6 +432,7 @@ struct SceneBuilder {
         out.append(ShowcasePrimitive(shape: gate == .round ? .circle(c, gr) : .path(Self.octagon(c, gr)), fill: nil,
                                      stroke: .solid(ring.withAlpha(engaged ? 0.7 : 0.4)), strokeWidth: 1))
         // Cap: solid, travelling inside the dish.
+        let knobStart = out.count
         let kr = R * ShowcaseHardware.stickKnob / ShowcaseHardware.stickBase
         let k = (track?.knob ?? .zero) * ((R - kr) / max(R, 1))
         let kc = CGPoint(x: c.x + k.x, y: c.y + k.y)
@@ -364,6 +447,7 @@ struct SceneBuilder {
         // A fine concentric mark on the cap, so its position reads at a glance.
         out.append(ShowcasePrimitive(shape: .circle(kc, kr * 0.52), fill: nil,
                                      stroke: .solid(colours.glyph(id).withAlpha(0.28)), strokeWidth: 1))
+        knobs.append(ShowcaseKnob(range: knobStart..<out.count, centre: c, reach: R + 4))
     }
 
     private mutating func stroke(_ cmds: [ShowcasePathCommand], _ colour: ShowcaseRGBA, _ width: CGFloat) {

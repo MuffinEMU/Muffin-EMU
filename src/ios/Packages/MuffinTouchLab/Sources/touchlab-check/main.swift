@@ -1521,6 +1521,21 @@ do {
         _ = pad.scene(pressed: [], sticks: [:], time: 11)
         _ = pad.scene(pressed: [], sticks: [:], time: 11.5)
         check(pad.scene(pressed: [], sticks: [:], time: 11.6) == up, "showcase: settled animation equals the up look")
+        // Splitting out the knobs only partitions the list: nothing is dropped, and the knobs are the
+        // last thing drawn that matters (nothing later touches them).
+        do {
+            let parts = up.split()
+            check(up.knobs.count == 2 && parts.base.count + parts.knobs.count == up.primitives.count && parts.knobsOnTop,
+                  "showcase split: two knobs, every primitive in exactly one part, knobs on top (\(up.knobs.count) knobs, \(parts.base.count)+\(parts.knobs.count) of \(up.primitives.count), top \(parts.knobsOnTop))")
+            check(up.knobs.allSatisfy { k in up.primitives[k.range].allSatisfy { k.touches($0.bounds) } },
+                  "showcase split: each knob's primitives lie inside its disc")
+            let classic = PadStyle.scene(elements: [RenderElement(shape: .circle(center: CGPoint(x: 100, y: 100), radius: 60), role: .stickBase, label: "L"),
+                                                    RenderElement(shape: .circle(center: CGPoint(x: 110, y: 100), radius: 25), role: .stickKnob, label: "L")],
+                                         size: CGSize(width: 300, height: 200))
+            let cp = classic.split()
+            check(classic.knobs.count == 1 && cp.knobsOnTop && !cp.knobs.isEmpty && cp.base.count + cp.knobs.count == classic.primitives.count,
+                  "style split: one knob, on top of its dish")
+        }
         // Glass.
         pad.glass = true
         let g = pad.scene(pressed: [], sticks: [:])
