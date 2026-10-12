@@ -1464,6 +1464,11 @@ namespace {
         uint64_t gpuPassNs = 0, gpuPipelineNs = 0, gpuBindNs = 0, gpuEndNs = 0;
         uint32_t gpuUseResourceCalls = 0, gpuUseResourceSkips = 0, gpuArgEncodes = 0, gpuArgReuses = 0, gpuSamplerLookups = 0, gpuTexViewLookups = 0;
         uint64_t gpuUseResourceNs = 0, gpuArgEncodeNs = 0, gpuArgReuseNs = 0, gpuSamplerLookupNs = 0, gpuTexViewLookupNs = 0;
+        uint32_t gpuArgMissNoBase = 0, gpuArgMissSupport = 0, gpuArgMissSupportOnly = 0, gpuArgMissUniform = 0, gpuArgMissTexture = 0;
+        uint32_t gpuArgMissSampler = 0, gpuArgMissVertexIndex = 0, gpuArgMissConstant = 0, gpuArgDeltaEncodes = 0;
+        uint64_t gpuArgDeltaSlots = 0;
+        uint64_t gpuBindTextureLoopNs = 0, gpuBindResidencyNs = 0, gpuBindSupportPrepNs = 0, gpuBindRemappedNs = 0, gpuBindSnapshotNs = 0;
+        uint64_t gpuBindUniformLoopNs = 0, gpuBindTrackNs = 0, gpuBindCrumbNs = 0, gpuBindVertexNs = 0, gpuBindFinalNs = 0;
     };
 
     PerfSnapshot ios_perf_take()
@@ -1520,6 +1525,26 @@ namespace {
         s.gpuArgReuseNs = c.gpuArgReuseNs.load(std::memory_order_relaxed);
         s.gpuSamplerLookupNs = c.gpuSamplerLookupNs.load(std::memory_order_relaxed);
         s.gpuTexViewLookupNs = c.gpuTexViewLookupNs.load(std::memory_order_relaxed);
+        s.gpuArgMissNoBase = c.gpuArgMissNoBase.load(std::memory_order_relaxed);
+        s.gpuArgMissSupport = c.gpuArgMissSupport.load(std::memory_order_relaxed);
+        s.gpuArgMissSupportOnly = c.gpuArgMissSupportOnly.load(std::memory_order_relaxed);
+        s.gpuArgMissUniform = c.gpuArgMissUniform.load(std::memory_order_relaxed);
+        s.gpuArgMissTexture = c.gpuArgMissTexture.load(std::memory_order_relaxed);
+        s.gpuArgMissSampler = c.gpuArgMissSampler.load(std::memory_order_relaxed);
+        s.gpuArgMissVertexIndex = c.gpuArgMissVertexIndex.load(std::memory_order_relaxed);
+        s.gpuArgMissConstant = c.gpuArgMissConstant.load(std::memory_order_relaxed);
+        s.gpuArgDeltaEncodes = c.gpuArgDeltaEncodes.load(std::memory_order_relaxed);
+        s.gpuArgDeltaSlots = c.gpuArgDeltaSlots.load(std::memory_order_relaxed);
+        s.gpuBindTextureLoopNs = c.gpuBindTextureLoopNs.load(std::memory_order_relaxed);
+        s.gpuBindResidencyNs = c.gpuBindResidencyNs.load(std::memory_order_relaxed);
+        s.gpuBindSupportPrepNs = c.gpuBindSupportPrepNs.load(std::memory_order_relaxed);
+        s.gpuBindRemappedNs = c.gpuBindRemappedNs.load(std::memory_order_relaxed);
+        s.gpuBindSnapshotNs = c.gpuBindSnapshotNs.load(std::memory_order_relaxed);
+        s.gpuBindUniformLoopNs = c.gpuBindUniformLoopNs.load(std::memory_order_relaxed);
+        s.gpuBindTrackNs = c.gpuBindTrackNs.load(std::memory_order_relaxed);
+        s.gpuBindCrumbNs = c.gpuBindCrumbNs.load(std::memory_order_relaxed);
+        s.gpuBindVertexNs = c.gpuBindVertexNs.load(std::memory_order_relaxed);
+        s.gpuBindFinalNs = c.gpuBindFinalNs.load(std::memory_order_relaxed);
         return s;
     }
 
@@ -1647,6 +1672,8 @@ namespace {
             cemuLog_log(LogType::Force,
                 "perf gpu thread ms/frame {:.1f}: draws {:.0f}/frame | begin {:.1f} (textures {:.1f}, hashing {:.1f} = {} textures {:.1f} MB/frame) | "
                 "execute {:.1f} (index {:.1f}, flush queue {:.1f}, buffers {:.1f} [compared {:.1f} MB/frame, copied {:.1f} MB/frame], render pass {:.1f}, pipeline {:.1f}, resource bind {:.1f} [useResource {:.0f} calls/frame {:.1f} ms, {:.0f} skipped; argument buffers {:.0f} encoded {:.1f} ms, {:.0f} reused {:.1f} ms; sampler lookups {:.0f} {:.1f} ms; texture views {:.0f} {:.1f} ms]) | "
+                "arg misses/frame {:.0f} [no base {:.0f}; differing vs latest: support {:.0f} (only {:.0f}), uniform {:.0f}, texture {:.0f}, sampler {:.0f}, vertex/index {:.0f}, constant {:.0f}; delta encodes {:.0f} writing {:.1f} slots each] | "
+                "bind parts ms/frame [texture loop {:.1f}, support prep {:.1f}, remapped uniforms {:.1f}, support snapshot {:.1f}, uniform loop {:.1f} (shared cache track {:.1f}, breadcrumbs {:.1f}), vertex/index {:.1f}, arg buffer bind {:.1f}, residency lookups {:.1f}, rest {:.1f}] | "
                 "end/commit {:.1f} | other {:.1f}",
                 busyMs, frames > 0.0 ? draws / frames : 0.0, beginMs, ms(b.gpuTexUpdateNs, a.gpuTexUpdateNs), ms(b.gpuTexHashNs, a.gpuTexHashNs),
                 frames > 0.0 ? (uint32_t)((b.gpuTexHashes - a.gpuTexHashes) / frames) : 0u, (double)(b.gpuTexHashBytes - a.gpuTexHashBytes) * mbPerFrame,
@@ -1656,7 +1683,21 @@ namespace {
                 n(b.gpuUseResourceCalls, a.gpuUseResourceCalls), ms(b.gpuUseResourceNs, a.gpuUseResourceNs), n(b.gpuUseResourceSkips, a.gpuUseResourceSkips),
                 n(b.gpuArgEncodes, a.gpuArgEncodes), ms(b.gpuArgEncodeNs, a.gpuArgEncodeNs), n(b.gpuArgReuses, a.gpuArgReuses), ms(b.gpuArgReuseNs, a.gpuArgReuseNs),
                 n(b.gpuSamplerLookups, a.gpuSamplerLookups), ms(b.gpuSamplerLookupNs, a.gpuSamplerLookupNs),
-                n(b.gpuTexViewLookups, a.gpuTexViewLookups), ms(b.gpuTexViewLookupNs, a.gpuTexViewLookupNs), endMs, otherMs);
+                n(b.gpuTexViewLookups, a.gpuTexViewLookups), ms(b.gpuTexViewLookupNs, a.gpuTexViewLookupNs),
+                n(b.gpuArgEncodes, a.gpuArgEncodes),
+                n(b.gpuArgMissNoBase, a.gpuArgMissNoBase), n(b.gpuArgMissSupport, a.gpuArgMissSupport), n(b.gpuArgMissSupportOnly, a.gpuArgMissSupportOnly),
+                n(b.gpuArgMissUniform, a.gpuArgMissUniform), n(b.gpuArgMissTexture, a.gpuArgMissTexture), n(b.gpuArgMissSampler, a.gpuArgMissSampler),
+                n(b.gpuArgMissVertexIndex, a.gpuArgMissVertexIndex), n(b.gpuArgMissConstant, a.gpuArgMissConstant),
+                n(b.gpuArgDeltaEncodes, a.gpuArgDeltaEncodes),
+                b.gpuArgDeltaEncodes != a.gpuArgDeltaEncodes ? (double)(b.gpuArgDeltaSlots - a.gpuArgDeltaSlots) / (double)(b.gpuArgDeltaEncodes - a.gpuArgDeltaEncodes) : 0.0,
+                ms(b.gpuBindTextureLoopNs, a.gpuBindTextureLoopNs), ms(b.gpuBindSupportPrepNs, a.gpuBindSupportPrepNs), ms(b.gpuBindRemappedNs, a.gpuBindRemappedNs),
+                ms(b.gpuBindSnapshotNs, a.gpuBindSnapshotNs), ms(b.gpuBindUniformLoopNs, a.gpuBindUniformLoopNs), ms(b.gpuBindTrackNs, a.gpuBindTrackNs),
+                ms(b.gpuBindCrumbNs, a.gpuBindCrumbNs), ms(b.gpuBindVertexNs, a.gpuBindVertexNs), ms(b.gpuBindFinalNs, a.gpuBindFinalNs),
+                ms(b.gpuBindResidencyNs, a.gpuBindResidencyNs),
+                std::max(0.0, ms(b.gpuBindNs, a.gpuBindNs) - ms(b.gpuBindTextureLoopNs, a.gpuBindTextureLoopNs) - ms(b.gpuBindSupportPrepNs, a.gpuBindSupportPrepNs) -
+                    ms(b.gpuBindRemappedNs, a.gpuBindRemappedNs) - ms(b.gpuBindSnapshotNs, a.gpuBindSnapshotNs) - ms(b.gpuBindUniformLoopNs, a.gpuBindUniformLoopNs) -
+                    ms(b.gpuBindVertexNs, a.gpuBindVertexNs) - ms(b.gpuBindFinalNs, a.gpuBindFinalNs)),
+                endMs, otherMs);
         }
 
         char line[200];

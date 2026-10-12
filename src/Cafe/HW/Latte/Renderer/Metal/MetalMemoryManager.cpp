@@ -119,6 +119,28 @@ void MetalMemoryManager::ReleaseArgumentCache()
     }
 }
 
+namespace
+{
+    // What an argument-buffer slot holds, for telling apart why a cached encode could not be reused
+    enum class ArgumentSlotKind : uint32 { Support, Uniform, Texture, Sampler, VertexIndex, Constant };
+
+    ArgumentSlotKind GetArgumentSlotKind(uint32 index)
+    {
+        using namespace MetalArgumentBuffer;
+        if (index == SupportBuffer)
+            return ArgumentSlotKind::Support;
+        if (index >= UniformBufferBase && index < StreamoutBuffer)
+            return ArgumentSlotKind::Uniform;
+        if (index >= TextureBase && index < SamplerBase)
+            return ArgumentSlotKind::Texture;
+        if (index >= SamplerBase && index < VertexBufferBase)
+            return ArgumentSlotKind::Sampler;
+        if (index == StreamoutBuffer || (index >= VertexBufferBase && index < VertexBufferSizeBase) || index == IndexBuffer)
+            return ArgumentSlotKind::VertexIndex;
+        return ArgumentSlotKind::Constant; // vertex and index buffer sizes, index type
+    }
+}
+
 MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCachedArgumentBuffer(uint32 stage, MTL::ArgumentEncoder* encoder, const MetalArgumentBindings& bindings)
 {
     cemu_assert_debug(stage < METAL_SHADER_TYPE_TOTAL);
@@ -150,11 +172,59 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCac
 
     const uint64 encodeStart = PerfTelemetry::NowNs();
     const uint32 alignment = std::max<uint32>(256, static_cast<uint32>(encoder->alignment()));
-    auto* allocation = m_snapshotAllocator.AllocateBufferMemory(static_cast<uint32>(encoder->encodedLength()), alignment);
+    const uint32 encodedLength = static_cast<uint32>(encoder->encodedLength());
+    auto* allocation = m_snapshotAllocator.AllocateBufferMemory(encodedLength, alignment);
     if (!allocation)
     {
         // Out of buffer memory; the next call retries the allocation.
         return nullptr;
+    }
+
+    // Most recent entry made with this encoder, so with this exact layout. Encoded contents are plain resource handles
+    // (buffer address, texture and sampler IDs, constants) that do not depend on where the argument buffer itself lives,
+    // so its bytes are a valid starting point for the new buffer and only the slots that differ have to be written.
+    const ArgumentCacheEntry* base = nullptr;
+    for (const auto& entry : cache.entries)
+        if (entry.encoder == encoder && entry.allocation && (!base || entry.lastUse > base->lastUse))
+            base = &entry;
+
+    uint16 deltaSlots[std::tuple_size_v<MetalArgumentBindings>];
+    uint32 deltaCount = 0;
+    uint32 differingKinds = 0;
+    bool canDelta = base != nullptr;
+    if (base)
+    {
+        for (uint32 index = 0; index < bindings.size(); ++index)
+        {
+            if (bindings[index] == base->bindings[index])
+                continue;
+            differingKinds |= 1u << static_cast<uint32>(GetArgumentSlotKind(index));
+            // A slot that goes back to unused cannot be cleared on its own, so that case encodes from scratch
+            if (bindings[index].type == MetalArgumentBinding::Type::Unused)
+                canDelta = false;
+            else
+                deltaSlots[deltaCount++] = static_cast<uint16>(index);
+        }
+        auto kindBit = [&](ArgumentSlotKind kind) { return (differingKinds >> static_cast<uint32>(kind)) & 1u; };
+        telemetry.gpuArgMissSupport.fetch_add(kindBit(ArgumentSlotKind::Support), std::memory_order_relaxed);
+        telemetry.gpuArgMissSupportOnly.fetch_add(differingKinds == (1u << static_cast<uint32>(ArgumentSlotKind::Support)) ? 1 : 0, std::memory_order_relaxed);
+        telemetry.gpuArgMissUniform.fetch_add(kindBit(ArgumentSlotKind::Uniform), std::memory_order_relaxed);
+        telemetry.gpuArgMissTexture.fetch_add(kindBit(ArgumentSlotKind::Texture), std::memory_order_relaxed);
+        telemetry.gpuArgMissSampler.fetch_add(kindBit(ArgumentSlotKind::Sampler), std::memory_order_relaxed);
+        telemetry.gpuArgMissVertexIndex.fetch_add(kindBit(ArgumentSlotKind::VertexIndex), std::memory_order_relaxed);
+        telemetry.gpuArgMissConstant.fetch_add(kindBit(ArgumentSlotKind::Constant), std::memory_order_relaxed);
+    }
+    else
+        telemetry.gpuArgMissNoBase.fetch_add(1, std::memory_order_relaxed);
+
+    if (canDelta)
+    {
+        // Copied before the new entry is made below: that can move or evict the entry this reads from
+        std::memcpy(allocation->memPtr, base->allocation->memPtr, encodedLength);
+    }
+    else
+    {
+        std::memset(allocation->memPtr, 0, allocation->size);
     }
 
     // Retain the new set before the evicted one is released so shared resources are never freed in between.
@@ -182,9 +252,8 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCac
     slot->encoder = encoder;
     slot->bindings = bindings;
     slot->allocation = allocation;
-    std::memset(allocation->memPtr, 0, allocation->size);
     encoder->setArgumentBuffer(allocation->mtlBuffer, allocation->bufferOffset);
-    for (uint32 index = 0; index < bindings.size(); ++index)
+    auto encodeSlot = [&](uint32 index)
     {
         const auto& binding = bindings[index];
         switch (binding.type)
@@ -205,6 +274,18 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCac
                     *static_cast<uint32*>(constant) = static_cast<uint32>(binding.value);
                 break;
         }
+    };
+    if (canDelta)
+    {
+        for (uint32 i = 0; i < deltaCount; ++i)
+            encodeSlot(deltaSlots[i]);
+        telemetry.gpuArgDeltaEncodes.fetch_add(1, std::memory_order_relaxed);
+        telemetry.gpuArgDeltaSlots.fetch_add(deltaCount, std::memory_order_relaxed);
+    }
+    else
+    {
+        for (uint32 index = 0; index < bindings.size(); ++index)
+            encodeSlot(index);
     }
 
     m_snapshotAllocator.FlushReservation(allocation);
