@@ -1456,7 +1456,7 @@ namespace {
         uint64_t shaderCompileNs = 0, pipelineCompileNs = 0;
         uint32_t textureDecodes = 0;
         uint64_t textureDecodeNs = 0;
-        uint32_t textureTranscodes = 0;
+        uint32_t textureTranscodes = 0, textureTranscodeCacheHits = 0;
         uint64_t textureTranscodeNs = 0;
         uint32_t jitBlocks = 0, jitInvalidations = 0, jitArenaReleases = 0, jitArenaAllocFails = 0;
         uint64_t jitCompileNs = 0;
@@ -1498,6 +1498,7 @@ namespace {
         s.textureDecodeNs = c.textureDecodeNs.load(std::memory_order_relaxed);
         s.textureTranscodes = c.textureTranscodes.load(std::memory_order_relaxed);
         s.textureTranscodeNs = c.textureTranscodeNs.load(std::memory_order_relaxed);
+        s.textureTranscodeCacheHits = c.textureTranscodeCacheHits.load(std::memory_order_relaxed);
         s.jitBlocks = c.jitBlocks.load(std::memory_order_relaxed);
         s.jitCompileNs = c.jitCompileNs.load(std::memory_order_relaxed);
         s.jitInvalidations = c.jitInvalidations.load(std::memory_order_relaxed);
@@ -1602,6 +1603,7 @@ namespace {
         const double textureDecodeMs = (double)(b.textureDecodeNs - a.textureDecodeNs) / 1e6;
         const uint32_t textureTranscodes = b.textureTranscodes - a.textureTranscodes;
         const double textureTranscodeMs = (double)(b.textureTranscodeNs - a.textureTranscodeNs) / 1e6;
+        const uint32_t textureTranscodeCacheHits = b.textureTranscodeCacheHits - a.textureTranscodeCacheHits;
         const uint32_t jitBlocks = b.jitBlocks - a.jitBlocks;
         const double jitMs = (double)(b.jitCompileNs - a.jitCompileNs) / 1e6;
         const int thermal = ios_thermal_state();
@@ -1651,12 +1653,12 @@ namespace {
         cemuLog_log(LogType::Force,
             "perf {:.0f}s: fps host {:.1f} game {:.1f} vsync {:.1f} (speed {:.0f}%) | ppc thread run {:.0f}% wait {:.0f}% | "
             "gpu thread busy {:.0f}% idle {:.0f}% sync {:.0f}% (drawable {:.0f} ms) | metal gpu {:.1f} ms/frame ({:.0f}% busy, {:.1f} cb/frame) | "
-            "compiled shaders {} ({:.0f} ms) pipelines {} ({:.0f} ms, {} on the gpu thread) | texture decodes {} ({:.0f} ms, BC->ASTC {} = {:.0f} ms) | "
+            "compiled shaders {} ({:.0f} ms) pipelines {} ({:.0f} ms, {} on the gpu thread) | texture decodes {} ({:.0f} ms, BC->ASTC {} = {:.0f} ms, {} from cache) | "
             "jit blocks {} ({:.0f} ms) invalidated {} arena released {} alloc-failed {} used {}/{} MB | thermal {} | limit: {}",
             dt, hostFps, guestFps, vsyncRate, speedPct, ppcRun * 100.0, ppcWait * 100.0,
             gpuThreadBusy * 100.0, gpuIdle * 100.0, gpuSync * 100.0, (double)(b.drawableWaitNs - a.drawableWaitNs) / 1e6,
             mtlMsPerFrame, mtlBusy * 100.0, cbPerFrame,
-            shaders, shaderMs, pipelines, pipelineMs, pipelinesOnGpuThread, textureDecodes, textureDecodeMs, textureTranscodes, textureTranscodeMs,
+            shaders, shaderMs, pipelines, pipelineMs, pipelinesOnGpuThread, textureDecodes, textureDecodeMs, textureTranscodes, textureTranscodeMs, textureTranscodeCacheHits,
             jitBlocks, jitMs, b.jitInvalidations - a.jitInvalidations, b.jitArenaReleases - a.jitArenaReleases, b.jitArenaAllocFails - a.jitArenaAllocFails,
             (uint64_t)(PPCRecompiler_getJitArenaUsed() / (1024 * 1024)), (uint64_t)(PPCRecompiler_getJitArenaSize() / (1024 * 1024)),
             ios_thermal_name(thermal), PerfTelemetry::BottleneckName(verdict));
