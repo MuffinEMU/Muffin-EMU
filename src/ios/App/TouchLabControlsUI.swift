@@ -279,6 +279,7 @@ struct TouchLabLayoutPanel: View {
     @AppStorage(TouchLabSettings.classicColourKey) private var classicColour = TouchLabSettings.defaultClassicColour
     @AppStorage(TouchLabSettings.showcaseColourKey) private var showcaseColour = TouchLabSettings.defaultShowcaseColour
     @AppStorage(TouchLabSettings.showcaseGlassKey) private var showcaseGlass = false
+    @AppStorage(TouchLabSettings.aScaleKey) private var aScale = TouchLabSettings.defaultAScale
     private var shoulderStore = ShoulderOffsetStorage()
     @ObservedObject private var windowSize = ControlsWindowSize.shared
     /// The shoulder setting for the orientation the pad is in now (kept apart per orientation),
@@ -316,6 +317,15 @@ struct TouchLabLayoutPanel: View {
 
         PanelSliderRow("Opacity", leadingIcon: "circle.lefthalf.filled", trailingIcon: "circle.fill",
                        value: $controlOpacity, range: 0.2...1.0)
+
+        // As in Settings: Arc places every button by your reach and Showcase is the GamePad at its real
+        // size, so neither has a separate A size. The buttons around A shrink a little to make room.
+        if scheme != TouchLabSettings.arcStyleID && scheme != TouchLabSettings.showcaseStyleID {
+            PanelSliderRow("A button size", title: "A size", leadingIcon: "a.circle", trailingIcon: "a.circle.fill",
+                           value: $aScale, range: TouchLabSettings.aScaleRange, step: 0.01,
+                           spokenValue: "\(Int((aScale * 100).rounded())) percent",
+                           readout: "\(Int((aScale * 100).rounded()))%")
+        }
 
         // Hand size: both sticks move together, apart or closer. Only the styles with sticks
         // in fixed places have anything for it to move.
