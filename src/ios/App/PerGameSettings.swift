@@ -698,6 +698,7 @@ struct GameOptionsView: View {
                 Text(mode.limitWarning)
             }
             .navigationTitle(game.title)
+            .onAppear { keptOnOneCore = CoreGuard.isPinned(gameID: game.settingsKey) }
             .muffinOpaqueNavigationBar(MuffinTheme.formGround)
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
