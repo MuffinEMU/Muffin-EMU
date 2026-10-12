@@ -11,9 +11,16 @@
 // thread encodes them with AVAudioFile. Nothing here touches what the player hears.
 namespace IOSAudioRecorder
 {
-	// Audio thread. Cheap when no recording is on (one relaxed atomic load).
+	// A second listener for the same feed (the screen recorder's audio track). Called on the audio thread
+	// with each block, so it must copy and return. nullptr removes it.
+	using Sink = void (*)(const int16_t* interleaved, uint32_t frames, uint32_t channels, uint32_t sampleRate);
+	void SetSink(Sink sink);
+
+	// Audio thread. Cheap when nothing is listening (a few relaxed atomic loads).
 	void Tap(const int16_t* interleaved, uint32_t frames, uint32_t channels, uint32_t sampleRate);
 	bool IsActive();
+	// True while a recording or a sink wants the feed.
+	bool WantsTap();
 
 	// Starts a recording to `path` (an .m4a file; the folder must exist). False when one is already on.
 	bool Start(const char* path);

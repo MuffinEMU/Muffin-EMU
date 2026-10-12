@@ -23,6 +23,7 @@ namespace
 	std::atomic<uint32_t> s_rate{0};
 	std::atomic<uint64_t> s_framesWritten{0};
 	std::atomic<bool> s_stopRequested{false};
+	std::atomic<IOSAudioRecorder::Sink> s_sink{nullptr};
 	std::thread s_writer;
 	std::mutex s_controlMutex;
 	std::string s_path;
@@ -116,7 +117,11 @@ namespace IOSAudioRecorder
 {
 	void Tap(const int16_t* interleaved, uint32_t frames, uint32_t channels, uint32_t sampleRate)
 	{
-		if (!s_active.load(std::memory_order_relaxed) || !interleaved || frames == 0 || channels == 0)
+		if (!interleaved || frames == 0 || channels == 0)
+			return;
+		if (const Sink sink = s_sink.load(std::memory_order_acquire))
+			sink(interleaved, frames, channels, sampleRate);
+		if (!s_active.load(std::memory_order_relaxed))
 			return;
 		s_rate.store(sampleRate, std::memory_order_relaxed);
 		// Always stereo in the file. More channels than two keep the front pair; one channel is doubled.
@@ -146,6 +151,16 @@ namespace IOSAudioRecorder
 	bool IsActive()
 	{
 		return s_active.load(std::memory_order_relaxed);
+	}
+
+	bool WantsTap()
+	{
+		return s_active.load(std::memory_order_relaxed) || s_sink.load(std::memory_order_relaxed) != nullptr;
+	}
+
+	void SetSink(Sink sink)
+	{
+		s_sink.store(sink, std::memory_order_release);
 	}
 
 	bool Start(const char* path)

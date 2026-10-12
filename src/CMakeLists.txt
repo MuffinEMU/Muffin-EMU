@@ -114,7 +114,7 @@ if(IOS)
 		COMPILE_OPTIONS "-fobjc-arc;-include;${CMAKE_SOURCE_DIR}/src/Common/precompiled.h"
 		SKIP_PRECOMPILE_HEADERS ON)
 	# Motion aiming needs nothing from the core, so it is plain ARC Objective-C++ with no precompiled header.
-	set_source_files_properties(ios/Bridge/IOSMotion.mm PROPERTIES
+	set_source_files_properties(ios/Bridge/IOSMotion.mm ios/Bridge/IOSScreenRecorder.mm PROPERTIES
 		COMPILE_OPTIONS "-fobjc-arc"
 		SKIP_PRECOMPILE_HEADERS ON)
 	target_link_libraries(CemuBin PRIVATE
@@ -131,6 +131,8 @@ if(IOS)
 		ios/Bridge/IOSLiveLog.cpp
 		ios/Bridge/IOSMotion.h
 		ios/Bridge/IOSMotion.mm
+		ios/Bridge/IOSScreenRecorder.h
+		ios/Bridge/IOSScreenRecorder.mm
 		ios/Bridge/CemuDeviceCaps.h
 		ios/Bridge/IOSDeviceCaps.cpp
 		ios/Bridge/Core/IOSAccounts.cpp
@@ -161,6 +163,9 @@ if(IOS)
 		"-framework CoreMotion"
 		"-framework Metal"
 		"-framework QuartzCore"
+		"-framework AVFoundation"
+		"-framework CoreMedia"
+		"-framework CoreVideo"
 	)
 endif()
 

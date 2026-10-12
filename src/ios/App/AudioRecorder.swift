@@ -171,28 +171,39 @@ final class AudioRecorder: ObservableObject {
 
 // MARK: - Views
 
-/// The small red "Recording 0:42" pill, shown over the game while a recording runs.
+/// The small red "Recording 0:42" pill, shown over the game while a recording runs. One pill per
+/// kind, so audio and screen recordings that overlap each show their own clock.
 struct RecordingIndicator: View {
     @ObservedObject private var recorder = AudioRecorder.shared
+    @ObservedObject private var screenRecorder = ScreenRecorder.shared
 
     var body: some View {
-        if recorder.isRecording {
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(Color.white)
-                    .frame(width: 7, height: 7)
-                Text("Recording \(Self.clock(recorder.elapsed))")
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundColor(.white)
+        HStack(spacing: 6) {
+            if screenRecorder.isRecording {
+                pill(kind: "screen", seconds: screenRecorder.elapsed)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(Capsule().fill(Color.red))
-            .allowsHitTesting(false)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Recording audio, \(recorder.elapsed) seconds")
+            if recorder.isRecording {
+                pill(kind: "audio", seconds: recorder.elapsed)
+            }
         }
+        .allowsHitTesting(false)
+    }
+
+    private func pill(kind: String, seconds: Int) -> some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(Color.white)
+                .frame(width: 7, height: 7)
+            Text("Recording \(Self.clock(seconds))")
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundColor(.white)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Capsule().fill(Color.red))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Recording \(kind), \(seconds) seconds")
     }
 
     static func clock(_ seconds: Int) -> String {
