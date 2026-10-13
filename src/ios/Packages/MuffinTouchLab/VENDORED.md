@@ -12,4 +12,7 @@ to the Experimental touch work and are not in this release.
 > Do not edit these files here. Change them in MuffinEMU-TouchLab, run its checks, and
 > re-export - otherwise the next export silently overwrites the change.
 
+Copyright (c) 2026 MuffinEMU Development Team, GPL-3.0-only. TouchLab is the MuffinEMU Development Team's
+own work; see [NOTICE](NOTICE). Headers and licence match TouchLab `90885f2`.
+
 Checks: `swift run --package-path src/ios/Packages/MuffinTouchLab touchlab-check`
