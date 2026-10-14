@@ -2487,6 +2487,34 @@ void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContext, Latt
 			else
 				src->add("0");
 		}
+		else if (texDim == Latte::E_DIM::DIM_2D_ARRAY || texDim == Latte::E_DIM::DIM_3D || texDim == Latte::E_DIM::DIM_1D_ARRAY)
+		{
+			// Without these cases the call was emitted with no coordinates and the shader failed to compile. Only x/y are
+			// texel-scaled; the slice (array layer or depth) is taken as is.
+			const bool is1DArray = texDim == Latte::E_DIM::DIM_1D_ARRAY;
+			src->add(is1DArray ? "ivec2(" : "ivec3(");
+			if (is1DArray)
+			{
+				src->add("int(float(");
+				_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 0, texCoordDataType);
+				src->addFmt(")*uf_tex{}Scale.x), ", texInstruction->textureFetch.textureIndex);
+			}
+			else
+			{
+				src->add("ivec2(vec2(");
+				_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 0, texCoordDataType);
+				src->add(", ");
+				_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 1, texCoordDataType);
+				src->addFmt(")*uf_tex{}Scale), ", texInstruction->textureFetch.textureIndex);
+			}
+			src->add(texCoordDataType == LATTE_DECOMPILER_DTYPE_SIGNED_INT ? "int(" : "int(round(");
+			_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, is1DArray ? 1 : 2, texCoordDataType);
+			src->add(texCoordDataType == LATTE_DECOMPILER_DTYPE_SIGNED_INT ? ")), " : "))), ");
+			if (texOpcode == GPU7_TEX_INST_LD)
+				_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 3, LATTE_DECOMPILER_DTYPE_SIGNED_INT);
+			else
+				src->add("0");
+		}
 		else
 			cemu_assert_debug(false);
 	}
@@ -3919,6 +3947,8 @@ void LatteDecompiler_emitGLSLShader(LatteDecompilerShaderContext* shaderContext,
 	// start of main
 	src->add("void main()" _CRLF);
 	src->add("{" _CRLF);
+	for (uint32 semanticId : shaderContext->zeroDefaultOutputSemantics)
+		src->addFmt("passParameterSem{} = vec4(0.0);" _CRLF, semanticId);
 	// variable definition
 	if (shaderContext->typeTracker.useArrayGPRs == false)
 	{

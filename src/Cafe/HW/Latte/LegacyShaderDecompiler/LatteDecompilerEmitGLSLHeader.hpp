@@ -392,7 +392,8 @@ namespace LatteDecompiler
 		}
 		// Every input the pixel shader reads must be written by this vertex shader with the same type and qualifiers.
 		// Vulkan tolerates a missing output, Metal (through MoltenVK) refuses to compile the pipeline, so declare the rest
-		// and give it a zero default.
+		// and give it a zero default. GLSL does not allow an initializer on an output, so main() writes the zero.
+		shaderContext->zeroDefaultOutputSemantics.clear();
 		for (sint32 f = 0; f < psInputTable->count; f++)
 		{
 			if (psInputWritten[f])
@@ -404,7 +405,8 @@ namespace LatteDecompiler
 				src->add("flat ");
 			if (psInputTable->import[f].isNoPerspective)
 				src->add("noperspective ");
-			src->addFmt("out vec4 passParameterSem{} = vec4(0.0);" _CRLF, psInputTable->import[f].semanticId);
+			src->addFmt("out vec4 passParameterSem{};" _CRLF, psInputTable->import[f].semanticId);
+			shaderContext->zeroDefaultOutputSemantics.push_back(psInputTable->import[f].semanticId);
 		}
 	}
 

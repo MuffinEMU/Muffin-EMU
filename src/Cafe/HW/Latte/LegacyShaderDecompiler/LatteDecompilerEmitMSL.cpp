@@ -2389,6 +2389,44 @@ static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContex
     			src->add("), 0");
     			// todo - lod
     		}
+    		else if (texDim == Latte::E_DIM::DIM_2D_ARRAY || texDim == Latte::E_DIM::DIM_3D || texDim == Latte::E_DIM::DIM_1D_ARRAY)
+    		{
+    			// Without these cases read() was emitted with no coordinates and the pipeline failed to compile. Only x/y are
+    			// texel-scaled; the slice (array layer or depth) is taken as is.
+    			const bool is1DArray = texDim == Latte::E_DIM::DIM_1D_ARRAY;
+    			const bool is3D = texDim == Latte::E_DIM::DIM_3D;
+    			if (is3D)
+    				src->add("uint3(");
+    			if (is1DArray)
+    			{
+    				src->add("uint(float(");
+    				_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 0, texCoordDataType);
+    				src->addFmt(")*supportBuffer.tex{}Scale.x), ", texInstruction->textureFetch.textureIndex);
+    			}
+    			else
+    			{
+    				src->add("uint2(float2(");
+    				_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 0, texCoordDataType);
+    				src->add(", ");
+    				_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 1, texCoordDataType);
+    				src->addFmt(")*supportBuffer.tex{}Scale), ", texInstruction->textureFetch.textureIndex);
+    			}
+    			src->add(texCoordDataType == LATTE_DECOMPILER_DTYPE_SIGNED_INT ? "uint(" : "uint(rint(");
+    			_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, is1DArray ? 1 : 2, texCoordDataType);
+    			src->add(texCoordDataType == LATTE_DECOMPILER_DTYPE_SIGNED_INT ? ")" : "))");
+    			if (is3D)
+    				src->add(")");
+    			if (is1DArray)
+    				src->add(", 0"); // 1D textures have no mips in Metal
+    			else
+    			{
+    				src->add(", ");
+    				if (texOpcode == GPU7_TEX_INST_LD)
+    					_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 3, LATTE_DECOMPILER_DTYPE_SIGNED_INT);
+    				else
+    					src->add("0");
+    			}
+    		}
     		else
     			cemu_assert_debug(false);
     	}

@@ -5103,12 +5103,15 @@ void VKRObjectSampler::DestroyCache()
 	// assuming all other objects which depend on vkSampler are destroyed, this cache should also have been emptied already
 	// but just to be sure lets still clear the cache
 	cemu_assert_debug(s_samplerCache.empty());
-	for(auto& sampler : s_samplerCache)
+	// ~VKRObjectSampler erases its own entry from s_samplerCache, so deleting while iterating the map would follow a
+	// freed node (a crash on every Vulkan shutdown). Take the entries out first.
+	std::unordered_map<uint64, VKRObjectSampler*> samplers;
+	samplers.swap(s_samplerCache);
+	for(auto& sampler : samplers)
 	{
 		cemu_assert_debug(sampler.second->m_refCount == 0);
 		delete sampler.second;
 	}
-	s_samplerCache.clear();
 }
 
 VKRObjectRenderPass::VKRObjectRenderPass(AttachmentInfo_t& attachmentInfo, sint32 colorAttachmentCount)
