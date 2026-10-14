@@ -321,8 +321,9 @@ struct BootFailureView: View {
             .accentColor(.white.opacity(0.75))
             .frame(maxWidth: 480)
 
-            // Not on the restart screen: the logs there are from the game that already ended, and its own screen offered them.
-            if !needsCleanRestart {
+            // Only where the logs can explain something. Not on the restart screen (the logs are from the game that
+            // already ended, and its own screen offered them), a disconnected drive, or missing keys.
+            if !needsCleanRestart && !driveWasLost && !needsKeys {
                 shareDiagnosticsButton
             }
 
@@ -1069,7 +1070,7 @@ struct GameBrowserView: View {
                 }
                 Button("Cancel", role: .cancel) { pendingManualMatchConfirmation = nil }
             } message: { pending in
-                Text("Couldn't automatically match this \(pending.kind.displayName) to a game already in your library. Add it to \"\(pending.game.title)\" - the game you long-pressed?")
+                Text("Couldn't automatically match this \(pending.kind.displayName) to a game already in your library. Add it to \"\(pending.game.title)\", the game you picked?")
             }
             .confirmationDialog(
                 "Remove content?",
@@ -2289,12 +2290,15 @@ struct EmulatorViewOptimized: View {
                     TopBarOverflowScroll {
                     // 2 point gaps: each button is a 44 point target around a smaller visible one.
                     HStack(spacing: 2) {
-                        Button(action: { showSkinSelector.toggle() }) {
-                            Image(systemName: "gamecontroller.fill")
-                                .font(.system(size: 12, weight: .semibold))
+                        // Skins colour MuffinEMU's own pad only, so the button is there only while that pad is in use.
+                        if padSystem == .muffin {
+                            Button(action: { showSkinSelector.toggle() }) {
+                                Image(systemName: "gamecontroller.fill")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                            .buttonStyle(MuffinBarButtonStyle())
+                            .accessibilityLabel("Choose Controller Skin")
                         }
-                        .buttonStyle(MuffinBarButtonStyle())
-                        .accessibilityLabel("Choose Controller Skin")
 
                         // Settings > On-Screen Controls already has this toggle;
                         // repeated here for the same reason as the save-state and
@@ -2510,12 +2514,10 @@ struct EmulatorViewOptimized: View {
                 // The bar and the pads are laid out against measured sizes, so they stop growing at Extra Large.
                 .dynamicTypeSize(...DynamicTypeSize.xLarge)
 
-                if showSkinSelector {
+                if showSkinSelector && padSystem == .muffin {
                     VStack(spacing: 6) {
                         OrganizedControllerSkinSelector(selectedSkin: $controllerSkin)
-                        Text(padSystem == .muffin
-                             ? "The skin applies to every game."
-                             : "Skins colour MuffinEMU's own pad, which isn't the one in use right now.")
+                        Text("The skin applies to every game.")
                             .font(.system(size: 11, design: .rounded))
                             .foregroundColor(.white.opacity(0.65))
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2687,7 +2689,7 @@ struct EmulatorViewOptimized: View {
                 VStack(spacing: 12) {
                     ProgressView()
                         .tint(.white)
-                    Text("Starting \(game.title)…")
+                    Text("Starting \(gameName)…")
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
                         .foregroundColor(.white.opacity(0.8))
                         .multilineTextAlignment(.center)
@@ -3141,10 +3143,10 @@ struct EmulatorViewOptimized: View {
 
     private var stallAdvice: String {
         switch gameManager.videoStallKind {
-        case 2: return "iOS stopped running this game's graphics. Tap Save State, then Quit Game. MuffinEMU will then ask you to close and reopen it before the next game."
-        case 3: return "Tap Save State, then Quit Game and reopen MuffinEMU. After you quit, a lower Resolution (in Settings, Graphics) uses less memory."
-        case 4: return "iOS may close MuffinEMU soon. Tap Save State now. After you quit, a lower Resolution (in Settings, Graphics) uses less memory."
-        case 5: return "The game is still running but the screen isn't taking frames. This goes away by itself if it recovers. If it doesn't, tap Save State, then Quit Game and reopen MuffinEMU."
+        case 2: return "iOS stopped running this game's graphics. Tap Quit Game. MuffinEMU will then ask you to close and reopen it before the next game."
+        case 3: return "Tap Quit Game and reopen MuffinEMU. After you quit, a lower Resolution (in Settings, Graphics) uses less memory."
+        case 4: return "iOS may close MuffinEMU soon. Save in the game now if you can. After you quit, a lower Resolution (in Settings, Graphics) uses less memory."
+        case 5: return "The game is still running but the screen isn't taking frames. This goes away by itself if it recovers. If it doesn't, tap Quit Game and reopen MuffinEMU."
         default: return "The picture has stopped while the game keeps running. This goes away by itself if the picture comes back."
         }
     }

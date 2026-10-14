@@ -221,11 +221,15 @@ struct AccountImportButton: View {
             }
             Button("Not now", role: .cancel) { activateCandidate = nil }
         } message: {
-            Text("Make the imported account the active one? Then set Network Service to Pretendo Network below.")
+            // The Pretendo step only for an account that passed the online check.
+            Text(pendingActivationCanGoOnline
+                 ? "Make the imported account the active one? Then set Network Service to Pretendo Network below."
+                 : "Make the imported account the active one?")
         }
     }
 
     @State private var pendingActivation: UInt32?
+    @State private var pendingActivationCanGoOnline = false
 
     private func offerActivation() {
         if let id = pendingActivation, id != cemu_bridge_active_account_persistent_id() {
@@ -271,6 +275,7 @@ struct AccountImportButton: View {
             lines.append("Still missing for online play: " + missing.joined(separator: ", ") + ".")
         }
         pendingActivation = firstValid ?? firstAny
+        pendingActivationCanGoOnline = firstValid != nil
         resultTitle = "Import"
         resultMessage = lines.joined(separator: "\n")
         onChange()

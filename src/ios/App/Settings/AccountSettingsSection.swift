@@ -170,7 +170,7 @@ struct NetworkServiceSettingsSection: View {
                     }
                 }
                 .disabled(locked || activeAccountName == nil
-                          || (service == .custom && !customAvailable) // add a server under Custom servers below
+                          || (service == .custom && !customAvailable) // add a server under Custom servers above
                           // Nintendo's servers are shut down; only keep it selectable if it's already chosen.
                           || (service == .nintendo && selectedService != .nintendo))
             }
@@ -181,7 +181,7 @@ struct NetworkServiceSettingsSection: View {
             InfoButton.footer(
                 locked ? "The Network Service can't be changed while a game is running. Close the game first." : selectedService.accountHelp,
                 title: "Network Service",
-                text: "Pretendo is a community-run replacement for Nintendo's Wii U online services. Its server addresses are built in, so there's nothing to configure.\n\nNintendo's own servers have been shut down, so that option can't be selected.\n\nCustom works with a network_services.xml file. Add one under Custom servers below. It needs no linked account or otp.bin and seeprom.bin.\n\n" + OnlineReadiness.howToFix)
+                text: "Pretendo is a community-run replacement for Nintendo's Wii U online services. Its server addresses are built in, so there's nothing to configure.\n\nNintendo's own servers have been shut down, so that option can't be selected.\n\nCustom works with a network_services.xml file. Add one under Custom servers above. It needs no linked account or otp.bin and seeprom.bin.\n\n" + OnlineReadiness.howToFix)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         .onAppear(perform: reload)

@@ -436,7 +436,12 @@ struct GameOptionsView: View {
             InfoButton.footer(
                 "\"Use Global Default\" follows Settings; On or Off sets this game only. Changes apply the next time you start the game.",
                 title: "Overrides",
-                text: "Compile shaders in the background builds shaders while the game keeps running. Most games want this on; Nano Assault Neo breaks with it, so it can be set per game.\n\nFavour accuracy is slower but more accurate, and can fix a game that glitches or crashes. It also keeps the game on one CPU core. See Settings > CPU.\n\nCPU cores picks how many cores run the game. Auto decides for each game and device.\n\n\"Use Global Default\" follows the matching setting in Settings, even if you change it later. On or Off sets this game only.\n\nChanges apply the next time you start the game."
+                // Favour accuracy and CPU cores are Advanced mode only, so Basic doesn't describe them.
+                text: "Compile shaders in the background builds shaders while the game keeps running. Most games want this on; Nano Assault Neo breaks with it, so it can be set per game.\n\n"
+                    + (SettingsMode.isAdvanced(raw: settingsModeRaw)
+                        ? "Favour accuracy is slower but more accurate, and can fix a game that glitches or crashes. It also keeps the game on one CPU core. See Settings > CPU.\n\nCPU cores picks how many cores run the game. Auto decides for each game and device.\n\n"
+                        : "")
+                    + "\"Use Global Default\" follows the matching setting in Settings, even if you change it later. On or Off sets this game only.\n\nChanges apply the next time you start the game."
             )
         }
     }

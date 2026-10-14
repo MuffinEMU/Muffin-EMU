@@ -68,7 +68,7 @@ enum ShaderCacheInfo {
 
 /// One game's shader cache on its options screen: how much is cached and when it last changed, clearing
 /// it for this game alone, and (Advanced mode) the counts, the learned/compiled split and exporting it.
-/// Settings > Shader Cache does the same for every game at once.
+/// Settings > Shaders does the same for every game at once.
 ///
 /// "Learned" is what the game has revealed by drawing with it (Wii U shader bytecode), "compiled" is the
 /// output built from that, which rebuilds by itself. See cemu_bridge_clear_shader_cache.
@@ -139,7 +139,7 @@ struct GameShaderCacheSection: View {
                 InfoButton.footer(
                     "What this game has saved so it starts faster. Clearing needs the game closed.",
                     title: "Shader cache",
-                    text: "A shader cache is what a game has saved so the next start skips building its shaders again. Size on disk is everything saved for this game, and Last updated is the last time any of it changed.\n\nClear this game's shaders lets you remove just the compiled ones (one slow start, nothing else lost) or everything including the learned ones (the game stutters while it relearns them).\n\nAdvanced mode also shows how many shaders and pipelines are saved for the renderer you've selected, splits the size into learned and compiled, and can export this game's Metal shader files to Files, for backing up or moving to another device. The counts are hidden while a game is running. The settings under Settings > Shader Cache cover every game at once.")
+                    text: "A shader cache is what a game has saved so the next start skips building its shaders again. Size on disk is everything saved for this game, and Last updated is the last time any of it changed.\n\nClear this game's shaders lets you remove just the compiled ones (one slow start, nothing else lost) or everything including the learned ones (the game stutters while it relearns them).\n\nAdvanced mode also shows how many shaders and pipelines are saved for the renderer you've selected, splits the size into learned and compiled, and can export this game's Metal shader files to Files, for backing up or moving to another device. The counts are hidden while a game is running. The settings under Settings > Shaders cover every game at once.")
             }
             .foregroundColor(MuffinTheme.brownDarkest)
             .onAppear {

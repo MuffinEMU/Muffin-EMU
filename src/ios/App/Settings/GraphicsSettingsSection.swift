@@ -174,7 +174,10 @@ struct GraphicsSettingsSection: View {
             SettingsSectionHeader("Graphics", icon: "cube.transparent", accent: .core)
         } footer: {
             InfoButton.footer(
-                "Metal is the default renderer. Vulkan (MoltenVK) may work better for some games; it applies on the next launch.",
+                // The renderer picker is Advanced mode only, so Basic doesn't describe it.
+                advanced
+                    ? "Metal is the default renderer. Vulkan (MoltenVK) may work better for some games; it applies on the next launch."
+                    : "A lower Resolution uses less memory.",
                 title: "Graphics",
                 text: fullText)
         }

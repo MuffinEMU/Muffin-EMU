@@ -27,7 +27,7 @@ struct CreateAccountView: View {
 
                 Form {
                     Section {
-                        Text("A new account plays offline. It can't be linked to a Pretendo ID here, so games will still ask you to link one. To play online, link a Pretendo ID on a real Wii U, then use Import from Wii U in Settings > Network Service.")
+                        Text("A new account plays offline. It can't be linked to a Pretendo ID here, so games will still ask you to link one. To play online, link a Pretendo ID on a real Wii U, then use Import from Wii U in Settings > Account.")
                             .font(.system(size: 13, design: .rounded))
                             .foregroundColor(MuffinTheme.brownDarkest)
                     }

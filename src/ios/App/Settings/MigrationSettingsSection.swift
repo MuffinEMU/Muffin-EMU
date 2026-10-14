@@ -35,6 +35,8 @@ final class MigrationModel: ObservableObject {
     @Published private(set) var detail = ""
     @Published private(set) var message: String?
     @Published private(set) var messageIsError = false
+    /// Which section the message belongs under: Import, or Export.
+    @Published private(set) var messageIsFromImport = false
     @Published private(set) var lastExport: (url: URL, bytes: Int64)?
     @Published var analysis: MigrationArchive.Analysis?
 
@@ -113,7 +115,7 @@ final class MigrationModel: ObservableObject {
                     guard let url = urls.first else { return }
                     self?.analyse(url)
                 case .failure(let error):
-                    self?.say(error.localizedDescription, error: true)
+                    self?.say(error.localizedDescription, error: true, fromImport: true)
                 }
             }
         }
@@ -137,7 +139,7 @@ final class MigrationModel: ObservableObject {
                 phase = .confirming
             case .failure(let error):
                 finish()
-                say(Self.describe(error), error: true)
+                say(Self.describe(error), error: true, fromImport: true)
             }
         }
     }
@@ -189,9 +191,9 @@ final class MigrationModel: ObservableObject {
                     }
                 }
                 parts.append("Close MuffinEMU and open it again to finish.")
-                say(parts.joined(separator: " "), error: false)
+                say(parts.joined(separator: " "), error: false, fromImport: true)
             case .failure(let error):
-                say(Self.describe(error) + (error is MigrationArchive.MigrationError ? "" : " Files already copied are complete; you can run the import again."), error: true)
+                say(Self.describe(error) + (error is MigrationArchive.MigrationError ? "" : " Files already copied are complete; you can run the import again."), error: true, fromImport: true)
             }
         }
     }
@@ -228,9 +230,10 @@ final class MigrationModel: ObservableObject {
         detail = "\(MigrationArchive.format(done)) of \(MigrationArchive.format(total))" + (name.isEmpty ? "" : "  \(name)")
     }
 
-    private func say(_ text: String, error: Bool) {
+    private func say(_ text: String, error: Bool, fromImport: Bool = false) {
         message = text
         messageIsError = error
+        messageIsFromImport = fromImport
     }
 
     private static func describe(_ error: Error) -> String {
@@ -326,7 +329,7 @@ struct MigrationSettingsSection: View {
                 }
             }
 
-            if let message = model.message {
+            if let message = model.message, !model.messageIsFromImport {
                 Text(message)
                     .font(.system(size: 12))
                     .foregroundColor(model.messageIsError ? .red : MuffinTheme.secondaryText)
@@ -405,6 +408,13 @@ struct MigrationSettingsSection: View {
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                 }
                 .disabled(model.isBusy || model.phase == .confirming)
+            }
+
+            if let message = model.message, model.messageIsFromImport {
+                Text(message)
+                    .font(.system(size: 12))
+                    .foregroundColor(model.messageIsError ? .red : MuffinTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         } header: {
             SettingsSectionHeader("Import an export", icon: "tray.and.arrow.down", accent: .system)

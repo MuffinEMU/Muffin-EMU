@@ -151,7 +151,8 @@ struct CoverDataSettingsView: View {
         Section {
             creditRow("GameTDB", "Covers and game data. Used with thanks to the GameTDB community.", "https://www.gametdb.com")
             if let manifest = packs.manifest {
-                ForEach(manifest.packs) { pack in
+                // The same packs the list above offers: disc packs aren't shown there, so they aren't credited here.
+                ForEach(manifest.packs.filter { $0.style != "disc" }) { pack in
                     creditRow(pack.name, pack.credits, nil)
                 }
             }
