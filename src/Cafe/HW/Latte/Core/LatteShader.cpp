@@ -775,6 +775,8 @@ static void InitUniformLayoutFromDecompiler(
     shader->uniform.loc_fragCoordScale = offsets.offset_fragCoordScale;
 	shader->uniform.loc_baseVertex = offsets.offset_baseVertex;
 	shader->uniform.loc_baseInstance = offsets.offset_baseInstance;
+    for (sint32 t = 0; t < LATTE_NUM_MAX_TEX_UNITS; t++)
+        shader->uniform.loc_framebufferFetchSize[t] = offsets.offset_framebufferFetchSize[t];
 
     // Texture scale uniforms
     shader->uniform.list_ufTexRescale.clear();

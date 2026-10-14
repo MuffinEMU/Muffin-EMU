@@ -227,6 +227,7 @@ struct LatteDecompilerShader
 		sint32 loc_fragCoordScale;
 		sint32 loc_baseVertex;
 		sint32 loc_baseInstance;
+		sint32 loc_framebufferFetchSize[LATTE_NUM_MAX_TEX_UNITS];
 		std::vector<LatteUniformTextureScaleEntry_t> list_ufTexRescale; // list of mappings for uf_tex*Scale <-> uniform location
 		float ufCurrentValueAlphaTestRef;
 		float ufCurrentValueFragCoordScale[2];
@@ -255,6 +256,7 @@ struct LatteDecompilerOutputUniformOffsets
 	sint32 offset_alphaTestRef;
 	sint32 offset_pointSize;
 	sint32 offset_fragCoordScale;
+	sint32 offset_framebufferFetchSize[LATTE_NUM_MAX_TEX_UNITS];
 	sint32 offset_windowSpaceToClipSpaceTransform;
 	sint32 offset_texScale[LATTE_NUM_MAX_TEX_UNITS];
 	sint32 offset_baseVertex{-1};
@@ -274,7 +276,10 @@ struct LatteDecompilerOutputUniformOffsets
 		offset_fragCoordScale = -1;
 		offset_windowSpaceToClipSpaceTransform = -1;
 		for (sint32 i = 0; i < LATTE_NUM_MAX_TEX_UNITS; i++)
+		{
+			offset_framebufferFetchSize[i] = -1;
 			offset_texScale[i] = -1;
+		}
 		offset_endOfBlock = 0;
 	}
 };
