@@ -2458,38 +2458,7 @@ struct EmulatorViewOptimized: View {
                         .buttonStyle(MuffinBarButtonStyle())
                         .accessibilityLabel(isEditingControlLayout ? "Done moving controls" : "Move controls")
 
-                        // Reads the @Published frameRate directly rather than calling
-                        // getFrameRate(): a plain method call cannot invalidate this
-                        // view, so even once the value became real the HUD would only
-                        // update when something else happened to redraw it. Until
-                        // the emulator reports its first measurement this shows "--",
-                        // not "0" - "0 FPS" reads as a measured stall, which is a
-                        // different and much more alarming claim than "no reading yet".
-                        //
-                        // The string comes from EmulatorProgress rather than from
-                        // frameRate alone because whole frames per second is the wrong
-                        // unit for this port. Every rate the interpreter has actually
-                        // produced rounds to zero there, so a title rendering slowly and
-                        // a title that has stopped dead both read "-- FPS" - the one
-                        // distinction anybody looking at this HUD needs. hudText() keeps
-                        // frameRate in charge whenever it is non-zero, so a build that
-                        // reaches a normal rate reads exactly as it always did, and only
-                        // falls back to the engine's own counters below that.
-                        HStack(spacing: 6) {
-                            Image(systemName: "speedometer")
-                                .font(.system(size: 12, weight: .semibold))
-                            Text(gameManager.progress.hudText(wholeFramesPerSecond: gameManager.frameRate))
-                                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                .lineLimit(1)
-                        }
-                        .foregroundColor(gameManager.frameRate >= 20 ? Color.green : MuffinTheme.alertOnDark)
-                        .frame(height: 40)
-                        .padding(.horizontal, 12)
-                        .background(Color.white.opacity(0.08))
-                        .cornerRadius(10)
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel("Frame rate")
-                        .accessibilityValue(gameManager.progress.hudText(wholeFramesPerSecond: gameManager.frameRate))
+                        frameRatePill
                     }
                     }
                 }
@@ -2533,6 +2502,7 @@ struct EmulatorViewOptimized: View {
                 if !topBarHidden, bottom != topBarHeight { topBarHeight = bottom }
             }
             .overlay(alignment: .top) { topBarRevealHandle }
+            .overlay(alignment: .topTrailing) { floatingFrameRate }
             .onChange(of: isPaused) { paused in
                 // Pausing always brings the bar back, whatever hid it.
                 if paused, topBarHidden { setTopBarHidden(false) }
@@ -3088,6 +3058,54 @@ struct EmulatorViewOptimized: View {
 
     private func setTopBarHidden(_ hidden: Bool) {
         withAnimation(.easeInOut(duration: 0.25)) { topBarHidden = hidden }
+    }
+
+    /// Reads the @Published frameRate directly rather than calling
+    /// getFrameRate(): a plain method call cannot invalidate this
+    /// view, so even once the value became real the HUD would only
+    /// update when something else happened to redraw it. Until
+    /// the emulator reports its first measurement this shows "--",
+    /// not "0" - "0 FPS" reads as a measured stall, which is a
+    /// different and much more alarming claim than "no reading yet".
+    ///
+    /// The string comes from EmulatorProgress rather than from
+    /// frameRate alone because whole frames per second is the wrong
+    /// unit for this port. Every rate the interpreter has actually
+    /// produced rounds to zero there, so a title rendering slowly and
+    /// a title that has stopped dead both read "-- FPS" - the one
+    /// distinction anybody looking at this HUD needs. hudText() keeps
+    /// frameRate in charge whenever it is non-zero, so a build that
+    /// reaches a normal rate reads exactly as it always did, and only
+    /// falls back to the engine's own counters below that.
+    private var frameRatePill: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "speedometer")
+                .font(.system(size: 12, weight: .semibold))
+            Text(gameManager.progress.hudText(wholeFramesPerSecond: gameManager.frameRate))
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .lineLimit(1)
+        }
+        .foregroundColor(gameManager.frameRate >= 20 ? Color.green : MuffinTheme.alertOnDark)
+        .frame(height: 40)
+        .padding(.horizontal, 12)
+        .background(Color.white.opacity(0.08))
+        .cornerRadius(10)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Frame rate")
+        .accessibilityValue(gameManager.progress.hudText(wholeFramesPerSecond: gameManager.frameRate))
+    }
+
+    /// The frame rate stays on screen while the bar is hidden: the same pill, in the same corner, over a dark
+    /// backing of its own because the bar's is gone. It takes no touches, so the game under it still gets them.
+    @ViewBuilder private var floatingFrameRate: some View {
+        if topBarHidden {
+            frameRatePill
+                .background(Color.black.opacity(0.5).cornerRadius(10))
+                .padding(WindowSafeArea.padding(minimum: 12))
+                .allowsHitTesting(false)
+                .dynamicTypeSize(...DynamicTypeSize.xLarge)
+                .transition(.opacity)
+        }
     }
 
     @ViewBuilder private var topBarRevealHandle: some View {
