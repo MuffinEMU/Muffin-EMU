@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
 #include "Cafe/HW/Latte/Renderer/Vulkan/RendererShaderVk.h"
@@ -275,8 +276,20 @@ public:
 	void ReleaseDestructibleObject(VKRDestructibleObject* destructibleObject);
 	void ProcessDestructionQueue();
 
+	// Delayed frees (iOS page-fault mitigation): a destructible object or a released staging/index/vertex allocation is kept
+	// for at least m_delayedFreeFrames presented frames after the command buffer using it finished. 0 = no extra delay.
+	uint64 GetFramesPresented() const { return m_framesPresented.load(std::memory_order_acquire); }
+	bool HasFrameDelayElapsed(uint64 objectFrame) const;
+	uint64 ApplyDelayedFreeToCleanupId(uint64 finishedCommandBufferId) const;
+	void OnFramePresented();
+
 	FSpinlock m_spinlockDestructionQueue;
 	std::vector<VKRDestructibleObject*> m_destructionQueue;
+
+	uint32 m_delayedFreeFrames{}; // 0..15
+	bool m_drainDestructionQueue{}; // shutdown: ignore the frame delay
+	std::atomic<uint64> m_framesPresented{};
+	std::atomic<uint64> m_frameEndCmdBufferId[16]{}; // command buffer id current when frame N (index N % 16) was presented
 
 	void PipelineCacheSaveThread(size_t cache_size);
 

@@ -3351,6 +3351,25 @@ void cemu_bridge_initialize(const char* mlcPath) {
     setenv("MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS", "0", 1);
     setenv("MVK_CONFIG_DEBUG", "0", 1);
     setenv("MVK_CONFIG_MAX_ACTIVE_METAL_COMMAND_BUFFERS_PER_QUEUE", "128", 1);
+    // Test mitigations for the Vulkan GPU page fault (kIOGPUCommandBufferCallbackErrorPageFault). All ON by default; the core
+    // (VulkanAPI.cpp / VulkanRenderer.cpp) reads the MUFFIN_VK_* variables and logs what was active. overwrite=0, so a variable
+    // set in the environment wins over UserDefaults. Flip one with e.g.
+    //   defaults write <bundle id> muffin.vk.hostMapped -bool YES   (host-mapped buffers back ON)
+    //   defaults write <bundle id> muffin.vk.argumentBuffers -bool YES
+    //   defaults write <bundle id> muffin.vk.delayedFreeFrames -int 0   (0 = no extra delay, max 15)
+    {
+        NSUserDefaults* vkDefaults = [NSUserDefaults standardUserDefaults];
+        const bool hostMapped = [vkDefaults objectForKey:@"muffin.vk.hostMapped"] ? [vkDefaults boolForKey:@"muffin.vk.hostMapped"] : false;
+        const bool argBuffers = [vkDefaults objectForKey:@"muffin.vk.argumentBuffers"] ? [vkDefaults boolForKey:@"muffin.vk.argumentBuffers"] : false;
+        NSInteger delayFrames = [vkDefaults objectForKey:@"muffin.vk.delayedFreeFrames"] ? [vkDefaults integerForKey:@"muffin.vk.delayedFreeFrames"] : 3;
+        if (delayFrames < 0) delayFrames = 0;
+        if (delayFrames > 15) delayFrames = 15;
+        setenv("MUFFIN_VK_HOST_MAPPED", hostMapped ? "1" : "0", 0);
+        setenv("MUFFIN_VK_ARGUMENT_BUFFERS", argBuffers ? "1" : "0", 0);
+        setenv("MUFFIN_VK_DELAYED_FREE_FRAMES", std::to_string((int)delayFrames).c_str(), 0);
+        // MoltenVK reads this once at load; set it here too so it is in the environment before anything loads MoltenVK.
+        setenv("MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS", argBuffers ? "1" : "0", 0);
+    }
 
     // User data, config and mlc under Documents/mlc (writable, visible in Files); the
     // data path is the read-only CemuData directory the build copies into the bundle
