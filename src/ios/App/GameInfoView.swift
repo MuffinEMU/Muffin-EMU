@@ -62,17 +62,21 @@ struct GameInfoSections: View {
         }
     }
 
-    private func detailsSection(_ info: GameInfo) -> some View {
-        Section {
-            if let p = info.publisher { SettingsRow(label: "Publisher", value: p, icon: "building.2") }
-            if let d = info.developer { SettingsRow(label: "Developer", value: d, icon: "hammer") }
-            if !info.genres.isEmpty { SettingsRow(label: "Genre", value: info.genres.joined(separator: ", "), icon: "tag") }
-            if let players = playersText(info) { SettingsRow(label: "Players", value: players, icon: "person.2") }
-            if let rating = ratingText(info) { SettingsRow(label: "Rating", value: rating, icon: "checkmark.shield") }
-            if !info.languages.isEmpty { SettingsRow(label: "Languages", value: info.languages.joined(separator: ", "), icon: "character.bubble") }
-            if let size = info.romSize { SettingsRow(label: "Size", value: ByteCountFormatter.string(fromByteCount: size, countStyle: .file), icon: "internaldrive") }
-        } header: {
-            SettingsSectionHeader("Details", icon: "list.bullet", accent: .content)
+    /// Left out when GameTDB has none of these, so there's no empty Details header.
+    @ViewBuilder private func detailsSection(_ info: GameInfo) -> some View {
+        if info.publisher != nil || info.developer != nil || !info.genres.isEmpty || playersText(info) != nil
+            || ratingText(info) != nil || !info.languages.isEmpty || info.romSize != nil {
+            Section {
+                if let p = info.publisher { SettingsRow(label: "Publisher", value: p, icon: "building.2") }
+                if let d = info.developer { SettingsRow(label: "Developer", value: d, icon: "hammer") }
+                if !info.genres.isEmpty { SettingsRow(label: "Genre", value: info.genres.joined(separator: ", "), icon: "tag") }
+                if let players = playersText(info) { SettingsRow(label: "Players", value: players, icon: "person.2") }
+                if let rating = ratingText(info) { SettingsRow(label: "Rating", value: rating, icon: "checkmark.shield") }
+                if !info.languages.isEmpty { SettingsRow(label: "Languages", value: info.languages.joined(separator: ", "), icon: "character.bubble") }
+                if let size = info.romSize { SettingsRow(label: "Size", value: ByteCountFormatter.string(fromByteCount: size, countStyle: .file), icon: "internaldrive") }
+            } header: {
+                SettingsSectionHeader("Details", icon: "list.bullet", accent: .content)
+            }
         }
     }
 

@@ -219,7 +219,8 @@ struct TouchLabStyleSettingsRows: View {
                     }
                 }
 
-                Text("These styles don't support dragging individual buttons. Size, opacity, haptics and the stick options below apply to them.")
+                // Zone can be edited (its own rows in the in-game panel), so it doesn't get the "no dragging" line.
+                Text((scheme == TouchLabSettings.zoneStyleID ? "" : "These styles don't support dragging individual buttons. ") + "Size, opacity, haptics and the stick options below apply to them.")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

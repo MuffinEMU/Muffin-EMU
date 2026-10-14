@@ -144,7 +144,7 @@ struct PadDiagnosticsOverlay: View {
             row("paused", isPaused ? "YES" : "no", warn: isPaused)
 
             if diag.activePad == .preview {
-                Text("The experimental new pad is active. If controls don't respond, turn it off in Settings.")
+                Text("The experimental new pad is active. If controls don't respond, turn off Use the new pad system in Settings > On-screen Controls > New pad system (preview).")
                     .font(.system(size: 10, weight: .semibold, design: .rounded))
                     .foregroundColor(.yellow)
                     .fixedSize(horizontal: false, vertical: true)

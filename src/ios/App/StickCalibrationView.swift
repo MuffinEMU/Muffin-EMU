@@ -36,7 +36,7 @@ struct StickCalibrationView: View {
             let base = ControllerGeometry.stickBaseDiameter * unit
             let travel = ControllerGeometry.stickTravel(ringDiameter: base)
             VStack(spacing: 18) {
-                Text(step == .done ? "Sticks calibrated" : (isLeft ? "Left stick" : "Right stick"))
+                Text(step == .done ? (saved.isEmpty ? "Nothing calibrated" : "Sticks calibrated") : (isLeft ? "Left stick" : "Right stick"))
                     .font(.system(size: 22, weight: .bold, design: .rounded))
                 Text(prompt)
                     .font(.system(size: 15))
@@ -72,6 +72,7 @@ struct StickCalibrationView: View {
     }
 
     private var prompt: String {
+        if step == .done && saved.isEmpty { return "Both sticks were skipped, so your calibration didn't change. Run it again any time." }
         if step == .done { return "Every control style now uses your calibration. Run it again any time, or reset it from the stick settings." }
         switch session.phase {
         case .waiting: return "Put your thumb on the stick and hold it still for a moment."

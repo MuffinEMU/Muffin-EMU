@@ -34,7 +34,7 @@ struct GraphicPacksView: View {
 
     /// A game's own packs come first once the community packs are installed and current; until then
     /// the download card leads, because that is what the player needs to do.
-    private var sourceFirst: Bool { game == nil || store.installed == nil || store.updateAvailable || store.isBusy }
+    private var sourceFirst: Bool { game == nil || store.installed == nil || store.updateAvailable || store.isBusy || store.packs.isEmpty }
 
     private var list: some View {
         List {
@@ -476,7 +476,11 @@ struct GraphicPackCategorySections: View {
             GraphicPackDetailView(packPath: ref.path, store: store, profile: profile) { detailPath = nil }
         }
         .alert(item: $confirming) { pack in
-            Alert(
+            // A pack that won't activate gets no Turn On button: turning it on would do nothing.
+            if case .inactive = pack.support(on: api) {
+                return Alert(title: Text(confirmTitle(for: pack)), message: Text(confirmMessage(for: pack)))
+            }
+            return Alert(
                 title: Text(confirmTitle(for: pack)),
                 message: Text(confirmMessage(for: pack)),
                 primaryButton: .default(Text("Turn On Anyway")) { store.setEnabled(pack, true) },
@@ -718,13 +722,16 @@ struct GraphicPackDetailView: View {
                 }
 
                 Section {
-                    Button {
-                        store.reset(pack) { details = $0 }
-                    } label: {
-                        Label("Reset to the pack's defaults", systemImage: "arrow.uturn.backward")
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    // Only a pack with options has defaults to go back to.
+                    if details?.categories.isEmpty == false {
+                        Button {
+                            store.reset(pack) { details = $0 }
+                        } label: {
+                            Label("Reset to the pack's defaults", systemImage: "arrow.uturn.backward")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        }
+                        .disabled(store.gameRunning)
                     }
-                    .disabled(store.gameRunning)
 
                     if pack.isImported {
                         Button(role: .destructive) {

@@ -1363,6 +1363,9 @@ class GameManager: ObservableObject {
         currentGame = game
         surfaceRegistered = false
         driveWasLost = false
+        // Cleared before any early return below, so an earlier game's state can't label this one's error screen.
+        needsCleanRestart = false
+        titleEndedByEngine = false
         storageFaultBaseline = cemu_bridge_storage_read_fault_count()
 
         // A linked game is opened where it is. Access to its location is held until the game stops (stopEmulation), so the

@@ -194,7 +194,7 @@ struct RecordingIndicator: View {
             Circle()
                 .fill(Color.white)
                 .frame(width: 7, height: 7)
-            Text("Recording \(Self.clock(seconds))")
+            Text("Recording \(kind) \(Self.clock(seconds))")
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .monospacedDigit()
                 .foregroundColor(.white)

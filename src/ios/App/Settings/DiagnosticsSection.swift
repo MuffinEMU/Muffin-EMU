@@ -96,7 +96,8 @@ struct DiagnosticsSection: View {
             SettingsSectionHeader("Diagnostics", icon: "stethoscope", accent: .system)
         } footer: {
             InfoButton.footer(
-                "The launch log shows boot progress and replaces the intro while it's on.",
+                // Show launch log is Advanced mode only, so Basic doesn't describe it.
+                advanced ? "The launch log shows boot progress and replaces the intro while it's on." : "The intro plays while a game starts.",
                 title: "Diagnostics",
                 text: "The intro plays during the boot. If you turn on the launch log it takes the screen instead, so you can see timestamped boot steps when a game starts but stays black.")
         }

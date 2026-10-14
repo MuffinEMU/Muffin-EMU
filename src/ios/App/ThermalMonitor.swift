@@ -186,7 +186,10 @@ final class ThermalMonitor: ObservableObject {
             isThrottling = true
             DisplayRouter.shared.reapplyRenderScale(reason: "thermal state \(description)")
             cemu_bridge_log_line("iOS thermal: reduced render scale to battery saver while hot")
-            onNotice?("The device is hot, so MuffinEMU made the picture softer to keep the game running. It goes back when the device cools.")
+            // Already on battery saver: the picture didn't change, so there's nothing to tell the player.
+            if userChosenScale != .battery {
+                onNotice?("The device is hot, so MuffinEMU made the picture softer to keep the game running. It goes back when the device cools.")
+            }
             cooldownTask?.cancel()
             cooldownTask = nil
         } else if shouldThrottle {
@@ -198,8 +201,11 @@ final class ThermalMonitor: ObservableObject {
                 guard let self, !Task.isCancelled else { return }
                 self.cooldownTask = nil
                 guard self.isThrottling else { return }
+                // Only when the picture actually goes back: not if it was already battery saver, or the player picked a
+                // different Resolution while it was hot (their choice stands).
+                let pictureReturns = self.userChosenScale.map { $0 != .battery } == true && RenderScale.storedChoice == .battery
                 self.unwind(reason: "cooled to \(self.description)")
-                self.onNotice?("The device has cooled down. The picture is back to normal.")
+                if pictureReturns { self.onNotice?("The device has cooled down. The picture is back to normal.") }
             }
         }
     }

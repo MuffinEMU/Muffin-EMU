@@ -175,10 +175,12 @@ struct DecryptROMView: View {
                 MuffinCard {
                     VStack(spacing: 14) {
                         if progress.completed {
-                            Image(systemName: progress.isSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            // Status 4 is the player's own Cancel: nothing failed, so it isn't shown as an error.
+                            let cancelled = progress.resultStatus == 4
+                            Image(systemName: progress.isSuccess ? "checkmark.circle.fill" : (cancelled ? "stop.circle.fill" : "xmark.circle.fill"))
                                 .font(.system(size: 44))
-                                .foregroundColor(progress.isSuccess ? .green : MuffinTheme.alertText)
-                            Text(progress.isSuccess ? "Decrypted" : "Couldn't Finish")
+                                .foregroundColor(progress.isSuccess ? .green : (cancelled ? MuffinTheme.brownMid : MuffinTheme.alertText))
+                            Text(progress.isSuccess ? "Decrypted" : (cancelled ? "Cancelled" : "Couldn't Finish"))
                                 .font(.system(size: 18, weight: .semibold, design: .rounded))
                                 .foregroundColor(MuffinTheme.brownDarkest)
                             if progress.isSuccess {
@@ -297,7 +299,7 @@ struct DecryptROMView: View {
         case 1: return "Couldn't open this file - it may not be a valid disc image."
         case 2: return "No matching key in keys.txt for this disc. Import the right key and try again."
         case 3: return "Couldn't write the decrypted output."
-        case 4: return "Cancelled."
+        case 4: return "Stopped before it finished."
         case 6: return "This game folder is missing a readable title.tmd or title.tik, which MuffinEMU needs to decrypt it."
         case 7: return "MuffinEMU couldn't decrypt this game folder. Its title.tik doesn't unlock the .app files - check that title.tmd, title.tik and the .app files are from the same download."
         case 8: return "This game folder is missing one or more .app files listed in its title.tmd."

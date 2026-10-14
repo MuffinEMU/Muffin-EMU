@@ -227,10 +227,6 @@ struct GamePageView: View {
             SettingsRow(label: "Times played", value: "\(stats.entry(for: game.id)?.count ?? 0)", icon: "number")
             SettingsRow(label: "Size on disk", value: sizeOnDisk.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? "\u{2026}",
                         icon: "internaldrive")
-            if live.titleId != nil {
-                SettingsRow(label: "Shader cache", value: shaderBytes.map { ShaderCacheInfo.formatBytes($0) } ?? "\u{2026}",
-                            icon: "externaldrive")
-            }
         } header: {
             SettingsSectionHeader("Your play", icon: "clock.arrow.circlepath", accent: .content)
         }
@@ -246,8 +242,7 @@ struct GamePageView: View {
     // MARK: Manage
 
     private var manageSection: some View {
-        let key = live.settingsKey
-        return Section {
+        Section {
             Button { sheet = .settings } label: {
                 rowLabel("Game settings", systemImage: "slider.horizontal.3", chevron: true)
             }
@@ -258,18 +253,6 @@ struct GamePageView: View {
                 rowLabel("Favourite", systemImage: live.isFavorite ? "heart.fill" : "heart")
             }
             .tint(MuffinTheme.accentText)
-            Toggle(isOn: Binding(
-                get: { store.effectivePreCompileShaders(for: key) },
-                set: { store.setPreCompileShaders($0, for: key) }
-            )) {
-                rowLabel("Compile shaders in the background", systemImage: "bolt.fill")
-            }
-            .tint(MuffinTheme.accentText)
-            if store.overrides(for: key).preCompileShaders != nil {
-                Button { store.setPreCompileShaders(nil, for: key) } label: {
-                    rowLabel("Use the global shader setting", systemImage: "arrow.uturn.backward")
-                }
-            }
             Button { sheet = .cover } label: {
                 rowLabel("Change cover", systemImage: "photo")
             }
@@ -293,33 +276,17 @@ struct GamePageView: View {
         }
     }
 
-    /// Updates, DLC and decrypting: work on the game's files, so each one hands off to the library.
-    private var filesSection: some View {
-        let installed = DlcUpdateImport.installedContent(for: live)
-        return Section {
-            Button { closeThen(onImportUpdate) } label: {
-                rowLabel("Import update", systemImage: "arrow.triangle.2.circlepath")
-            }
-            Button { closeThen(onImportDLC) } label: {
-                rowLabel("Import DLC", systemImage: "shippingbox")
-            }
-            if installed.hasUpdate {
-                Button(role: .destructive) { closeThen(onRemoveUpdate) } label: {
-                    DestructiveSettingsLabel(title: "Remove update", systemImage: "trash")
-                }
-            }
-            if installed.hasDLC {
-                Button(role: .destructive) { closeThen(onRemoveDLC) } label: {
-                    DestructiveSettingsLabel(title: "Remove DLC", systemImage: "trash")
-                }
-            }
-            if gameSupportsDecryptToFiles(romPath: live.romPath) {
+    /// Decrypting works on the game's files, so it hands off to the library. Updates and DLC are in the
+    /// Updates & DLC section right below (GameContentSection), so they aren't offered here a second time.
+    @ViewBuilder private var filesSection: some View {
+        if gameSupportsDecryptToFiles(romPath: live.romPath) {
+            Section {
                 Button { closeThen(onDecrypt) } label: {
                     rowLabel("Decrypt", systemImage: "lock.open")
                 }
+            } header: {
+                SettingsSectionHeader("Files", icon: "doc", accent: .io)
             }
-        } header: {
-            SettingsSectionHeader("Updates and files", icon: "shippingbox", accent: .io)
         }
     }
 

@@ -101,7 +101,7 @@ enum ScreenLayout: String, CaseIterable, Identifiable {
     var description: String {
         switch self {
         case .singleScreen:
-            return "Shows one screen at a time. Tap the swap button to switch between TV and GamePad."
+            return "Shows one screen at a time. Switch between TV and GamePad with Swap TV and GamePad in the HOME menu, or the swap button if it's on."
         case .bothScreens:
             return "Shows both screens: stacked in portrait, side by side in landscape."
         case .smallGamePadTopRight:

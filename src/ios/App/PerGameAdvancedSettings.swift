@@ -255,6 +255,13 @@ struct AdvancedGameOptionsSection: View {
                 Text(filter.title).tag(filter.rawValue)
             }
         }
+        // The same note Settings > Graphics shows: with Favour performance on (and accuracy off), the rows above
+        // are overridden at launch (filtersToPush).
+        if store.effectiveFavourPerformance(for: gameKey) && !store.effectiveFavourAccuracy(for: gameKey) {
+            Text("Favour performance is on for this game, so the picture is drawn at Balanced at most, with linear scaling.")
+                .font(.system(size: 12))
+                .foregroundColor(MuffinTheme.secondaryText)
+        }
     }
 
     @ViewBuilder private var performanceRows: some View {

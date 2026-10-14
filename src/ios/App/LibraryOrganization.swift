@@ -763,10 +763,13 @@ struct LibraryViewMenu: View {
                     }
                 }
             }
-            Section("Show games as") {
-                ForEach(LibraryCardStyle.choices) { style in
-                    Button { styleRaw = style.rawValue } label: {
-                        Label(style.title, systemImage: styleRaw == style.rawValue ? "checkmark" : style.systemImage)
+            // 3D covers turn every card into a box, so the layout choices only mean something with flat covers.
+            if CoverStylePreference(stored: coverRaw) != .threeD {
+                Section("Show games as") {
+                    ForEach(LibraryCardStyle.choices) { style in
+                        Button { styleRaw = style.rawValue } label: {
+                            Label(style.title, systemImage: styleRaw == style.rawValue ? "checkmark" : style.systemImage)
+                        }
                     }
                 }
             }
@@ -787,7 +790,7 @@ struct LibraryViewMenu: View {
                 }
             }
         } label: {
-            Image(systemName: (LibraryCardStyle(rawValue: styleRaw) ?? .standard).systemImage)
+            Image(systemName: CoverStylePreference(stored: coverRaw) == .threeD ? "cube" : (LibraryCardStyle(rawValue: styleRaw) ?? .standard).systemImage)
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundColor(MuffinTheme.brownMid)
                 .frame(width: 44, height: 44)

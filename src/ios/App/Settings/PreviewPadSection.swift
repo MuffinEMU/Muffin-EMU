@@ -74,7 +74,8 @@ struct PreviewPadSection: View {
             }
             .tint(MuffinTheme.accentText)
 
-            if previewPadEnabled {
+            // Hidden while another pad wins over this one: the options wouldn't change anything on screen.
+            if previewPadEnabled && !otherPadChosen {
                 previewControls
             }
         } header: {

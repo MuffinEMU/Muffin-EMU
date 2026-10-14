@@ -249,7 +249,7 @@ private struct OnboardingKeysPage: View {
                     }
 
                     Button(action: onSkip) {
-                        Text("Skip - I only play homebrew")
+                        Text(hasKeys ? "Continue" : "Skip - I only play homebrew")
                             .font(.system(.footnote, design: .rounded))
                             .underline()
                     }
