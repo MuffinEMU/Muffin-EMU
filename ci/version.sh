@@ -12,13 +12,10 @@
 # The first MuffinEMU release number, and the version stamped into test builds.
 #
 # Releases are numbered by CI, not by hand. Every build of main publishes the next
-# version: the highest vX.Y tag plus 0.1, with .9 rolling over to the next whole number
-# (1.9 -> 2.0). This file only supplies the number used
-# when no vX.Y tag exists yet, and the version stamped into builds of other branches.
+# version, X.Y.Z: the newest numbered tag plus one in Z, with .9 rolling over
+# (1.0.9 -> 1.1.0). See ci/release_version.py. This file only supplies the number used
+# when no numbered tag exists yet, and the version stamped into builds of other branches.
 # See "Choose the version" in .github/workflows/build-ios-app.yml.
-#
-# Tags always have a single-digit minor (v1.0 ... v1.9, v2.0), so the arithmetic never
-# has to guess what a tag means.
 #
 # It lives in ci/ and NOT at the repository root: macOS is case-insensitive, the
 # compiler is invoked with -I . , and C++20 has a standard header called <version>, so a

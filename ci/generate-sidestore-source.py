@@ -41,10 +41,13 @@ import re
 import os
 import plistlib, os, re, sys, urllib.request, urllib.error, urllib.parse, argparse
 
+import release_version
+
 PAGES = "https://muffinemu.github.io/MuffinEMU"
 BUNDLE_ID = "com.kiddreads.MuffinEMU"
-# vX.Y, or vX.Y.Z for a point release. X.Y.Z sorts after X.Y (patch counts as 0 when absent).
-VERSION_TAG = re.compile(r"^v(\d+)\.(\d+)(?:\.(\d+))?$")
+# vX.Y.Z, vX.Y.Z.W for a point release, and the older vX.Y and vX.Y.Z tags.
+# release_version.key orders all of them (v10.1 counts as 1.0.1).
+VERSION_TAG = re.compile(r"^v(\d+)\.(\d+)(?:\.(\d+))?(?:\.(\d+))?$")
 
 
 def tag_version(m):
@@ -52,7 +55,7 @@ def tag_version(m):
 
 
 def tag_key(m):
-    return (int(m.group(1)), int(m.group(2)), int(m.group(3) or 0))
+    return release_version.key(m.group(0))
 NIGHTLY_NOTE = (
     'This source serves the nightly build: the newest code, rebuilt on every change and not tested. It has the same bundle identifier as the standard build, so installing it replaces a standard install and keeps your games, saves and settings. Add it only if you want the newest build rather than the one known to work.')
 
@@ -580,7 +583,7 @@ def check_guards(feeds, rels):
         if channel == "experimental":
             if ROLLING_EXPERIMENTAL_URL in text:
                 bad.append(f"{fname}: the experimental feed points at the rolling `experimental` release")
-            if "/releases/download/nightly/" in text or re.search(r"/releases/download/v\d+\.\d+(\.\d+)?/", text):
+            if "/releases/download/nightly/" in text or re.search(r"/releases/download/v\d+\.\d+(\.\d+){0,2}/", text):
                 bad.append(f"{fname}: the experimental feed points at nightly or a numbered release")
         for v in src["apps"][0]["versions"]:
             m = DOWNLOAD.search(v["downloadURL"])

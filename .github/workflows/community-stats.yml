@@ -73,7 +73,7 @@ jobs:
               page += 1
 
           def channel(tag):
-              if re.fullmatch(r"v\d+\.\d+(\.\d+)?", tag): return "stable"
+              if re.fullmatch(r"v\d+\.\d+(\.\d+){0,2}", tag): return "stable"
               if tag == "nightly": return "nightly"
               if tag.startswith("experimental"): return "experimental"
               if tag.startswith("audit"): return "audit"
@@ -150,9 +150,15 @@ jobs:
               d = snap[key] - old[-1][key]
               return f" ({'+' if d >= 0 else ''}{d} in {days} days)"
 
+          # Same order as ci/release_version.py: the old vX.Y tags count as X split into digits
+          # (v10.1 is 1.0.1), so 1.0.2 lists above 10.1.
           def vkey(tag):
-              m = re.fullmatch(r"v(\d+)\.(\d+)", tag)
-              return (int(m.group(1)), int(m.group(2))) if m else (-1, -1)
+              m = re.fullmatch(r"v(\d+)\.(\d+)(?:\.(\d+))?(?:\.(\d+))?", tag)
+              if not m: return (-1, -1, -1, -1)
+              a, b, c, d = (int(g) if g else None for g in m.groups())
+              if c is None: return (a // 10, a % 10, b, 0)
+              if d is None and tag in ("v7.7.1", "v7.9.1", "v8.0.1", "v8.8.1", "v9.6.1"): return (a // 10, a % 10, b, c)
+              return (a, b, c, d or 0)
 
           out = [f"# MuffinEMU community stats", "",
                  f"Updated {TODAY} by the Community stats workflow. History: "
