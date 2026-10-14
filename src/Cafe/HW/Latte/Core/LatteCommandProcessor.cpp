@@ -203,7 +203,7 @@ LatteCMDPtr LatteCP_itSurfaceSync(LatteCMDPtr cmd)
 	MPTR addressPhys = LatteReadCMD() << 8;
 	uint32 pollInterval = LatteReadCMD();
 
-	if (addressPhys == MPTR_NULL || size == 0xFFFFFFFF)
+	if (addressPhys == MPTR_NULL || size == 0xFFFFFFFF || size == 0xFFFFFF00) // GX2Invalidate encodes a full-range size as 0x00FFFFFF units
 		return cmd; // block global invalidations because they are too expensive
 
 	// uniform invalidation needs both TC_ACTION_ENA and SH_ACTION_ENA?

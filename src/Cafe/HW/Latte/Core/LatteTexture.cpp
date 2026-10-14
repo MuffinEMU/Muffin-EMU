@@ -1374,7 +1374,8 @@ LatteTexture::LatteTexture(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddre
 	bool readbackSmallTiled =
 		tileMode == Latte::E_HWTILEMODE::TM_1D_TILED_THIN1 &&
 		format == Latte::E_GX2SURFFMT::R32_FLOAT &&
-		!isDepth && width == 1 && height <= 8 && depth == 1 && mipLevels == 1;
+		!isDepth && width == 1 && height <= 8 && depth == 1 && mipLevels == 1 &&
+		g_renderer->GetType() != RendererAPI::Metal; // on Metal every readback commits the command buffer mid-frame; not enabled until measured on devices
 	if (readbackLinear || readbackSmallTiled)
 	{
 		this->enableReadback = true;

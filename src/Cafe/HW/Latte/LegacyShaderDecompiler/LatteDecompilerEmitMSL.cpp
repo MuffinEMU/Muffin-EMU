@@ -2107,17 +2107,17 @@ static void _emitTEXSampleCoordInputComponent(LatteDecompilerShaderContext* shad
 	const char* resultElemTable[4] = {"x","y","z","w"};
 	if(interpretSrcAsType == LATTE_DECOMPILER_DTYPE_SIGNED_INT )
 	{
-		if( elementSel == 4 )
-			src->add("as_type<int>(0.0)");
-		else if( elementSel == 5 )
+		if( elementSel == 5 )
 			src->add("as_type<int>(1.0)");
+		else
+			src->add("as_type<int>(0.0)"); // 4, and 6/7 (masked) so the expression is never left empty
 	}
 	else if(interpretSrcAsType == LATTE_DECOMPILER_DTYPE_FLOAT )
 	{
-		if( elementSel == 4 )
-			src->add("0.0");
-		else if( elementSel == 5 )
+		if( elementSel == 5 )
 			src->add("1.0");
+		else
+			src->add("0.0"); // 4, and 6/7 (masked) so the expression is never left empty
 	}
 }
 
@@ -2374,7 +2374,8 @@ static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContex
     			src->addFmt(")*supportBuffer.tex{}Scale", texInstruction->textureFetch.textureIndex); // close float2 and scale
 
 				src->add("), ");
-				if (texOpcode == GPU7_TEX_INST_LD)
+				// for DIM_2D_MSAA the second argument of read() is the sample index, not a mip level
+				if (texOpcode == GPU7_TEX_INST_LD && texDim == Latte::E_DIM::DIM_2D)
 					_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 3, LATTE_DECOMPILER_DTYPE_SIGNED_INT);
 				else
 					src->add("0");
@@ -4243,7 +4244,8 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
 
 	if (shader->shaderType == LatteConst::ShaderType::Pixel || (shaderContext->contextRegistersNew->IsRasterizationEnabled() && !usesGeometryShader))
 	{
-	    src->addFmt("{} out;" _CRLF, outputTypeName);
+	    // zero-initialised: a partially masked export writes only some lanes, and the rest must read as 0 (as before)
+	    src->addFmt("{} out = {{}};" _CRLF, outputTypeName);
 	}
 
 	// variable definition
