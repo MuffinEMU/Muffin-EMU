@@ -321,7 +321,10 @@ struct BootFailureView: View {
             .accentColor(.white.opacity(0.75))
             .frame(maxWidth: 480)
 
-            shareDiagnosticsButton
+            // Not on the restart screen: the logs there are from the game that already ended, and its own screen offered them.
+            if !needsCleanRestart {
+                shareDiagnosticsButton
+            }
 
             if needsCleanRestart {
                 // Closing is the player's own tap, never automatic. iOS gives an app no way to relaunch itself, and
