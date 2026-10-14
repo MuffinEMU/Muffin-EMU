@@ -567,6 +567,23 @@ void VulkanRenderer::LogVulkanStartupDiagnostics(const VkPhysicalDeviceFeatures&
 	cemuLog_log(LogType::Force, "Vulkan diagnostic: MVK_CONFIG_FULL_IMAGE_VIEW_SWIZZLE={} MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS={} MUFFIN_MOLTENVK_PATH={}", mvkSwizzle ? mvkSwizzle : "(unset)", mvkArgBuf ? mvkArgBuf : "(unset)",
 		getenv("MUFFIN_MOLTENVK_PATH") ? getenv("MUFFIN_MOLTENVK_PATH") : "(unset)");
 #endif
+#if BOOST_OS_IOS
+	{
+		// Test mitigations for the GPU page fault (kIOGPUCommandBufferCallbackErrorPageFault). Each has a switch, set from UserDefaults by the bridge.
+		const char* hostMappedSwitch = getenv("MUFFIN_VK_HOST_MAPPED");
+		const bool hostMappedOn = hostMappedSwitch && hostMappedSwitch[0] != '\0' && hostMappedSwitch[0] != '0';
+		const char* argBufValue = getenv("MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS");
+		const bool argBufOn = argBufValue && argBufValue[0] != '\0' && argBufValue[0] != '0';
+		uint32 delayFrames = 3;
+		if (const char* delaySwitch = getenv("MUFFIN_VK_DELAYED_FREE_FRAMES"))
+			if (delaySwitch[0] != '\0')
+				delayFrames = (uint32)std::min<long>(15, std::max<long>(0, strtol(delaySwitch, nullptr, 10)));
+		m_delayedFreeFrames = delayFrames;
+		cemuLog_log(LogType::Force, "Vulkan mitigation: host-mapped buffers {}", hostMappedOn ? "ON" : "OFF");
+		cemuLog_log(LogType::Force, "Vulkan mitigation: argument buffers {}", argBufOn ? "ON" : "OFF");
+		cemuLog_log(LogType::Force, "Vulkan mitigation: delayed frees {} frames", m_delayedFreeFrames);
+	}
+#endif
 
 	// device extensions
 	std::vector<VkExtensionProperties> available;
@@ -1184,6 +1201,7 @@ VulkanRenderer::~VulkanRenderer()
 		vkDestroyDebugUtilsMessengerEXT(m_instance, m_debugCallback, nullptr);
 	}
 
+	m_drainDestructionQueue = true; // shutdown: the frame delay no longer applies
 	while(!m_destructionQueue.empty())
 		ProcessDestructionQueue();
 
@@ -2643,7 +2661,7 @@ void VulkanRenderer::ProcessFinishedCommandBuffers()
 			ProcessDestructionQueue();
 			m_uniformVarBufferReadIndex = m_cmdBufferUniformRingbufIndices[m_commandBufferSyncIndex];
 			m_commandBufferSyncIndex = (m_commandBufferSyncIndex + 1) % m_commandBuffers.size();
-			memoryManager->cleanupBuffers(m_countCommandBufferFinished);
+			memoryManager->cleanupBuffers(ApplyDelayedFreeToCleanupId(m_countCommandBufferFinished));
 			m_countCommandBufferFinished++;
 			finishedCmdBuffers = true;
 			continue;
@@ -3850,6 +3868,7 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
             chainInfo.m_queueDepth++;
             chainInfo.m_presentId++;
             LatteWait::Get().presentedFrames.fetch_add(1, std::memory_order_relaxed);
+            OnFramePresented();
             // the overlay's "host fps" counts these; the Metal renderer bumps the same counters at its present
             (chainInfo.mainWindow ? PerfTelemetry::Get().tvPresents : PerfTelemetry::Get().padPresents).fetch_add(1, std::memory_order_relaxed);
         }
@@ -4257,6 +4276,33 @@ void VulkanRenderer::ReleaseDestructibleObject(VKRDestructibleObject* destructib
 	m_spinlockDestructionQueue.lock();
 	m_destructionQueue.emplace_back(destructibleObject);
 	m_spinlockDestructionQueue.unlock();
+}
+
+bool VulkanRenderer::HasFrameDelayElapsed(uint64 objectFrame) const
+{
+	if (m_delayedFreeFrames == 0 || m_drainDestructionQueue)
+		return true;
+	return m_framesPresented.load(std::memory_order_acquire) >= objectFrame + m_delayedFreeFrames;
+}
+
+// Limits the "latest finished command buffer" used to release staging/index/vertex allocations to the command buffer that was
+// current m_delayedFreeFrames presents ago.
+uint64 VulkanRenderer::ApplyDelayedFreeToCleanupId(uint64 finishedCommandBufferId) const
+{
+	if (m_delayedFreeFrames == 0 || m_drainDestructionQueue)
+		return finishedCommandBufferId;
+	const uint64 frames = m_framesPresented.load(std::memory_order_acquire);
+	if (frames < m_delayedFreeFrames)
+		return 0;
+	const uint64 floorId = m_frameEndCmdBufferId[(frames - m_delayedFreeFrames) % 16].load(std::memory_order_acquire);
+	return std::min<uint64>(finishedCommandBufferId, floorId);
+}
+
+void VulkanRenderer::OnFramePresented()
+{
+	const uint64 frames = m_framesPresented.load(std::memory_order_relaxed) + 1;
+	m_frameEndCmdBufferId[frames % 16].store(GetCurrentCommandBufferId(), std::memory_order_release);
+	m_framesPresented.store(frames, std::memory_order_release);
 }
 
 void VulkanRenderer::ProcessDestructionQueue()
@@ -4766,7 +4812,10 @@ void VulkanRenderer::bufferCache_init(const sint32 bufferSize)
 	m_importedMemBaseAddress = 0x10000000;
 	size_t hostAllocationSize = 0x40000000ull;
 	// todo - get size of allocation
-	bool configUseHostMemory = false; // todo - replace this with a config option
+	// Off by default. Switch: MUFFIN_VK_HOST_MAPPED=1 (UserDefaults muffin.vk.hostMapped on iOS). On iOS it is part of the test
+	// mitigations for the GPU page fault, so the cache is always an ordinary device buffer unless the switch is set.
+	const char* hostMappedSwitch = getenv("MUFFIN_VK_HOST_MAPPED");
+	bool configUseHostMemory = hostMappedSwitch && hostMappedSwitch[0] != '\0' && hostMappedSwitch[0] != '0';
 	m_useHostMemoryForCache = false;
 	if (m_featureControl.deviceExtensions.external_memory_host && configUseHostMemory)
 	{
@@ -4909,13 +4958,16 @@ void VulkanRenderer::AppendOverlayDebugInfo()
 void VKRDestructibleObject::flagForCurrentCommandBuffer()
 {
 	m_lastCmdBufferId = VulkanRenderer::GetInstance()->GetCurrentCommandBufferId();
+	m_lastFrame = VulkanRenderer::GetInstance()->GetFramesPresented();
 }
 
 bool VKRDestructibleObject::canDestroy()
 {
 	if (m_refCount > 0)
 		return false;
-	return VulkanRenderer::GetInstance()->HasCommandBufferFinished(m_lastCmdBufferId);
+	if (!VulkanRenderer::GetInstance()->HasCommandBufferFinished(m_lastCmdBufferId))
+		return false;
+	return VulkanRenderer::GetInstance()->HasFrameDelayElapsed(m_lastFrame);
 }
 
 VKRObjectTexture::VKRObjectTexture()

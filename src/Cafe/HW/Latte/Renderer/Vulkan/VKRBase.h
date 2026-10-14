@@ -106,6 +106,7 @@ public:
 	virtual ~VKRDestructibleObject() {};
 private:
 	uint64 m_lastCmdBufferId{};
+	uint64 m_lastFrame{}; // frames presented when this object was last used by a command buffer
 };
 
 /* Vulkan objects */

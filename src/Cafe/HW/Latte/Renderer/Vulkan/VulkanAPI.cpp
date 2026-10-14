@@ -150,14 +150,23 @@ void* dlopen_vulkan_loader()
 	// GPU), so let MoltenVK emulate any swizzle the hardware can't do natively, instead of
 	// rejecting it or silently using the identity swizzle.
 	setenv("MVK_CONFIG_FULL_IMAGE_VIEW_SWIZZLE", "1", 0);
+#if BOOST_OS_IOS
+	// Test mitigation for the GPU page fault (kIOGPUCommandBufferCallbackErrorPageFault): Metal argument buffers OFF.
+	// Switch: MUFFIN_VK_ARGUMENT_BUFFERS=1 turns them back on (the bridge maps the UserDefaults key muffin.vk.argumentBuffers to it).
+	// An explicit MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS in the environment still wins (overwrite=0).
+	{
+		const char* argBufSwitch = getenv("MUFFIN_VK_ARGUMENT_BUFFERS");
+		const bool argBufOn = argBufSwitch && argBufSwitch[0] != '\0' && argBufSwitch[0] != '0';
+		setenv("MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS", argBufOn ? "1" : "0", 0);
+	}
+#endif
 	// The other MoltenVK settings, and why they are what they are (the bridge, CemuBridge.mm, sets the first three before initialising the core):
 	//  MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=0      vkQueueSubmit doesn't wait for Metal encoding. Cemu submits from its own render-worker thread anyway,
 	//                                              so this mainly keeps pipeline compiles from stalling the submit. Not verified on device.
 	//  MVK_CONFIG_MAX_ACTIVE_METAL_COMMAND_BUFFERS_PER_QUEUE=128   Cemu's command buffer ring is larger than MoltenVK's default of 64.
 	//  MVK_CONFIG_DEBUG=0                          no extra MoltenVK validation.
-	//  MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS       left at MoltenVK's default (off). Cemu updates descriptor sets every draw; argument buffers
-	//                                              need Tier 2 for the array sizes it uses and change shader translation, which can't be judged
-	//                                              without a device run.
+	//  MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS       set to 0 explicitly on iOS (see above), so the log shows what was active. Cemu updates descriptor sets
+	//                                              every draw; argument buffers need Tier 2 for the array sizes it uses and change shader translation.
 	//  MVK_CONFIG_PREFILL_METAL_COMMAND_BUFFERS    left off: Cemu re-records command buffers constantly, pre-filling would encode twice.
 	//  MVK_CONFIG_SHADER_CONVERSION_FLIP_VERTEX_Y  left alone: Cemu already handles Y with a negative-height viewport, flipping again would invert the picture.
 	//  MVK_CONFIG_USE_METAL_PRIVATE_API            left off: it is the only way to get logicOp, but it calls private Metal API on iOS 27.
