@@ -1,3 +1,8 @@
+// MuffinEMU TouchLab — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team.
+// SPDX-License-Identifier: GPL-3.0-only
+// This notice must be kept in any copy or modified version (GPL-3.0 §4 and §5).
+
 #if canImport(UIKit)
 import UIKit
 import TouchLabCore

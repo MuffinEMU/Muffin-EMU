@@ -1,7 +1,8 @@
-// Ported from MuffinEMU's showcase pad (src/ios/App/GamePadGeometry.swift).
+// MuffinEMU TouchLab — code by the MuffinEMU Development Team.
 // Copyright (c) 2026 MuffinEMU Development Team.
-// SPDX-License-Identifier: MPL-2.0
-// This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+// SPDX-License-Identifier: GPL-3.0-only
+// This notice must be kept in any copy or modified version (GPL-3.0 §4 and §5).
+// Ported from MuffinEMU's showcase pad (src/ios/App/GamePadGeometry.swift).
 
 import CoreGraphics
 import Foundation
