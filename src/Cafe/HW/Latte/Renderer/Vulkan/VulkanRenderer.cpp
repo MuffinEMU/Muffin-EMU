@@ -62,7 +62,9 @@ const  std::vector<const char*> kOptionalDeviceExtensions =
 	VK_KHR_PRESENT_WAIT_EXTENSION_NAME,
 	VK_KHR_PRESENT_ID_EXTENSION_NAME,
 	VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME,
-	VK_EXT_PIPELINE_ROBUSTNESS_EXTENSION_NAME
+	VK_EXT_PIPELINE_ROBUSTNESS_EXTENSION_NAME,
+	VK_EXT_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_EXTENSION_NAME,
+	VK_EXT_ATTACHMENT_FEEDBACK_LOOP_DYNAMIC_STATE_EXTENSION_NAME
 };
 
 const std::vector<const char*> kRequiredDeviceExtensions =
@@ -307,6 +309,22 @@ void VulkanRenderer::GetDeviceFeatures()
 		prevStruct = &pprf;
 	}
 
+	VkPhysicalDeviceAttachmentFeedbackLoopDynamicStateFeaturesEXT attachmentFeedbackLoopDynamicStateFeature{};
+	if (m_featureControl.deviceExtensions.attachment_feedback_loop_dynamic_state)
+	{
+		attachmentFeedbackLoopDynamicStateFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ATTACHMENT_FEEDBACK_LOOP_DYNAMIC_STATE_FEATURES_EXT;
+		attachmentFeedbackLoopDynamicStateFeature.pNext = prevStruct;
+		prevStruct = &attachmentFeedbackLoopDynamicStateFeature;
+	}
+
+	VkPhysicalDeviceAttachmentFeedbackLoopLayoutFeaturesEXT attachmentFeedbackLoopLayoutFeature{};
+	if (m_featureControl.deviceExtensions.attachment_feedback_loop_layout)
+	{
+		attachmentFeedbackLoopLayoutFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_FEATURES_EXT;
+		attachmentFeedbackLoopLayoutFeature.pNext = prevStruct;
+		prevStruct = &attachmentFeedbackLoopLayoutFeature;
+	}
+
 	VkPhysicalDeviceFeatures2 physicalDeviceFeatures2{};
 	physicalDeviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
 	physicalDeviceFeatures2.pNext = prevStruct;
@@ -372,6 +390,12 @@ void VulkanRenderer::GetDeviceFeatures()
 		if ( pprf.pipelineRobustness != VK_TRUE )
 			m_featureControl.deviceExtensions.pipeline_robustness = false;
 	}
+	if (m_featureControl.deviceExtensions.attachment_feedback_loop_layout)
+		m_featureControl.deviceExtensions.attachment_feedback_loop_layout = attachmentFeedbackLoopLayoutFeature.attachmentFeedbackLoopLayout == VK_TRUE;
+	if (m_featureControl.deviceExtensions.attachment_feedback_loop_dynamic_state && m_featureControl.deviceExtensions.attachment_feedback_loop_layout)
+		m_featureControl.deviceExtensions.attachment_feedback_loop_dynamic_state = attachmentFeedbackLoopDynamicStateFeature.attachmentFeedbackLoopDynamicState == VK_TRUE;
+	if (!UseAttachmentFeedbackLoop())
+		cemuLog_log(LogType::Force, "VK_EXT_attachment_feedback_loop_layout(_dynamic_state) not supported");
 	// get limits
 	m_featureControl.limits.minUniformBufferOffsetAlignment = std::max(prop2.properties.limits.minUniformBufferOffsetAlignment, (VkDeviceSize)4);
 	m_featureControl.limits.nonCoherentAtomSize = std::max(prop2.properties.limits.nonCoherentAtomSize, (VkDeviceSize)4);
@@ -843,7 +867,9 @@ VulkanRenderer::VulkanRenderer()
 	}
 #endif
 
-	deviceFeatures.vertexPipelineStoresAndAtomics = true;
+	deviceFeatures.vertexPipelineStoresAndAtomics = deviceFeatures2.features.vertexPipelineStoresAndAtomics;
+	if (!deviceFeatures.vertexPipelineStoresAndAtomics)
+		cemuLog_log(LogType::Force, "vertexPipelineStoresAndAtomics not supported by the driver. Games which use the streamout feature will not render correctly");
 
 	// Only ask vkCreateDevice for what the device reports. Requesting an unsupported core feature fails with
 	// VK_ERROR_FEATURE_NOT_PRESENT (-8), which is what MoltenVK 1.2.8 returned on the iPad Pro 2020 (A12Z). Cemu doesn't hard-require
@@ -910,6 +936,21 @@ VulkanRenderer::VulkanRenderer()
 		pipelineRobustnessFeature.pNext = deviceExtensionFeatures;
 		deviceExtensionFeatures = &pipelineRobustnessFeature;
 		pipelineRobustnessFeature.pipelineRobustness = VK_TRUE;
+	}
+	// enable attachment feedback loop layout + dynamic state if both are supported
+	VkPhysicalDeviceAttachmentFeedbackLoopLayoutFeaturesEXT attachmentFeedbackLoopLayoutFeature{};
+	VkPhysicalDeviceAttachmentFeedbackLoopDynamicStateFeaturesEXT attachmentFeedbackLoopDynamicStateFeature{};
+	if (UseAttachmentFeedbackLoop())
+	{
+		attachmentFeedbackLoopLayoutFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_FEATURES_EXT;
+		attachmentFeedbackLoopLayoutFeature.pNext = deviceExtensionFeatures;
+		deviceExtensionFeatures = &attachmentFeedbackLoopLayoutFeature;
+		attachmentFeedbackLoopLayoutFeature.attachmentFeedbackLoopLayout = VK_TRUE;
+
+		attachmentFeedbackLoopDynamicStateFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ATTACHMENT_FEEDBACK_LOOP_DYNAMIC_STATE_FEATURES_EXT;
+		attachmentFeedbackLoopDynamicStateFeature.pNext = deviceExtensionFeatures;
+		deviceExtensionFeatures = &attachmentFeedbackLoopDynamicStateFeature;
+		attachmentFeedbackLoopDynamicStateFeature.attachmentFeedbackLoopDynamicState = VK_TRUE;
 	}
 
 	// enable the Vulkan 1.2 core mirror-clamp feature when the extension is not what provides it
@@ -1461,7 +1502,7 @@ void VulkanRenderer::HandleScreenshotRequest(LatteTextureView* texView, bool pad
 			range.mipLevel = 0;
 			range.baseArrayLayer = texViewVk->firstSlice;
 			range.layerCount = 1;
-			barrier_image<TRANSFER_READ, TRANSFER_WRITE | IMAGE_WRITE>(baseImageTex, range, VK_IMAGE_LAYOUT_GENERAL);
+			barrier_image<TRANSFER_READ, TRANSFER_WRITE | IMAGE_WRITE>(baseImageTex, range, baseImageTex->GetDefaultLayout());
 		}
 
 		format = VK_FORMAT_R8G8B8A8_UNORM;
@@ -1517,6 +1558,10 @@ void VulkanRenderer::HandleScreenshotRequest(LatteTextureView* texView, bool pad
 	}
 
 	vkCmdCopyImageToBuffer(m_state.currentCommandBuffer, dumpImage, VK_IMAGE_LAYOUT_GENERAL, buffer, 1, &region);
+	if (dumpImage == baseImage)
+	{
+		barrier_image<TRANSFER_READ, TRANSFER_WRITE | IMAGE_WRITE>(baseImageTex, region.imageSubresource, baseImageTex->GetDefaultLayout());
+	}
 
 	SubmitCommandBuffer();
 	WaitCommandBufferFinished(GetCurrentCommandBufferId());
@@ -1629,6 +1674,11 @@ VkDeviceCreateInfo VulkanRenderer::CreateDeviceCreateInfo(const std::vector<VkDe
 	}
 	if (m_featureControl.deviceExtensions.pipeline_robustness)
 		used_extensions.emplace_back(VK_EXT_PIPELINE_ROBUSTNESS_EXTENSION_NAME);
+	if (UseAttachmentFeedbackLoop())
+	{
+		used_extensions.emplace_back(VK_EXT_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_EXTENSION_NAME);
+		used_extensions.emplace_back(VK_EXT_ATTACHMENT_FEEDBACK_LOOP_DYNAMIC_STATE_EXTENSION_NAME);
+	}
 
 	VkDeviceCreateInfo createInfo{};
 	createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -1751,6 +1801,8 @@ bool VulkanRenderer::CheckDeviceExtensionSupport(const VkPhysicalDevice device, 
 	info.deviceExtensions.dynamic_rendering = false; // isExtensionAvailable(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
 	info.deviceExtensions.depth_clip_enable = isExtensionAvailable(VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME);
 	info.deviceExtensions.pipeline_robustness = isExtensionAvailable(VK_EXT_PIPELINE_ROBUSTNESS_EXTENSION_NAME);
+	info.deviceExtensions.attachment_feedback_loop_layout = isExtensionAvailable(VK_EXT_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_EXTENSION_NAME);
+	info.deviceExtensions.attachment_feedback_loop_dynamic_state = isExtensionAvailable(VK_EXT_ATTACHMENT_FEEDBACK_LOOP_DYNAMIC_STATE_EXTENSION_NAME);
 	// dynamic rendering doesn't provide any benefits for us right now. Driver implementations are very unoptimized as of Feb 2022
 	info.deviceExtensions.present_wait = isExtensionAvailable(VK_KHR_PRESENT_WAIT_EXTENSION_NAME) && isExtensionAvailable(VK_KHR_PRESENT_ID_EXTENSION_NAME);
 
@@ -2564,6 +2616,10 @@ void VulkanRenderer::ImguiEnd()
 	ImGui::Render();
 	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), m_state.currentCommandBuffer);
 	vkCmdEndRenderPass(m_state.currentCommandBuffer);
+
+	// restore viewport and scissor box
+	vkCmdSetViewport(m_state.currentCommandBuffer, 0, 1, &m_state.currentViewport);
+	vkCmdSetScissor(m_state.currentCommandBuffer, 0, 1, &m_state.currentScissorRect);
 }
 
 ImTextureID VulkanRenderer::GenerateTexture(const std::vector<uint8>& data, const Vector2i& size)
@@ -3026,6 +3082,7 @@ void VulkanRenderer::GetTextureFormatInfoVK(Latte::E_GX2SURFFMT format, bool isD
 	formatInfoOut->texelCountX = width;
 	formatInfoOut->texelCountY = height;
 	formatInfoOut->isCompressed = false;
+	formatInfoOut->isAlternateFormat = false;
 	if (isDepth)
 	{
 		switch (format)
@@ -3036,6 +3093,7 @@ void VulkanRenderer::GetTextureFormatInfoVK(Latte::E_GX2SURFFMT format, bool isD
 				formatInfoOut->vkImageFormat = VK_FORMAT_D32_SFLOAT_S8_UINT;
 				formatInfoOut->vkImageAspect = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
 				formatInfoOut->decoder = TextureDecoder_NullData64::getInstance();
+				formatInfoOut->isAlternateFormat = true;
 			}
 			else
 			{
@@ -3049,6 +3107,7 @@ void VulkanRenderer::GetTextureFormatInfoVK(Latte::E_GX2SURFFMT format, bool isD
 			formatInfoOut->vkImageFormat = VK_FORMAT_D32_SFLOAT_S8_UINT;
 			formatInfoOut->vkImageAspect = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
 			formatInfoOut->decoder = TextureDecoder_NullData64::getInstance();
+			formatInfoOut->isAlternateFormat = true;
 			break;
 		case Latte::E_GX2SURFFMT::D32_FLOAT:
 			formatInfoOut->vkImageFormat = VK_FORMAT_D32_SFLOAT;
@@ -3071,6 +3130,7 @@ void VulkanRenderer::GetTextureFormatInfoVK(Latte::E_GX2SURFFMT format, bool isD
 			formatInfoOut->vkImageFormat = VK_FORMAT_D16_UNORM;
 			formatInfoOut->vkImageAspect = VK_IMAGE_ASPECT_DEPTH_BIT;
 			formatInfoOut->decoder = nullptr;
+			formatInfoOut->isAlternateFormat = true;
 			break;
 		}
 	}
@@ -3154,19 +3214,24 @@ void VulkanRenderer::GetTextureFormatInfoVK(Latte::E_GX2SURFFMT format, bool isD
 		case Latte::E_GX2SURFFMT::R4_G4_UNORM:
 			if (m_supportedFormatInfo.fmt_r4g4_unorm_pack == false)
 			{
-				if (m_supportedFormatInfo.fmt_r4g4b4a4_unorm_pack == false) {
+				if (m_supportedFormatInfo.fmt_r4g4b4a4_unorm_pack == false)
+				{
 					formatInfoOut->vkImageFormat = VK_FORMAT_R8G8B8A8_UNORM;
 					formatInfoOut->decoder = TextureDecoder_R4G4_UNORM_To_RGBA8::getInstance();
+					formatInfoOut->isAlternateFormat = true;
 				}
-				else {
+				else
+				{
 					formatInfoOut->vkImageFormat = VK_FORMAT_R4G4B4A4_UNORM_PACK16;
 					formatInfoOut->decoder = TextureDecoder_R4_G4_UNORM_To_ABGR4::getInstance();
+					formatInfoOut->isAlternateFormat = true;
 				}
 			}
 			else
 			{
 				formatInfoOut->vkImageFormat = VK_FORMAT_R4G4_UNORM_PACK8;
 				formatInfoOut->decoder = TextureDecoder_R4_G4::getInstance();
+				formatInfoOut->isAlternateFormat = true; // R and G swapped?
 			}
 			break;
 			// R formats
@@ -3208,37 +3273,49 @@ void VulkanRenderer::GetTextureFormatInfoVK(Latte::E_GX2SURFFMT format, bool isD
 			break;
 			// special formats
 		case Latte::E_GX2SURFFMT::R5_G6_B5_UNORM:
-			if (m_supportedFormatInfo.fmt_r5g6b5_unorm_pack == false) {
+			if (m_supportedFormatInfo.fmt_r5g6b5_unorm_pack == false)
+			{
 				formatInfoOut->vkImageFormat = VK_FORMAT_R8G8B8A8_UNORM;
 				formatInfoOut->decoder = TextureDecoder_R5G6B5_UNORM_To_RGBA8::getInstance();
+				formatInfoOut->isAlternateFormat = true;
 			}
-			else {
+			else
+			{
 				// Vulkan has R in MSB, GPU7 has it in LSB
 				formatInfoOut->vkImageFormat = VK_FORMAT_R5G6B5_UNORM_PACK16;
 				formatInfoOut->decoder = TextureDecoder_R5_G6_B5_swappedRB::getInstance();
+				formatInfoOut->isAlternateFormat = true;
 			}
 			break;
 		case Latte::E_GX2SURFFMT::R5_G5_B5_A1_UNORM:
-			if (m_supportedFormatInfo.fmt_a1r5g5b5_unorm_pack == false) {
+			if (m_supportedFormatInfo.fmt_a1r5g5b5_unorm_pack == false)
+			{
 				formatInfoOut->vkImageFormat = VK_FORMAT_R8G8B8A8_UNORM;
 				formatInfoOut->decoder = TextureDecoder_R5_G5_B5_A1_UNORM_swappedRB_To_RGBA8::getInstance();
+				formatInfoOut->isAlternateFormat = true;
 			}
-			else {
+			else
+			{
 				// used in Super Mario 3D World for the hidden Luigi sprites
 				// since order of channels is reversed in Vulkan compared to GX2 the format we need is A1B5G5R5
 				formatInfoOut->vkImageFormat = VK_FORMAT_A1R5G5B5_UNORM_PACK16;
 				formatInfoOut->decoder = TextureDecoder_R5_G5_B5_A1_UNORM_swappedRB::getInstance();
+				formatInfoOut->isAlternateFormat = true;
 			}
 			break;
 		case Latte::E_GX2SURFFMT::A1_B5_G5_R5_UNORM:
-			if (m_supportedFormatInfo.fmt_a1r5g5b5_unorm_pack == false) {
+			if (m_supportedFormatInfo.fmt_a1r5g5b5_unorm_pack == false)
+			{
 				formatInfoOut->vkImageFormat = VK_FORMAT_R8G8B8A8_UNORM;
 				formatInfoOut->decoder = TextureDecoder_A1_B5_G5_R5_UNORM_vulkan_To_RGBA8::getInstance();
+				formatInfoOut->isAlternateFormat = true;
 			}
-			else {
+			else
+			{
 				// used by VC64 (e.g. Ocarina of Time)
 				formatInfoOut->vkImageFormat = VK_FORMAT_A1R5G5B5_UNORM_PACK16; // A 15 R 10..14, G 5..9 B 0..4
 				formatInfoOut->decoder = TextureDecoder_A1_B5_G5_R5_UNORM_vulkan::getInstance();
+				formatInfoOut->isAlternateFormat = true;
 			}
 			break;
 		case Latte::E_GX2SURFFMT::R11_G11_B10_FLOAT:
@@ -3246,13 +3323,17 @@ void VulkanRenderer::GetTextureFormatInfoVK(Latte::E_GX2SURFFMT format, bool isD
 			formatInfoOut->decoder = TextureDecoder_R11_G11_B10_FLOAT::getInstance();
 			break;
 		case Latte::E_GX2SURFFMT::R4_G4_B4_A4_UNORM:
-			if (m_supportedFormatInfo.fmt_r4g4b4a4_unorm_pack == false) {
+			if (m_supportedFormatInfo.fmt_r4g4b4a4_unorm_pack == false)
+			{
 				formatInfoOut->vkImageFormat = VK_FORMAT_R8G8B8A8_UNORM;
 				formatInfoOut->decoder = TextureDecoder_R4G4B4A4_UNORM_To_RGBA8::getInstance();
+				formatInfoOut->isAlternateFormat = true;
 			}
-			else {
+			else
+			{
 				formatInfoOut->vkImageFormat = VK_FORMAT_R4G4B4A4_UNORM_PACK16;
  				formatInfoOut->decoder = TextureDecoder_R4_G4_B4_A4_UNORM::getInstance();
+				formatInfoOut->isAlternateFormat = true; // channel order is different?
 			}
 			break;
 			// special formats - R10G10B10_A2
@@ -3263,6 +3344,7 @@ void VulkanRenderer::GetTextureFormatInfoVK(Latte::E_GX2SURFFMT format, bool isD
 		case Latte::E_GX2SURFFMT::R10_G10_B10_A2_SNORM:
 			formatInfoOut->vkImageFormat = VK_FORMAT_R16G16B16A16_SNORM; // Vulkan has VK_FORMAT_A2R10G10B10_SNORM_PACK32 but it doesnt work?
 			formatInfoOut->decoder = TextureDecoder_R10_G10_B10_A2_SNORM_To_RGBA16::getInstance();
+			formatInfoOut->isAlternateFormat = true;
 			break;
 		case Latte::E_GX2SURFFMT::R10_G10_B10_A2_SRGB:
 			//formatInfoOut->vkImageFormat = VK_FORMAT_R16G16B16A16_SNORM; // Vulkan has no uncompressed SRGB format with more than 8 bits per channel
@@ -3270,6 +3352,7 @@ void VulkanRenderer::GetTextureFormatInfoVK(Latte::E_GX2SURFFMT format, bool isD
 			//break;
 			formatInfoOut->vkImageFormat = VK_FORMAT_A2B10G10R10_UNORM_PACK32; // todo - verify
 			formatInfoOut->decoder = TextureDecoder_R10_G10_B10_A2_UNORM::getInstance();
+			formatInfoOut->isAlternateFormat = true;
 			break;
 			// compressed formats
 		case Latte::E_GX2SURFFMT::BC1_SRGB:
@@ -3445,15 +3528,19 @@ void VulkanRenderer::GetTextureFormatInfoVK(Latte::E_GX2SURFFMT format, bool isD
 		case Latte::E_GX2SURFFMT::R24_X8_UNORM:
 			formatInfoOut->vkImageFormat = VK_FORMAT_R32_SFLOAT;
 			formatInfoOut->decoder = TextureDecoder_R24_X8::getInstance();
+			formatInfoOut->isAlternateFormat = true;
 			break;
 		case Latte::E_GX2SURFFMT::X24_G8_UINT:
 			// used by Color Splash and Resident Evil
 			formatInfoOut->vkImageFormat = VK_FORMAT_R8G8B8A8_UINT; // todo - should we use ABGR format?
 			formatInfoOut->decoder = TextureDecoder_X24_G8_UINT::getInstance(); // todo - verify
+			formatInfoOut->isAlternateFormat = true;
+			break;
 		case Latte::E_GX2SURFFMT::R32_X8_FLOAT:
 			// seen in Disney Infinity 3.0
 			formatInfoOut->vkImageFormat = VK_FORMAT_R32_SFLOAT;
 			formatInfoOut->decoder = TextureDecoder_NullData64::getInstance();
+			formatInfoOut->isAlternateFormat = true;
 			break;
 		default:
 			cemuLog_log(LogType::Force, "Unsupported color texture format {:04x}", (uint32)format);
@@ -4138,7 +4225,7 @@ VkDescriptorSet VulkanRenderer::backbufferBlit_createDescriptorSet(VkDescriptorS
 	performanceMonitor.vk.numDescriptorSets.increment();
 
 	VkDescriptorImageInfo imageInfo = {};
-	imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+	imageInfo.imageLayout = static_cast<LatteTextureVk*>(texViewVk->baseTexture)->GetDefaultLayout();
 	imageInfo.imageView = texViewVk->GetViewRGBA()->m_textureImageView;
 	imageInfo.sampler = texViewVk->GetDefaultTextureSampler(useLinearTexFilter);
 
@@ -4368,7 +4455,7 @@ void VulkanRenderer::texture_clearSlice(LatteTexture* hostTexture, sint32 sliceI
 	else
 	{
 		cemu_assert_debug(vkTexture->dim != Latte::E_DIM::DIM_3D);
-		ClearColorImage(vkTexture, sliceIndex, mipIndex, { 0,0,0,0 }, VK_IMAGE_LAYOUT_GENERAL);
+		ClearColorImage(vkTexture, sliceIndex, mipIndex, { 0,0,0,0 }, vkTexture->GetDefaultLayout());
 	}
 }
 
@@ -4379,7 +4466,7 @@ void VulkanRenderer::texture_clearColorSlice(LatteTexture* hostTexture, sint32 s
 	{
 		cemu_assert_unimplemented();
 	}
-	ClearColorImage(vkTexture, sliceIndex, mipIndex, {r, g, b, a}, VK_IMAGE_LAYOUT_GENERAL);
+	ClearColorImage(vkTexture, sliceIndex, mipIndex, {r, g, b, a}, vkTexture->GetDefaultLayout());
 }
 
 void VulkanRenderer::texture_clearDepthSlice(LatteTexture* hostTexture, uint32 sliceIndex, sint32 mipIndex, bool clearDepth, bool clearStencil, float depthValue, uint32 stencilValue)
@@ -4420,7 +4507,7 @@ void VulkanRenderer::texture_clearDepthSlice(LatteTexture* hostTexture, uint32 s
 
 	vkCmdClearDepthStencilImage(m_state.currentCommandBuffer, imageObj->m_image, VK_IMAGE_LAYOUT_GENERAL, &depthStencilValue, 1, &range);
 
-	barrier_image<ANY_TRANSFER, ANY_TRANSFER | IMAGE_READ | IMAGE_WRITE>(vkTexture, subresourceRange, VK_IMAGE_LAYOUT_GENERAL);
+	barrier_image<ANY_TRANSFER, ANY_TRANSFER | IMAGE_READ | IMAGE_WRITE>(vkTexture, subresourceRange, vkTexture->GetDefaultLayout());
 }
 
 // Block size and bytes per block of the formats GetTextureFormatInfoVK() hands out, or false for one it doesn't know.
@@ -4591,7 +4678,7 @@ void VulkanRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, 
 
 	vkCmdCopyBufferToImage(m_state.currentCommandBuffer, uploadResv.vkBuffer, vkImageObj->m_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, imageRegionCount, imageRegion);
 
-	barrier_image<ANY_TRANSFER, ANY_TRANSFER | IMAGE_READ | IMAGE_WRITE>(vkTexture, barrierSubresourceRange, VK_IMAGE_LAYOUT_GENERAL);
+	barrier_image<ANY_TRANSFER, ANY_TRANSFER | IMAGE_READ | IMAGE_WRITE>(vkTexture, barrierSubresourceRange, vkTexture->GetDefaultLayout());
 }
 
 LatteTexture* VulkanRenderer::texture_createTextureEx(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels,
@@ -4669,13 +4756,11 @@ void VulkanRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, 
 		sint32 mipWidth = std::max(dst->width >> dstMip, 1);
 		sint32 mipHeight = std::max(dst->height >> dstMip, 1);
 
-
 		if (mipWidth < 4 || mipHeight < 4)
 		{
 			cemuLog_logDebug(LogType::Force, "vkCmdCopyImage - blocked copy for unsupported uncompressed->compressed copy with dst smaller than 4x4");
 			return;
 		}
-
 	}
 
 	// make sure all write operations to the src image have finished
@@ -4686,7 +4771,8 @@ void VulkanRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, 
 	vkCmdCopyImage(m_state.currentCommandBuffer, srcVkObj->m_image, VK_IMAGE_LAYOUT_GENERAL, dstVkObj->m_image, VK_IMAGE_LAYOUT_GENERAL, 1, &region);
 
 	// make sure the transfer is finished before the image is read or written
-	barrier_image<SYNC_OP::ANY_TRANSFER, SYNC_OP::IMAGE_READ | SYNC_OP::IMAGE_WRITE | SYNC_OP::ANY_TRANSFER>(dstVk, region.dstSubresource, VK_IMAGE_LAYOUT_GENERAL);
+	barrier_image<SYNC_OP::ANY_TRANSFER, SYNC_OP::IMAGE_READ | SYNC_OP::IMAGE_WRITE | SYNC_OP::ANY_TRANSFER>(srcVk, region.srcSubresource, srcVk->GetDefaultLayout());
+	barrier_image<SYNC_OP::ANY_TRANSFER, SYNC_OP::IMAGE_READ | SYNC_OP::IMAGE_WRITE | SYNC_OP::ANY_TRANSFER>(dstVk, region.dstSubresource, dstVk->GetDefaultLayout());
 }
 
 LatteTextureReadbackInfo* VulkanRenderer::texture_createReadback(LatteTextureView* textureView)
@@ -5116,6 +5202,10 @@ void VKRObjectSampler::DestroyCache()
 
 VKRObjectRenderPass::VKRObjectRenderPass(AttachmentInfo_t& attachmentInfo, sint32 colorAttachmentCount)
 {
+	VulkanRenderer* vkRenderer = VulkanRenderer::GetInstance();
+	bool useAttachmentFeedbackLoop = vkRenderer->UseAttachmentFeedbackLoop();
+	VkImageLayout attachmentLayout = useAttachmentFeedbackLoop ? VK_IMAGE_LAYOUT_ATTACHMENT_FEEDBACK_LOOP_OPTIMAL_EXT : VK_IMAGE_LAYOUT_GENERAL;
+
 	// generate helper hash for pipeline state
 	uint64 stateHash = 0;
 	for (int i = 0; i < Latte::GPU_LIMITS::NUM_COLOR_ATTACHMENTS; ++i)
@@ -5149,7 +5239,7 @@ VKRObjectRenderPass::VKRObjectRenderPass(AttachmentInfo_t& attachmentInfo, sint3
 		m_colorAttachmentFormat[i] = attachmentInfo.colorAttachment[i].format;
 
 		color_attachments_references[i].attachment = (uint32)attachments_descriptions.size();
-		color_attachments_references[i].layout = VK_IMAGE_LAYOUT_GENERAL;
+		color_attachments_references[i].layout = attachmentLayout;
 
 		VkAttachmentDescription entry{};
 		entry.format = attachmentInfo.colorAttachment[i].format;
@@ -5158,8 +5248,8 @@ VKRObjectRenderPass::VKRObjectRenderPass(AttachmentInfo_t& attachmentInfo, sint3
 		entry.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		entry.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		entry.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		entry.initialLayout = VK_IMAGE_LAYOUT_GENERAL;
-		entry.finalLayout = VK_IMAGE_LAYOUT_GENERAL;
+		entry.initialLayout = attachmentLayout;
+		entry.finalLayout = attachmentLayout;
 		attachments_descriptions.emplace_back(entry);
 
 		numColorAttachments = i + 1;
@@ -5176,7 +5266,7 @@ VKRObjectRenderPass::VKRObjectRenderPass(AttachmentInfo_t& attachmentInfo, sint3
 	{
 		hasDepthStencilAttachment = true;
 		depth_stencil_attachments_references.attachment = (uint32)attachments_descriptions.size();
-		depth_stencil_attachments_references.layout = VK_IMAGE_LAYOUT_GENERAL;
+		depth_stencil_attachments_references.layout = attachmentLayout;
 		m_depthAttachmentFormat = attachmentInfo.depthAttachment.format;
 
 		VkAttachmentDescription entry{};
@@ -5194,8 +5284,8 @@ VKRObjectRenderPass::VKRObjectRenderPass(AttachmentInfo_t& attachmentInfo, sint3
 			entry.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 			entry.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		}
-		entry.initialLayout = VK_IMAGE_LAYOUT_GENERAL;
-		entry.finalLayout = VK_IMAGE_LAYOUT_GENERAL;
+		entry.initialLayout = attachmentLayout;
+		entry.finalLayout = attachmentLayout;
 		attachments_descriptions.emplace_back(entry);
 	}
 
@@ -5216,12 +5306,29 @@ VKRObjectRenderPass::VKRObjectRenderPass(AttachmentInfo_t& attachmentInfo, sint3
 	renderPassInfo.subpassCount = 1;
 	renderPassInfo.pSubpasses = &subpass;
 
-	renderPassInfo.pDependencies = nullptr;
-	renderPassInfo.dependencyCount = 0;
+	VkSubpassDependency feedbackLoopDependency{};
+	if (useAttachmentFeedbackLoop)
+	{
+		feedbackLoopDependency.srcSubpass = 0;
+		feedbackLoopDependency.dstSubpass = 0;
+		feedbackLoopDependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+		feedbackLoopDependency.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+		feedbackLoopDependency.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+		feedbackLoopDependency.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+		feedbackLoopDependency.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT | VK_DEPENDENCY_FEEDBACK_LOOP_BIT_EXT;
+		renderPassInfo.pDependencies = &feedbackLoopDependency;
+		renderPassInfo.dependencyCount = 1;
+	}
+	else
+	{
+		renderPassInfo.pDependencies = nullptr;
+		renderPassInfo.dependencyCount = 0;
+	}
 	// before Cemu 1.25.5 we used zero here, which means implicit synchronization. For 1.25.5 it was changed to 2 (using the subpass dependencies above)
 	// Reverted this again to zero for Cemu 1.25.5b as the performance cost is just too high. Manual synchronization is preferred
+	// as of Cemu 2.7 we are now using VK_EXT_attachment_feedback_loop_layout with a matching renderpass dependency if supported. Otherwise we are falling back to the above
 
-	if (vkCreateRenderPass(VulkanRenderer::GetInstance()->GetLogicalDevice(), &renderPassInfo, nullptr, &m_renderPass) != VK_SUCCESS)
+	if (vkCreateRenderPass(vkRenderer->GetLogicalDevice(), &renderPassInfo, nullptr, &m_renderPass) != VK_SUCCESS)
 	{
 		cemuLog_log(LogType::Force, "Vulkan-Error: Failed to create render pass");
 		throw std::runtime_error("failed to create render pass!");

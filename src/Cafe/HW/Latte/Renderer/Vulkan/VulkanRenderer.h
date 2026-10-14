@@ -156,6 +156,7 @@ public:
 		VkFormat vkImageFormat;
 		VkImageAspectFlags vkImageAspect;
 		bool isCompressed;
+		bool isAlternateFormat; // true if the host pixel format doesn't 1:1 match the emulated format
 
 		// texture decoder info
 		TextureDecoder* decoder;
@@ -407,8 +408,8 @@ private:
 		VkDescriptorSetInfo* activePixelDS{ nullptr };
 		VkDescriptorSetInfo* activeGeometryDS{ nullptr };
 		bool descriptorSetsChanged{ false };
-		bool hasRenderSelfDependency{ false }; // set if current drawcall samples textures which are also output as a rendertarget
-
+		CachedFBOVk::RendertargetSelfDependencyMask m_curRenderpassSelfDependencyInfo{};
+		VkImageAspectFlags feedbackLoopImageAspect{0xFFFFFFFF};
 		// viewport and scissor box
 		VkViewport currentViewport{};
 		VkRect2D currentScissorRect{};
@@ -442,6 +443,7 @@ private:
 			activeIndexType = Renderer::INDEX_TYPE::NONE;
 			activeIndexBufferIndex = std::numeric_limits<uint32>::max();
 			activeIndexBufferOffset = std::numeric_limits<uint32>::max();
+			feedbackLoopImageAspect = 0xFFFFFFFF;
 		}
 
 		// invalidation / flushing
@@ -509,6 +511,8 @@ private:
 			bool memory_budget = false; // VK_EXT_memory_budget
 			bool sampler_mirror_clamp_to_edge = false; // VK_KHR_sampler_mirror_clamp_to_edge
 			bool portability_subset = false; // VK_KHR_portability_subset (MoltenVK). The spec requires enabling it whenever the device lists it
+			bool attachment_feedback_loop_layout = false; // VK_EXT_attachment_feedback_loop_layout
+			bool attachment_feedback_loop_dynamic_state = false; // VK_EXT_attachment_feedback_loop_dynamic_state (this is forced to false if VK_EXT_attachment_feedback_loop_layout is not supported)
 		}deviceExtensions;
 
 		bool geometryShader = false; // the core geometryShader feature was enabled on the device (never on MoltenVK). Without it GS stages can't be used
@@ -599,7 +603,7 @@ private:
 	void draw_handleSpecialState5();
 
 	// draw synchronization helper
-	void sync_inputTexturesChanged();
+	void sync_inputTexturesChanged(bool withinFeedbackLoopRenderPass = false);
 	void sync_RenderPassLoadTextures(CachedFBOVk* fboVk);
 	void sync_RenderPassStoreTextures(CachedFBOVk* fboVk);
 
@@ -999,6 +1003,7 @@ public:
 	bool HasSPRIVRoundingModeRTE32() const { return m_featureControl.shaderFloatControls.shaderRoundingModeRTEFloat32; }
 	bool IsDebugMarkersEnabled() const { return m_featureControl.usingDebugMarkerTool; }
 	bool IsTracingToolEnabled() const { return m_featureControl.usingTracingTool; }
+	bool UseAttachmentFeedbackLoop() const { return m_featureControl.deviceExtensions.attachment_feedback_loop_dynamic_state; }
 
 private:
 

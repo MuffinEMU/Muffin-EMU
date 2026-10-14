@@ -2038,6 +2038,12 @@ LatteTextureReadbackInfo* MetalRenderer::texture_createReadback(LatteTextureView
             TextureReadbackSize() / (1024 * 1024));
         return nullptr;
     }
+    auto* baseTexture = static_cast<LatteTextureMtl*>(textureView->baseTexture);
+    if (baseTexture->m_isAlternateFormat)
+    {
+        cemuLog_logDebug(LogType::Force, "Metal does not support readback of texture format 0x{:x}", (uint32)baseTexture->format);
+        return nullptr;
+    }
 
     MTL::Texture* mtlTexture = static_cast<LatteTextureMtl*>(textureView->baseTexture)->GetTexture();
     if (!mtlTexture)

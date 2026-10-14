@@ -172,7 +172,7 @@ void LatteSHRC_RemoveFromCache(LatteDecompilerShader* shader)
             cemu_assert_debug(shader->baseHash == shader->next->baseHash);
             cache.emplace(shader->baseHash, shader->next);
         }
-        shader->next = 0;
+        shader->next = nullptr;
 		removed = true;
 	}
 	else
