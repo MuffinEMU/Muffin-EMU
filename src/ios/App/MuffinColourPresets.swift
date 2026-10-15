@@ -66,8 +66,8 @@ extension UTType {
     /// Both are plain JSON under the hood - `MuffinLayoutFile`/`MuffinColourFile` already
     /// encode as such - so the type just needs its own extension and identifier to be
     /// distinguishable in the Files app and in a share sheet, not a new serialisation.
-    static let muffinLayout = UTType(exportedAs: "com.kiddreads.muffin.layout", conformingTo: .json)
-    static let muffinColour = UTType(exportedAs: "com.kiddreads.muffin.colour", conformingTo: .json)
+    static let muffinLayout = UTType(exportedAs: "com.void.muffinemu.layout", conformingTo: .json)
+    static let muffinColour = UTType(exportedAs: "com.void.muffinemu.colour", conformingTo: .json)
 }
 
 struct MuffinLayoutDocument: FileDocument {

@@ -51,7 +51,7 @@ final class GraphicPackStore: NSObject, ObservableObject {
 
     static let repoPage = URL(string: "https://github.com/cemu-project/cemu_graphic_packs")!
     private static let latestReleaseAPI = URL(string: "https://api.github.com/repos/cemu-project/cemu_graphic_packs/releases/latest")!
-    private static let sessionIdentifier = "com.kiddreads.MuffinEMU.graphicpacks"
+    private static let sessionIdentifier = "com.void.muffinemu.graphicpacks"
 
     enum Phase: Equatable {
         case idle
@@ -90,8 +90,8 @@ final class GraphicPackStore: NSObject, ObservableObject {
         }
     }
 
-    private let bridgeQueue = DispatchQueue(label: "com.kiddreads.MuffinEMU.graphicpacks.bridge", qos: .userInitiated)
-    private let workQueue = DispatchQueue(label: "com.kiddreads.MuffinEMU.graphicpacks.install", qos: .utility)
+    private let bridgeQueue = DispatchQueue(label: "com.void.muffinemu.graphicpacks.bridge", qos: .userInitiated)
+    private let workQueue = DispatchQueue(label: "com.void.muffinemu.graphicpacks.install", qos: .utility)
     private let defaults = UserDefaults.standard
     private var cancelRequested = false
     private var apiTask: URLSessionDataTask?
