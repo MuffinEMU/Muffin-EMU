@@ -1446,10 +1446,24 @@ void VulkanRenderer::draw_execute_first(uint32 baseVertex, uint32 baseInstance, 
 	m_state.activePipelineInfo = pipeline_info;
 
 	auto vkObjPipeline = pipeline_info->m_vkrObjPipeline;
+	{
+		const bool streamoutOn = LatteGPUState.contextRegister[mmVGT_STRMOUT_EN] != 0;
+		const uint32 traceFlags = (hostIndexType != INDEX_TYPE::NONE ? 1u : 0u) | (streamoutOn ? 2u : 0u) | (geometryShader ? 4u : 0u) | (vkObjPipeline->GetPipeline() == VK_NULL_HANDLE ? 8u : 0u);
+		TraceOp(vkObjPipeline->GetPipeline() == VK_NULL_HANDLE ? OpKind::DrawSkipped : OpKind::Draw, count, instanceCount, traceFlags);
+		if (streamoutOn)
+			cemuLog_logOnce(LogType::Force, "Vulkan: first draw with stream-out this session (frame {}, {} vertices); stream-out is emulated with a storage buffer", (uint32)LatteGPUState.frameCounter, count);
+		if (geometryShader)
+			cemuLog_logOnce(LogType::Force, "Vulkan: first draw with a geometry shader this session (frame {}, pipeline {})", (uint32)LatteGPUState.frameCounter, vkObjPipeline->GetPipeline() == VK_NULL_HANDLE ? "skipped, none on this device" : "built");
+		if (vkObjPipeline->GetPipeline() == VK_NULL_HANDLE)
+			cemuLog_logOnce(LogType::Force, "Vulkan: first draw skipped for want of a pipeline (frame {}, {} vertices, geometry shader {}, stream-out {})", (uint32)LatteGPUState.frameCounter, count, geometryShader ? "yes" : "no", streamoutOn ? "yes" : "no");
+	}
 	if (vkObjPipeline->GetPipeline() == VK_NULL_HANDLE)
 	{
-		// invalid/uninitialized pipeline
+		// invalid/uninitialized pipeline (still compiling, failed, or skipped because the device can't run it, e.g. no geometry shader).
+		// Finish the drawcall bookkeeping like a normal draw so streamout can't be left half-prepared (draw_execute counts the draw),
+		// and make the next draw rebind everything instead of trusting state from before this one.
 		m_state.activeVertexDS = nullptr;
+		LatteStreamout_FinishDrawcall(m_useHostMemoryForCache);
 		return;
 	}
 
@@ -1644,11 +1658,10 @@ void VulkanRenderer::draw_execute_continued(uint32 baseVertex, uint32 baseInstan
 	if (vkObjPipeline->GetPipeline() == VK_NULL_HANDLE)
 	{
 		// invalid/uninitialized pipeline (still compiling, failed, or skipped because the device can't run it, e.g. no geometry shader).
-		// Finish the drawcall bookkeeping like a normal draw so streamout and draw counters can't be left half-prepared,
+		// Finish the drawcall bookkeeping like a normal draw so streamout can't be left half-prepared (draw_execute counts the draw),
 		// and make the next draw rebind everything instead of trusting state from before this one.
 		m_state.activeVertexDS = nullptr;
 		LatteStreamout_FinishDrawcall(m_useHostMemoryForCache);
-		LatteGPUState.drawCallCounter++;
 		return;
 	}
 
