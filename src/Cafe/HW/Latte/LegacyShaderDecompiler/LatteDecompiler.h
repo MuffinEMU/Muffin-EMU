@@ -49,6 +49,7 @@ struct LatteDecompilerShaderResourceMapping
 	{
 		std::fill(textureUnitToBindingPoint, textureUnitToBindingPoint + LATTE_NUM_MAX_TEX_UNITS, -1);
 		std::fill(textureUnitToSamplerBindingPoint, textureUnitToSamplerBindingPoint + LATTE_NUM_MAX_TEX_UNITS, -1);
+		std::fill(relBindingPointToRelTextureUnit, relBindingPointToRelTextureUnit + LATTE_NUM_MAX_TEX_UNITS, -1);
 		std::fill(uniformBuffersBindingPoint, uniformBuffersBindingPoint + LATTE_NUM_MAX_UNIFORM_BUFFERS, -1);
 		std::fill(attributeMapping, attributeMapping + LATTE_NUM_MAX_ATTRIBUTE_LOCATIONS, -1);
 	}
@@ -59,6 +60,11 @@ struct LatteDecompilerShaderResourceMapping
 	sint8 textureUnitToBindingPoint[LATTE_NUM_MAX_TEX_UNITS];
 	// Metal uses a separate, compact sampler namespace. multiple textures may share one sampler.
 	sint8 textureUnitToSamplerBindingPoint[LATTE_NUM_MAX_TEX_UNITS];
+	// Vulkan only (upstream 321fa4d74): the texture units in binding order, so a draw looks them up instead of searching.
+	// Index is the relative binding point (absolute binding point - textureUnitBaseBindingPoint). Metal keeps its own mapping.
+	sint8 relBindingPointToRelTextureUnit[LATTE_NUM_MAX_TEX_UNITS];
+	sint8 textureUnitBaseBindingPoint{-1};
+	sint8 textureUnitCount{0};
 	// uniform buffer
 	sint8 uniformVarsBufferBindingPoint{-1}; // special block for uniform registers/remapped array/custom variables
 	sint8 uniformBuffersBindingPoint[LATTE_NUM_MAX_UNIFORM_BUFFERS];
@@ -93,6 +99,13 @@ struct LatteDecompilerShaderResourceMapping
 
 		cemu_assert_debug(false);
 		return -1;
+	}
+
+	// Vulkan only, see relBindingPointToRelTextureUnit
+	sint32 getRelativeTextureUnitFromRelativeBindingPoint(sint8 relativeBindingPoint)
+	{
+		cemu_assert_debug(relativeBindingPoint >= 0 && relativeBindingPoint < LATTE_NUM_MAX_TEX_UNITS);
+		return relBindingPointToRelTextureUnit[relativeBindingPoint];
 	}
 
 	// returns -1 if no there is no texture binding point

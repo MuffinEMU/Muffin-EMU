@@ -479,10 +479,10 @@ uint64 VulkanRenderer::GetDescriptorSetStateHash(LatteDecompilerShader* shader)
 {
 	uint64 hash = 0;
 
-	const sint32 textureCount = shader->resourceMapping.getTextureCount();
+	const sint32 textureCount = shader->resourceMapping.textureUnitCount;
 	for (int i = 0; i < textureCount; ++i)
 	{
-		const auto relative_textureUnit = shader->resourceMapping.getTextureUnitFromBindingPoint(i);
+		const auto relative_textureUnit = shader->resourceMapping.getRelativeTextureUnitFromRelativeBindingPoint(i);
 		auto hostTextureUnit = relative_textureUnit;
 		auto textureDim = shader->textureUnitDim[relative_textureUnit];
 		auto texUnitRegIndex = hostTextureUnit * 7;
@@ -593,14 +593,14 @@ VkDescriptorSetInfo* VulkanRenderer::draw_getOrCreateDescriptorSet(PipelineInfo*
 	}
 	vkObjDS->descriptorSet = result;
 
-	sint32 textureCount = shader->resourceMapping.getTextureCount();
+	sint32 textureCount = shader->resourceMapping.textureUnitCount;
 
 	std::vector<VkWriteDescriptorSet> descriptorWrites;
 	std::vector<VkDescriptorImageInfo> textureArray;
 	for (int i = 0; i < textureCount; ++i)
 	{
 		VkDescriptorImageInfo info{};
-		const auto relative_textureUnit = shader->resourceMapping.getTextureUnitFromBindingPoint(i);
+		const auto relative_textureUnit = shader->resourceMapping.getRelativeTextureUnitFromRelativeBindingPoint(i);
 		auto hostTextureUnit = relative_textureUnit;
 		auto textureDim = shader->textureUnitDim[relative_textureUnit];
 		auto texUnitRegIndex = hostTextureUnit * 7;
@@ -862,7 +862,7 @@ VkDescriptorSetInfo* VulkanRenderer::draw_getOrCreateDescriptorSet(PipelineInfo*
 			VkWriteDescriptorSet write_descriptor{};
 			write_descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 			write_descriptor.dstSet = result;
-			write_descriptor.dstBinding = shader->resourceMapping.getTextureBaseBindingPoint() + i;
+			write_descriptor.dstBinding = shader->resourceMapping.textureUnitBaseBindingPoint + i;
 			write_descriptor.dstArrayElement = 0;
 			write_descriptor.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 			write_descriptor.descriptorCount = 1;

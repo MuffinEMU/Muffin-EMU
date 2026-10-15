@@ -513,13 +513,20 @@ namespace LatteDecompiler
 	void _initTextureBindingPointsVK(LatteDecompilerShaderContext* decompilerContext)
 	{
 		// for Vulkan we use consecutive indices
+		decompilerContext->output->resourceMappingVK.textureUnitBaseBindingPoint = decompilerContext->currentBindingPointVK;
+		sint32 relBindingPointIndex = 0;
 		for (sint32 i = 0; i < LATTE_NUM_MAX_TEX_UNITS; i++)
 		{
 			if (!decompilerContext->output->textureUnitMask[i])
 				continue;
 			decompilerContext->output->resourceMappingVK.textureUnitToBindingPoint[i] = decompilerContext->currentBindingPointVK;
+			decompilerContext->output->resourceMappingVK.relBindingPointToRelTextureUnit[relBindingPointIndex] = i;
+			relBindingPointIndex++;
+			decompilerContext->output->resourceMappingVK.textureUnitCount++;
 			decompilerContext->currentBindingPointVK++;
 		}
+		if (relBindingPointIndex == 0)
+			decompilerContext->output->resourceMappingVK.textureUnitBaseBindingPoint = -1;
 	}
 
 #ifdef ENABLE_METAL

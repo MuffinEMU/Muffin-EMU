@@ -265,10 +265,10 @@ void PipelineCompiler::CreateDescriptorSetLayout(VulkanRenderer* vkRenderer, Lat
 	// -> not part of descriptor
 
 	// textures
-	sint32 textureBindingBase = shader->resourceMapping.getTextureBaseBindingPoint();
+	sint32 textureBindingBase = shader->resourceMapping.textureUnitBaseBindingPoint;
 	if (textureBindingBase >= 0)
 	{
-		sint32 textureCount = shader->resourceMapping.getTextureCount();
+		sint32 textureCount = shader->resourceMapping.textureUnitCount;
 		for (sint32 i = 0; i < textureCount; i++)
 		{
 			VkDescriptorSetLayoutBinding entry{};
