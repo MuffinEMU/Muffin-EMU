@@ -992,8 +992,9 @@ void LatteShaderCache_ShowProgress(const std::function <bool(void)>& loadUpdateF
 			LatteShaderCache_drawBackgroundImage(g_shaderCacheLoaderState.textureTVId, 1280, 720);
 
 #if BOOST_OS_IOS
-			// the app draws the title, bar and counters itself (sharp at full resolution); only the background image stays here
-			const bool drawProgressUI = !g_overlayNativeOnIOS.load(std::memory_order_relaxed);
+			// the app draws the title, bar and counters itself (sharp at full resolution), on this device and on an
+			// external display alike; only the background image stays here
+			const bool drawProgressUI = false;
 #else
 			const bool drawProgressUI = true;
 #endif

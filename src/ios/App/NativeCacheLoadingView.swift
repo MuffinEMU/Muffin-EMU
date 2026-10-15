@@ -70,6 +70,7 @@ private struct CacheLoadingCard: View {
     let width: CGFloat
     let reduceMotion: Bool
     let skipping: Bool
+    var showsSkip: Bool = true
     let onSkip: () -> Void
 
     private var percent: Int { Int(state.fraction * 100) }
@@ -84,17 +85,19 @@ private struct CacheLoadingCard: View {
     var body: some View {
         VStack(spacing: 10) {
             progress
-            Button(action: onSkip) {
-                Text(skipping ? "Skipping..." : "Skip this time")
-                    .font(.system(.footnote, design: .rounded).weight(.semibold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity, minHeight: 32)
-                    .background(Color.white.opacity(skipping ? 0.08 : 0.16), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                    .contentShape(Rectangle())
+            if showsSkip {
+                Button(action: onSkip) {
+                    Text(skipping ? "Skipping..." : "Skip this time")
+                        .font(.system(.footnote, design: .rounded).weight(.semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity, minHeight: 32)
+                        .background(Color.white.opacity(skipping ? 0.08 : 0.16), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(skipping)
+                .accessibilityHint("Starts the game now. Shaders that weren't loaded are compiled when the game needs them, which can stutter at first.")
             }
-            .buttonStyle(.plain)
-            .disabled(skipping)
-            .accessibilityHint("Starts the game now. Shaders that weren't loaded are compiled when the game needs them, which can stutter at first.")
         }
         .padding(14)
         .frame(width: width)
@@ -156,25 +159,29 @@ private struct CacheLoadingPoller: View {
     }
 }
 
-/// Drop-in layer for the emulator screen: centered on the TV picture, above the video and
-/// below the controls, no layout. Only the card takes touches; the rest passes through. `active` is the same condition as
-/// NativeCoreOverlayView's (the core only skips its own text while the native overlay is on).
-/// `tvFrame` is the TV view's frame in global coordinates; nil (not laid out yet) centers on
-/// the whole layer.
+/// Drop-in layer for the emulator screen, above the video and below the controls, no layout:
+/// one card centered on each Wii U screen in `frames` (global coordinates; empty, or not laid
+/// out yet, centers one card on the whole layer). Only the cards take touches; the rest passes
+/// through. `interactive` is false on the external display, which can't be touched, so its card
+/// has no skip button. `active` is true while a title is booting, running or paused.
 struct NativeCacheLoadingView: View {
     let active: Bool
-    let tvFrame: CGRect?
+    var frames: [CGRect] = []
+    var interactive: Bool = true
 
     @State private var state = CacheLoadingState()
-    /// Cleared once the loading has been seen and has ended. Until then it polls, however long
-    /// boot takes: a read is one atomic load.
+    /// Cleared once the loading has been seen and has ended, or when none was seen for
+    /// `giveUpAfter` (a display connected mid-game would otherwise poll for the whole session).
+    /// Until then it polls: a read is one atomic load.
     @State private var polling = true
     @State private var seenLoading = false
+    @State private var pollingSince = Date()
     /// Set by the skip button for this launch, so it can't be pressed twice.
     @State private var skipping = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let margin: CGFloat = 16
+    private static let giveUpAfter: TimeInterval = 300
 
     var body: some View {
         ZStack {
@@ -184,17 +191,19 @@ struct NativeCacheLoadingView: View {
                 }
                 if state.phase != .none {
                     GeometryReader { proxy in
-                        card(in: proxy)
+                        cards(in: proxy)
                     }
                     .transition(.opacity)
                 }
             }
         }
+        .onAppear { pollingSince = Date() }
         .onChange(of: active) { isActive in
             // A new launch starts the watch again.
             guard isActive else { return }
             polling = true
             seenLoading = false
+            pollingSince = Date()
             skipping = false
             state = CacheLoadingState()
         }
@@ -205,25 +214,47 @@ struct NativeCacheLoadingView: View {
         if latest != state { state = latest }
         if latest.phase != .none {
             seenLoading = true
-        } else if seenLoading {
+        } else if seenLoading || Date().timeIntervalSince(pollingSince) > Self.giveUpAfter {
             polling = false
         }
     }
 
-    private func card(in proxy: GeometryProxy) -> some View {
+    /// The areas to center a card in, in this layer's own coordinates. Two screens that
+    /// report the same frame get one card.
+    private func areas(in proxy: GeometryProxy) -> [CGRect] {
         let layer = proxy.frame(in: .global)
-        // The area to center in, in this layer's own coordinates.
-        let area: CGRect = {
-            if let tv = tvFrame {
-                return tv.offsetBy(dx: -layer.minX, dy: -layer.minY)
-            }
-            return CGRect(origin: .zero, size: proxy.size)
-        }()
-        let width = max(180, min(340, area.width - 2 * Self.margin))
-        return CacheLoadingCard(state: state, width: width, reduceMotion: reduceMotion, skipping: skipping) {
-            skipping = true
-            cemu_bridge_skip_cache_loading()
+        var result: [CGRect] = []
+        for frame in frames {
+            let local = frame.offsetBy(dx: -layer.minX, dy: -layer.minY)
+            if !result.contains(where: { $0.integral == local.integral }) { result.append(local) }
         }
-            .position(x: area.midX, y: area.midY)
+        return result.isEmpty ? [CGRect(origin: .zero, size: proxy.size)] : result
     }
+
+    private func cards(in proxy: GeometryProxy) -> some View {
+        ZStack {
+            ForEach(Array(areas(in: proxy).enumerated()), id: \.offset) { _, area in
+                let width = max(180, min(340, area.width - 2 * Self.margin))
+                CacheLoadingCard(state: state, width: width, reduceMotion: reduceMotion,
+                                 skipping: skipping, showsSkip: interactive) {
+                    skipping = true
+                    cemu_bridge_skip_cache_loading()
+                }
+                .position(x: area.midX, y: area.midY)
+            }
+        }
+    }
+}
+
+/// The external display's copy of the loading card, for DisplayRouter's window there. Clear
+/// background and no touches: the display shows the game's boot image underneath.
+final class ExternalCacheLoadingHost: UIHostingController<NativeCacheLoadingView> {
+    init() {
+        super.init(rootView: NativeCacheLoadingView(active: true, interactive: false))
+        view.backgroundColor = .clear
+        view.isUserInteractionEnabled = false
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 }

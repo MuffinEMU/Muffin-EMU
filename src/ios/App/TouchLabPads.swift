@@ -556,6 +556,11 @@ struct TouchLabScreenState: Equatable {
     var tvFrame: CGRect? {
         screens.frames[.tv].flatMap { $0.width > 1 && $0.height > 1 ? $0 : nil }
     }
+
+    /// The GamePad view's frame in global coordinates, while it is on screen and laid out.
+    var gamePadFrame: CGRect? {
+        screens.frames[.gamepad].flatMap { $0.width > 1 && $0.height > 1 ? $0 : nil }
+    }
 }
 
 extension View {

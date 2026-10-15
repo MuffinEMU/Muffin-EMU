@@ -309,6 +309,8 @@ final class DisplayRouter: ObservableObject {
     private var outputCheckGeneration = 0
 
     private var externalWindow: UIWindow?
+    /// The loading card on the external display, kept above whichever Wii U screen is there.
+    private var externalLoadingHost: ExternalCacheLoadingHost?
     private var observing = false
     private var tvSurfaceRegistered = false
 
@@ -440,6 +442,7 @@ final class DisplayRouter: ObservableObject {
         padRenderView = nil
         externalWindow?.isHidden = true
         externalWindow = nil
+        externalLoadingHost = nil
         tvSurfaceRegistered = false
         localVisibleOutputs = nil
         lastLoggedOutputs = nil
@@ -695,6 +698,7 @@ final class DisplayRouter: ObservableObject {
         if !keepExternalWindow, let externalWindow {
             externalWindow.isHidden = true
             self.externalWindow = nil
+            externalLoadingHost = nil
         }
     }
 
@@ -709,6 +713,7 @@ final class DisplayRouter: ObservableObject {
             isReparentingTV = false
             resizeTVSurfaceIfRegistered()
         }
+        raiseExternalLoadingCard()
     }
 
     /// Mirrors `placeTVOnExternalDisplay` for the GamePad screen - used only when the
@@ -720,6 +725,13 @@ final class DisplayRouter: ObservableObject {
         if view.superview !== host {
             host.addSubview(view)
         }
+        raiseExternalLoadingCard()
+    }
+
+    /// Keeps the loading card on top of the Wii U screen just added under it.
+    private func raiseExternalLoadingCard() {
+        guard let card = externalLoadingHost?.view, let host = card.superview else { return }
+        host.bringSubviewToFront(card)
     }
 
     /// Creates or reuses `externalWindow` for the given screen/scene and returns the
@@ -729,6 +741,7 @@ final class DisplayRouter: ObservableObject {
         if externalWindow?.screen !== screen {
             externalWindow?.isHidden = true
             externalWindow = nil
+            externalLoadingHost = nil
         }
         if externalWindow == nil {
             let window = UIWindow(windowScene: scene)
@@ -737,6 +750,14 @@ final class DisplayRouter: ObservableObject {
             let root = UIViewController()
             root.view.backgroundColor = .black
             window.rootViewController = root
+            // The shader cache loading card, as on the device but without the skip button.
+            let card = ExternalCacheLoadingHost()
+            root.addChild(card)
+            card.view.frame = root.view.bounds
+            card.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            root.view.addSubview(card.view)
+            card.didMove(toParent: root)
+            externalLoadingHost = card
             window.isHidden = false
             externalWindow = window
         }

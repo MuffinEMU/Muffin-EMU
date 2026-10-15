@@ -1930,6 +1930,15 @@ struct EmulatorViewOptimized: View {
         }
     }
 
+    /// True while a title is booting, running or paused, wherever its screens are. The cache
+    /// loading card is always the app's to draw (the core no longer draws its own).
+    private var cacheLoadingActive: Bool {
+        switch gameManager.emulationState {
+        case .loading, .running, .paused: return true
+        case .idle, .error: return false
+        }
+    }
+
     /// The name the library card shows. `title` is the dump's file name, which can be a bare
     /// product code, and it used to leak into the top bar and the quit prompt.
     private var gameName: String { game.displayTitle ?? game.title }
@@ -2238,8 +2247,11 @@ struct EmulatorViewOptimized: View {
             NativeCoreOverlayView(active: nativeOverlayActive, topInset: overlayTopInset)
 
             // The shader and pipeline cache loading screen: title, progress bar and counter, drawn
-            // here instead of by the core. The core still draws the game's boot image behind it.
-            NativeCacheLoadingView(active: nativeOverlayActive, tvFrame: touchLabScreens.tvFrame)
+            // here instead of by the core, over each Wii U screen this device shows (TV, GamePad or
+            // both). An external display gets its own copy from DisplayRouter. The core still draws
+            // the game's boot image behind it.
+            NativeCacheLoadingView(active: cacheLoadingActive,
+                                   frames: [touchLabScreens.tvFrame, touchLabScreens.gamePadFrame].compactMap { $0 })
 
             VStack(spacing: 0) {
                 HStack(alignment: .center, spacing: 12) {
