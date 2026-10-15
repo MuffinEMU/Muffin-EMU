@@ -105,7 +105,7 @@ constexpr float kMaxSensitivity = 4.0f;
 
 std::atomic<bool> g_enabled{true};
 std::atomic<float> g_sensitivity{1.0f};
-std::atomic<int> g_source{CEMU_BRIDGE_MOTION_SOURCE_DEVICE};
+std::atomic<int> g_source{CEMU_BRIDGE_MOTION_SOURCE_CONTROLLER}; // falls back to the device with no controller
 std::atomic<uint32_t> g_recenter{0};
 std::atomic<int> g_orientation{(int)UIInterfaceOrientationLandscapeRight};
 std::atomic<double> g_lastPoll{0.0};
