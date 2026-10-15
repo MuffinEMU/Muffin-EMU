@@ -23,6 +23,7 @@ struct CemuApp: App {
         SettingsMode.chooseInitialModeIfNeeded()
         // Before any Settings screen or pad reads it: decides whether the polished control look starts on.
         TouchLabSettings.registerShowcaseStyleDefault()
+        MeloControlsSetting.clearIfUnavailable()
 
         // Which build is this? The release commit and core are stamped into Info.plist when the IPA
         // is packaged (ci/package-ipas.sh), outside the core's own fingerprint, so a core reused

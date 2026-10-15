@@ -52,12 +52,14 @@ settings:
   INFOPLIST_KEY_NSLocalNetworkUsageDescription: 'MuffinEMU connects to game servers on your local network when you use a custom server hosted at home.'
   INFOPLIST_KEY_NSHumanReadableCopyright: '© 2026 MuffinEMU Development Team'
 
-# Melo-Controller, for the optional "Use melo-controls" pad (App/MeloControls.swift).
-# Pinned to a fixed revision, so a push to its main branch cannot change a MuffinEMU build. GPL-3.0; see README.md.
 packages:
-  MeloController:
-    url: https://github.com/stossy11/Melo-Controller
-    revision: e39c6b7b87dc44dbbf548dc1e28fd6f0b0a5d609
+  # Melo-Controller (github.com/stossy11/Melo-Controller, GPL-3.0) is not in the build. To wire it
+  # back in, uncomment this package and its two lines under the target's dependencies below.
+  # Nothing else changes: App/MeloControls.swift checks `canImport(Melo_Controller)`, so the
+  # "Use Melo-Controller" switch and its pad come back on their own when the package is linked.
+  # MeloController:
+  #   url: https://github.com/stossy11/Melo-Controller
+  #   revision: e39c6b7b87dc44dbbf548dc1e28fd6f0b0a5d609
   # The optional Zone / Float / Adaptive / Frame control styles, vendored in this repo
   # (see Packages/MuffinTouchLab/VENDORED.md) so the app builds with no outside dependency.
   MuffinTouchLab:
@@ -90,8 +92,8 @@ targets:
         type: group
 
     dependencies:
-      - package: MeloController
-        product: Melo-Controller
+      # - package: MeloController
+      #   product: Melo-Controller
       - package: MuffinTouchLab
         product: TouchLabCore
       - package: MuffinTouchLab
