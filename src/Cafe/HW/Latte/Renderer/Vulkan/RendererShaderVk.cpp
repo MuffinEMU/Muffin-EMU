@@ -467,6 +467,10 @@ bool RendererShaderVk::WaitForCompiled()
 	return true;
 }
 
+// Bump this whenever the GLSL generation or the GLSL-to-SPIR-V translation changes what it outputs for the same shader. Cached SPIR-V
+// from an older format is then replaced; without a bump, old output keeps being served after an update.
+static constexpr uint32 SPIRV_CACHE_FORMAT_VERSION = 0x53505600; // "SPV" + 0
+
 void RendererShaderVk::ShaderCacheLoading_begin(uint64 cacheTitleId)
 {
 	if (s_spirvCache)
@@ -474,7 +478,9 @@ void RendererShaderVk::ShaderCacheLoading_begin(uint64 cacheTitleId)
 		delete s_spirvCache;
 		s_spirvCache = nullptr;
 	}
-	uint32 spirvCacheMagic = GeneratePrecompiledCacheId();
+	// Stamped with the translation format, not the app version, so an app update keeps the cache. The per-game accurate-mul setting still
+	// changes the SPIR-V, so it stays in the stamp.
+	uint32 spirvCacheMagic = SPIRV_CACHE_FORMAT_VERSION + (uint32)g_current_game_profile->GetAccurateShaderMul() * 133;
 	// Favour performance compiles without the console's 0*x=0 rule (LatteShader_GetDecompilerOptions), which changes the SPIR-V. The cache id above only
 	// knows the per-game setting, so those shaders get a file of their own instead of being served to, or from, a strict session.
 	const bool relaxedMul = g_latteRelaxShaderMul.load(std::memory_order_relaxed) && g_current_game_profile->GetAccurateShaderMul() != AccurateShaderMulOption::False;

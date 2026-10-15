@@ -775,10 +775,27 @@ void cemu_bridge_memory_note(const char* tag) {
 }
 
 bool MetalPipelineCache_FlushArchive(uint32_t timeoutMs);
+bool VulkanRenderer_FlushDriverPipelineCache(uint32_t timeoutMs);
 
+// Called when the app is leaving the screen or iOS asks for memory, so it must stay inside the ~4 s background-task limit: the steps
+// share one deadline. Each one does nothing when its cache isn't open (no game running, other renderer).
 void cemu_bridge_flush_pipeline_cache(void) {
-    if (!MetalPipelineCache_FlushArchive(4000))
+    static std::atomic<bool> s_flushRunning{false};
+    if (s_flushRunning.exchange(true))
+        return;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(4000);
+    auto msLeft = [&]() -> uint32_t {
+        const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
+        return left > 0 ? (uint32_t)left : 0;
+    };
+    bool ok = true;
+    // queued shader and pipeline cache entries first: they are what a kill loses most
+    ok &= FileCache::WaitForAsyncWrites(msLeft());
+    ok &= MetalPipelineCache_FlushArchive(msLeft());
+    ok &= VulkanRenderer_FlushDriverPipelineCache(msLeft());
+    if (!ok)
         cemu_bridge_log_checkpoint("pipeline cache flush did not finish in 4 s");
+    s_flushRunning.store(false);
 }
 
 void cemu_bridge_start_memory_watchdog(void) {
@@ -794,6 +811,8 @@ void cemu_bridge_start_memory_watchdog(void) {
                     unsigned long long avail = 0, foot = 0;
                     cemu_bridge_memory_status(&avail, &foot);
                     cemu_mem_write_line("WARNING - iOS is asking for memory back", avail, foot);
+                    // The app may be killed next; get what was learned onto disk. Off the main thread, and skipped while a flush is running.
+                    std::thread([] { cemu_bridge_flush_pipeline_cache(); }).detach();
                 }];
 
     cemu_bridge_memory_note("baseline at startup");

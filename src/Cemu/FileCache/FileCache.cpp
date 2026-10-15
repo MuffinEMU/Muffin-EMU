@@ -5,6 +5,7 @@
 #include <set>
 #include <algorithm>
 #include <condition_variable>
+#include <chrono>
 #include <unordered_map>
 #include "zlib.h"
 #include "Common/FileStream.h"
@@ -66,6 +67,13 @@ struct _FileCacheAsyncWriter
 		std::unique_lock lock(m_fileCacheMutex);
 		m_jobDoneCondVar.wait(lock, [&]() { return !m_pendingJobs.contains(fileCache) || !m_isRunning.load(); });
 		m_pendingJobs.erase(fileCache);
+	}
+
+	// Same wait for all caches at once, with a time limit. Nothing is erased: the writer thread counts jobs off itself.
+	bool WaitForAll(uint32 timeoutMs)
+	{
+		std::unique_lock lock(m_fileCacheMutex);
+		return m_jobDoneCondVar.wait_for(lock, std::chrono::milliseconds(timeoutMs), [&]() { return m_pendingJobs.empty() || !m_isRunning.load(); });
 	}
 
 private:
@@ -788,6 +796,11 @@ uint32 FileCache::RekeyEntries(const std::vector<RekeyJob>& jobs)
 void FileCache::AddFileAsync(const FileName& name, const uint8* fileData, sint32 fileSize)
 {
 	FileCacheAsyncWriter.AddJob(this, name, fileData, fileSize);
+}
+
+bool FileCache::WaitForAsyncWrites(uint32 timeoutMs)
+{
+	return FileCacheAsyncWriter.WaitForAll(timeoutMs);
 }
 
 // Reads the entry's stored bytes and checks them against its checksum, without decompressing.

@@ -781,12 +781,12 @@ void MetalPipelineCache_QueueArchiveAdd(MTL::RenderPipelineDescriptor* desc)
 // dropped its own compiled-code cache does not have to build every pipeline again. Archives that were loaded from disk are only
 // read during a session. Pipelines that missed are added to a separate archive by one writer thread and saved as one more file,
 // which means no archive is ever read and written at the same time. The file name carries the OS build and GPU the archive was
-// built on; files for another build are deleted.
+// built on; files for another build are deleted. Age alone never deletes a file: archives of titles that aren't played
+// are only removed, oldest first, once all titles together are over the size cap.
 static constexpr uint32 ARCHIVE_MAX_FILES = 8;
 static constexpr uint64 ARCHIVE_MAX_BYTES = 384ull * 1024 * 1024; // loaded archives plus what a session may add to them
 static constexpr uint64 ARCHIVE_LOAD_BYTES = 256ull * 1024 * 1024; // a title opens at most this much; files over it stay on disk unopened
 static constexpr uint64 ARCHIVE_ALL_TITLES_BYTES = 1024ull * 1024 * 1024; // all titles together; the oldest files of other titles go first
-static constexpr int ARCHIVE_MAX_AGE_DAYS = 45;
 static constexpr size_t ARCHIVE_MAX_QUEUE = 20000;
 static constexpr uint32 ARCHIVE_SAVE_EVERY = 2000;
 
@@ -816,12 +816,11 @@ void MetalPipelineCache::OpenBinaryArchives(uint64 cacheTitleId)
 	const std::string titlePrefix = fmt::format("{:016x}_mtlbin_", cacheTitleId);
 	const std::string keyPrefix = titlePrefix + GetBinaryArchiveKey(m_mtlr->GetDevice()) + "_";
 
-	// Prune the whole archive directory, not just this title: files of another OS build or GPU can never be used again,
-	// and files nobody has touched for weeks belong to titles that are no longer played.
+	// Prune the whole archive directory, not just this title: files of another OS build or GPU can never be used again.
+	// Files of other titles are kept however long ago they were played, until the size cap below needs the room.
 	struct ArchiveFile { fs::path path; uint64 size; fs::file_time_type time; bool currentTitle; };
 	std::vector<ArchiveFile> all;
 	const std::string keyOnly = "_mtlbin_" + GetBinaryArchiveKey(m_mtlr->GetDevice()) + "_";
-	const auto ageLimit = fs::file_time_type::clock::now() - std::chrono::hours(24 * ARCHIVE_MAX_AGE_DAYS);
 	uint32 prunedFiles = 0;
 	uint64 prunedBytes = 0;
 	auto prune = [&](const fs::path& path, uint64 size) {
@@ -843,10 +842,10 @@ void MetalPipelineCache::OpenBinaryArchives(uint64 cacheTitleId)
 		const bool isBin = name.size() > 4 && name.compare(name.size() - 4, 4, ".bin") == 0;
 		const bool isCurrentTitle = name.compare(0, titlePrefix.size(), titlePrefix) == 0;
 		// Archives are written once and only read afterwards, so the write time says when a title was last played only because
-		// the files of the title being opened are touched below. This title's own files are never aged out here.
-		if (!isBin || name.find(keyOnly) == std::string::npos || (!isCurrentTitle && !timeEc && time < ageLimit))
+		// the files of the title being opened are touched below.
+		if (!isBin || name.find(keyOnly) == std::string::npos)
 		{
-			prune(it->path(), size); // another OS build or GPU, a leftover temp file, or another title not played for weeks
+			prune(it->path(), size); // another OS build or GPU, or a leftover temp file
 			continue;
 		}
 		all.push_back({it->path(), size, timeEc ? fs::file_time_type::min() : time, isCurrentTitle});
@@ -931,8 +930,8 @@ void MetalPipelineCache::OpenBinaryArchives(uint64 cacheTitleId)
 	}
 	m_archiveFilesLoaded = (uint32)loaded.size();
 	m_archiveBaseBytes = bytes;
-	cemuLog_log(LogType::Force, "Metal binary archive: opened {} file(s), {} MB for this title; removed {} file(s), {} MB (another OS build or GPU, not used for {} days, or over the size caps)",
-		loaded.size(), bytes / (1024 * 1024), prunedFiles, prunedBytes / (1024 * 1024), ARCHIVE_MAX_AGE_DAYS);
+	cemuLog_log(LogType::Force, "Metal binary archive: opened {} file(s), {} MB for this title; removed {} file(s), {} MB (another OS build or GPU, or over the size caps)",
+		loaded.size(), bytes / (1024 * 1024), prunedFiles, prunedBytes / (1024 * 1024));
 
 	uint32 nextIndex = 0;
 	while (nextIndex < ARCHIVE_MAX_FILES && used[nextIndex])

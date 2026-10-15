@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <condition_variable>
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
 #include "Cafe/HW/Latte/Renderer/Vulkan/RendererShaderVk.h"
@@ -184,6 +185,8 @@ public:
 	RendererAPI GetType() override { return RendererAPI::Vulkan; }
 
 	static VulkanRenderer* GetInstance();
+	// Saves the driver pipeline cache now instead of at the saver thread's next turn; false if it didn't finish within timeoutMs
+	bool FlushDriverPipelineCache(uint32 timeoutMs);
 
 	void UnrecoverableError(const char* errMsg) const;
 
@@ -293,6 +296,11 @@ public:
 	std::atomic<uint64> m_frameEndCmdBufferId[16]{}; // command buffer id current when frame N (index N % 16) was presented
 
 	void PipelineCacheSaveThread(size_t cache_size);
+	// explicit save requests: the saver thread numbers each one it has served, a caller waits for its own number
+	std::atomic<uint64> m_pipelineCacheFlushRequests{0};
+	uint64 m_pipelineCacheFlushesDone{0}; // guarded by m_pipelineCacheFlushMutex
+	std::mutex m_pipelineCacheFlushMutex;
+	std::condition_variable m_pipelineCacheFlushCv;
 
 	void ClearColorbuffer(bool padView) override;
 	void ClearColorImageRaw(VkImage image, uint32 sliceIndex, uint32 mipIndex, const VkClearColorValue& color, VkImageLayout inputLayout, VkImageLayout outputLayout);

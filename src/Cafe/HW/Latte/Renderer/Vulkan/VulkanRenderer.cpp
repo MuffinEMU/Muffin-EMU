@@ -107,6 +107,10 @@ static constexpr const char* kPortabilityEnumerationExtName = "VK_KHR_portabilit
 static constexpr const char* kPortabilitySubsetExtName = "VK_KHR_portability_subset";
 static constexpr VkInstanceCreateFlags kInstanceEnumeratePortabilityBit = 0x00000001; // VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR
 
+// The renderer an explicit driver-cache flush goes to; set while its saver thread runs. The mutex keeps the renderer alive during a flush.
+static std::mutex s_driverCacheFlushTargetMutex;
+static VulkanRenderer* s_driverCacheFlushTarget = nullptr;
+
 static bool IsInstanceExtensionAvailable(const char* name)
 {
 	uint32_t count = 0;
@@ -1159,6 +1163,12 @@ VulkanRenderer::~VulkanRenderer()
 	WaitCommandBufferFinished(GetCurrentCommandBufferId());
 	// shut down pipeline save thread
 	m_destructionRequested = true;
+	{
+		// a flush waiting on the saver thread must not outlive it; after this no new one reaches this renderer
+		std::lock_guard lock(s_driverCacheFlushTargetMutex);
+		s_driverCacheFlushTarget = nullptr;
+		m_pipelineCacheFlushCv.notify_all();
+	}
 	m_pipeline_cache_semaphore.notify();
 	m_pipeline_cache_save_thread.join();
 
@@ -2916,6 +2926,23 @@ static fs::path GetDriverPipelineCacheFilename(const fs::path& dir, uint32 drive
 	return dir / fmt::format(L"{:016x}_{:08x}.bin", CafeSystem::GetForegroundTitleId(), driverVersion);
 }
 
+bool VulkanRenderer::FlushDriverPipelineCache(uint32 timeoutMs)
+{
+	const uint64 ticket = m_pipelineCacheFlushRequests.fetch_add(1) + 1;
+	m_pipeline_cache_semaphore.notify(); // wakes the saver thread if it is idle
+	std::unique_lock lock(m_pipelineCacheFlushMutex);
+	return m_pipelineCacheFlushCv.wait_for(lock, std::chrono::milliseconds(timeoutMs), [&]() { return m_pipelineCacheFlushesDone >= ticket || m_destructionRequested; }) && m_pipelineCacheFlushesDone >= ticket;
+}
+
+// The iOS bridge can't see the renderer class. Does nothing when the active renderer isn't Vulkan or no game is running.
+bool VulkanRenderer_FlushDriverPipelineCache(uint32 timeoutMs)
+{
+	std::lock_guard lock(s_driverCacheFlushTargetMutex);
+	if (!s_driverCacheFlushTarget)
+		return true;
+	return s_driverCacheFlushTarget->FlushDriverPipelineCache(timeoutMs);
+}
+
 void VulkanRenderer::PipelineCacheSaveThread(size_t cache_size)
 {
 	SetThreadName("vkDriverPlCache");
@@ -2937,6 +2964,16 @@ void VulkanRenderer::PipelineCacheSaveThread(size_t cache_size)
 	vkGetPhysicalDeviceProperties(m_physicalDevice, &deviceProps);
 	const auto filename = GetDriverPipelineCacheFilename(dir, deviceProps.driverVersion);
 
+	bool hasWritten = false;
+	std::chrono::steady_clock::time_point lastWrite;
+	uint64 flushesServed = 0;
+	auto signalFlushServed = [&](uint64 ticket) {
+		flushesServed = ticket;
+		std::lock_guard lock(m_pipelineCacheFlushMutex);
+		m_pipelineCacheFlushesDone = ticket;
+		m_pipelineCacheFlushCv.notify_all();
+	};
+
 	while (true)
 	{
 		if (m_destructionRequested)
@@ -2944,12 +2981,19 @@ void VulkanRenderer::PipelineCacheSaveThread(size_t cache_size)
 		m_pipeline_cache_semaphore.wait();
 		if (m_destructionRequested)
 			return;
-		for (sint32 i = 0; i < 15 * 4; i++)
+		// Save 15 s after the first change so a burst of new pipelines is written once, and at most once per 60 s while the cache keeps
+		// growing. An explicit flush request skips the waiting.
+		const auto wokeAt = std::chrono::steady_clock::now();
+		while (m_pipelineCacheFlushRequests.load() == flushesServed)
 		{
 			if (m_destructionRequested)
 				return;
+			const auto now = std::chrono::steady_clock::now();
+			if (now - wokeAt >= std::chrono::seconds(15) && (!hasWritten || now - lastWrite >= std::chrono::seconds(60)))
+				break;
 			std::this_thread::sleep_for(std::chrono::milliseconds(250));
 		}
+		const uint64 flushTicket = m_pipelineCacheFlushRequests.load(); // every request up to this one is served by the save below
 
 		// always prioritize the compiler threads over this thread
 		// avoid calling stalling lock() since it will block other threads from entering even when the lock is currently held in shared mode
@@ -2988,6 +3032,8 @@ void VulkanRenderer::PipelineCacheSaveThread(size_t cache_size)
 				if (written && !renameEc)
 				{
 					cache_size = size;
+					hasWritten = true;
+					lastWrite = std::chrono::steady_clock::now();
 					cemuLog_logDebug(LogType::Force, "pipeline cache saved");
 				}
 				else
@@ -3007,6 +3053,7 @@ void VulkanRenderer::PipelineCacheSaveThread(size_t cache_size)
 			m_pipeline_cache_semaphore.reset();
 			m_pipeline_cache_save_mutex.unlock();
 		}
+		signalFlushServed(flushTicket);
 	}
 }
 
@@ -3052,6 +3099,10 @@ void VulkanRenderer::CreatePipelineCache()
 	cemuLog_log(LogType::Force, "Vulkan: pipeline cache opened, {} KB read from disk, {} KB in use (async pipeline compile: {})", cacheData.size() / 1024, cache_size / 1024, m_featureControl.deviceExtensions.pipeline_creation_cache_control ? "yes" : "no");
 
 	m_pipeline_cache_save_thread = std::thread(&VulkanRenderer::PipelineCacheSaveThread, this, cache_size);
+	{
+		std::lock_guard lock(s_driverCacheFlushTargetMutex);
+		s_driverCacheFlushTarget = this;
+	}
 }
 
 void VulkanRenderer::swapchain_createDescriptorSetLayout()

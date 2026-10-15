@@ -87,6 +87,10 @@ public:
 
 	sint32 GetMaximumFileIndex();
 
+	// Waits until every AddFileAsync write queued so far, for any cache, has reached the file (or timeoutMs has passed) without
+	// closing anything. false on timeout. Used before the app can be killed, so learned shaders and pipelines aren't left in the queue.
+	static bool WaitForAsyncWrites(uint32 timeoutMs);
+
 private:
 	struct FileTableEntry
 	{
