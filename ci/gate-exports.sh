@@ -1,4 +1,9 @@
 #!/bin/bash
+# MuffinEMU — code by the MuffinEMU Development Team.
+# Copyright (c) 2026 MuffinEMU Development Team.
+# SPDX-License-Identifier: MPL-2.0
+# This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 # Gate: every function Swift can call is in the framework, and the framework is an arm64 iOS
 # library. Runs against a freshly built core and against a cached one alike, so a core that is
 # reused is held to exactly the standard of one that was just compiled.

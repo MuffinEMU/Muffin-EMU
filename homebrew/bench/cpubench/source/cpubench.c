@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team.
+// SPDX-License-Identifier: MPL-2.0
+// This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 // cpubench.rpx - five deterministic, allocation-free CPU/FPU/memory workloads
 // for the cross-engine benchmark. See ../../README.md for the
 // marker protocol and how the host times this against gpubench.rpx.

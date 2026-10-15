@@ -1,4 +1,9 @@
 #!/bin/bash
+# MuffinEMU — code by the MuffinEMU Development Team.
+# Copyright (c) 2026 MuffinEMU Development Team.
+# SPDX-License-Identifier: MPL-2.0
+# This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 # Compiles Cemu.framework (the Cemu core with the Swift bridge and its glue) for arm64 iOS from
 # scratch and leaves it in build-ios/out. A fresh build directory, no compiler cache, no partial
 # results from any earlier build: see docs/CI.md for why the core is only ever built whole or

@@ -1,4 +1,9 @@
 #!/bin/bash
+# MuffinEMU — code by the MuffinEMU Development Team.
+# Copyright (c) 2026 MuffinEMU Development Team.
+# SPDX-License-Identifier: MPL-2.0
+# This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 # Everything about the Audit app that can be checked on a Mac without an iOS SDK and without building the core:
 #   - the catalogue against its schema and against the guest program it drives
 #   - the probe protocol constants (guest header vs Swift)

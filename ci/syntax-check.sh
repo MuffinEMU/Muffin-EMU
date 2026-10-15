@@ -1,4 +1,9 @@
 #!/bin/sh
+# MuffinEMU — code by the MuffinEMU Development Team.
+# Copyright (c) 2026 MuffinEMU Development Team.
+# SPDX-License-Identifier: MPL-2.0
+# This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 # Fast local type-check for the Espresso CPU core.
 #
 # WHY: the real build needs vcpkg (boost, fmt, ...) which CI has and a laptop usually does

@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team.
+// SPDX-License-Identifier: MPL-2.0
+// This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 //
 //  CheckEvaluator.swift
 //  Evaluates the catalogue's whole-test checks (audio windows, memory growth, frame pacing, guest errors)

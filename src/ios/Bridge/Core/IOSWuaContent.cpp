@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team.
+// SPDX-License-Identifier: MPL-2.0
+// This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 // Build / list / verify .wua archives that hold a game plus its updates and DLC.
 //
 // IOSTitleDecrypt_ExtractToWua packs ONE title. A .wua can hold several: each title sits

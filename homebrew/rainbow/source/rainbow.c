@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team.
+// SPDX-License-Identifier: MPL-2.0
+// This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 // rainbow.rpx - a homebrew test rom that is impossible to confuse with a black screen.
 //
 // Why this exists. Every graphics test this port has run so far has been ambiguous.
