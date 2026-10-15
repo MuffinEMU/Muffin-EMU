@@ -95,18 +95,20 @@ struct OnScreenControlsSection: View {
         Section {
             TouchLabStyleSettingsRows()
 
-            Toggle(isOn: $useMeloControls) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Use Melo-Controller")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text(useMeloControls
-                         ? "Melo-Controller by stossy11, with its own layout editor. The options below are for MuffinEMU's pad."
-                         : "MuffinEMU's measured GamePad layout.")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+            if MeloControlsSetting.isAvailable {
+                Toggle(isOn: $useMeloControls) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Use Melo-Controller")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        Text(useMeloControls
+                             ? "Melo-Controller by stossy11, with its own layout editor. The options below are for MuffinEMU's pad."
+                             : "MuffinEMU's measured GamePad layout.")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
                 }
+                .tint(MuffinTheme.pixelBlue)
             }
-            .tint(MuffinTheme.pixelBlue)
 
             if !usingTouchLab {
                 Toggle(isOn: $joystickMode) {

@@ -70,7 +70,7 @@ struct TouchLabStyleSettingsRows: View {
             }
 
             if TouchLabSettings.isTouchLab(scheme) {
-                if useMeloControls {
+                if useMeloControls && MeloControlsSetting.isAvailable {
                     Text("Melo-Controller is switched on below, so it is showing instead. Switch it off to use \(TouchLabSettings.name(scheme)).")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
