@@ -125,4 +125,4 @@ xcodebuild -project MuffinEMU.xcodeproj -scheme MuffinEMU -sdk iphoneos -configu
 
 ## Credits
 
-MuffinEMU is created by Void. It's built on [Cemu](https://github.com/cemu-project/Cemu) by the Cemu team.
+MuffinEMU is created by Void. It's built on [Cemu](https://github.com/cemu-project/Cemu) by the Cemu team, and its core includes code from [MeloCafe](https://github.com/stossy11/MeloCafe) by stossy11.
