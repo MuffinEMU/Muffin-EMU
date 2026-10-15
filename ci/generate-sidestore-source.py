@@ -455,7 +455,7 @@ def build_source_shell(ident, name, subtitle, app_subtitle, extra_note, asset_na
         "apps": [{
             "name": "MuffinEMU",
             "bundleIdentifier": BUNDLE_ID,
-            "developerName": "MuffinEMU Official",
+            "developerName": "Void",
             "subtitle": app_subtitle,
             "localizedDescription": APP_DESCRIPTION,
             "iconURL": f"{PAGES}/icon.png",
