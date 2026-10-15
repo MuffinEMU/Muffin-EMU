@@ -504,6 +504,12 @@ bool cemu_bridge_timebase_auto_enabled(void);
 /// boot and nothing changes it later. Safe to call from any thread.
 int cemu_bridge_cpu_mode(void);
 
+/// True when this device enforces JIT through the Trusted Execution Monitor (the same answer the
+/// core's HAS_TXM setting is built from). There, a debugger has to stay attached and serve the
+/// recompiler's memory requests instead of attaching and leaving, so a JIT enabler needs its
+/// script for it (StikDebug's universal.js). Cheap after the first call.
+bool cemu_bridge_jit_uses_txm(void);
+
 /// Diagnostic switches, all read when a title starts rather than while one runs.
 ///
 /// Each one isolates a subsystem so a problem can be narrowed down without a rebuild.

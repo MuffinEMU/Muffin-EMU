@@ -1036,6 +1036,13 @@ bool ios_process_is_debugged(uint32_t& flagsOut)
     return csops(getpid(), 0 /* CS_OPS_STATUS */, &flagsOut, sizeof(flagsOut)) == 0 && (flagsOut & 0x10000000u) != 0;
 }
 
+// The same decision ios_configure_jit_environment() writes into HAS_TXM, readable before any title starts.
+bool cemu_bridge_jit_uses_txm(void)
+{
+    static const bool txm = ios_os_at_least(19, 0) && ![NSProcessInfo processInfo].isiOSAppOnMac && ios_has_txm();
+    return txm;
+}
+
 // What the running device is, read once. Used to decide the core count and written to the
 // performance log so reports from different devices can be compared.
 namespace {

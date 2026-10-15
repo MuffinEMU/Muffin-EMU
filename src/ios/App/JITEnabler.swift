@@ -15,7 +15,13 @@ import Darwin
 /// The JIT enablers MuffinEMU can hand off to. Each URL below was checked against the
 /// enabler's own source on GitHub:
 ///   StikDebug     Info.plist registers `stikdebug` and `stikjit`; HomeView.swift handles
-///                 host `enable-jit` with a `bundle-id` query item.
+///                 host `enable-jit` with a `bundle-id` query item, and `script-name` loads one
+///                 of its scripts by file name. StikDebug picks a script by itself only for the
+///                 apps named in its AutoScriptAssignments.swift, which doesn't include MuffinEMU
+///                 (and matches display names, which MuffinEMU's builds stamp with a version), so
+///                 on a TXM device the link names universal.js: there the debugger has to stay
+///                 attached and answer the recompiler's brk #0xf00d requests, which is what that
+///                 script does.
 ///   LiveContainer LiveContainer/Info.plist registers `livecontainer`; LCAppListView.swift
 ///                 handles host `livecontainer-launch` with `bundle-name` and `jit=true`.
 /// SideStore is not offered: its URLHandler.swift only handles backup, install, source,
@@ -55,7 +61,10 @@ enum JITEnabler: String, CaseIterable, Identifiable {
     static func template(for enabler: JITEnabler, custom: String) -> String? {
         switch enabler {
         case .none: return nil
-        case .stikDebug: return "stikdebug://enable-jit?bundle-id={bundleId}"
+        case .stikDebug:
+            return cemu_bridge_jit_uses_txm()
+                ? "stikdebug://enable-jit?bundle-id={bundleId}&script-name=universal.js"
+                : "stikdebug://enable-jit?bundle-id={bundleId}"
         case .liveContainer: return "livecontainer://livecontainer-launch?bundle-name={bundleId}&jit=true"
         case .custom: return custom.trimmingCharacters(in: .whitespacesAndNewlines)
         }
