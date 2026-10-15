@@ -1528,7 +1528,7 @@ void LatteCP_ProcessRingbuffer()
 			{
 				DrawPassContext drawPassCtx;
 				drawPassCtx.beginDrawPass();
-				cemuLog_log(LogType::Force, "[TopLevel] DrawIndex2");
+				{ static std::atomic<bool> s_logged{false}; if (!s_logged.exchange(true)) cemuLog_log(LogType::Force, "[TopLevel] DrawIndex2 (logged once; a draw outside an indirect buffer)"); }
 				LatteCP_itDrawIndex2(cmd, nWords, drawPassCtx);
 				drawPassCtx.endDrawPass();
 				timerRecheck += CP_TIMER_RECHECK / 64;
@@ -1538,7 +1538,7 @@ void LatteCP_ProcessRingbuffer()
 			{
 				DrawPassContext drawPassCtx;
 				drawPassCtx.beginDrawPass();
-				cemuLog_log(LogType::Force, "[TopLevel] DrawIndexAuto");
+				{ static std::atomic<bool> s_logged{false}; if (!s_logged.exchange(true)) cemuLog_log(LogType::Force, "[TopLevel] DrawIndexAuto (logged once; a draw outside an indirect buffer)"); }
 				LatteCP_itDrawIndexAuto(cmd, nWords, drawPassCtx);
 				drawPassCtx.endDrawPass();
 				timerRecheck += CP_TIMER_RECHECK / 512;
@@ -1548,7 +1548,7 @@ void LatteCP_ProcessRingbuffer()
 			{
 				DrawPassContext drawPassCtx;
 				drawPassCtx.beginDrawPass();
-				cemuLog_log(LogType::Force, "[TopLevel] DrawIndexImm");
+				{ static std::atomic<bool> s_logged{false}; if (!s_logged.exchange(true)) cemuLog_log(LogType::Force, "[TopLevel] DrawIndexImm (logged once; a draw outside an indirect buffer)"); }
 				LatteCP_itDrawImmediate(cmd, nWords, drawPassCtx);
 				drawPassCtx.endDrawPass();
 				timerRecheck += CP_TIMER_RECHECK / 64;
