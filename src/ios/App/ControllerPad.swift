@@ -217,8 +217,11 @@ struct OptimizedControlPanel: View {
         // Release is reported from the pad, not per control, so a re-render cannot drop
         // a press: when the whole pad goes away, release everything.
         .onDisappear { cemu_bridge_release_all_buttons() }
-        // Cancels any touch in progress while paused or inactive, which releases it.
-        .allowsHitTesting(!isPaused)
+        // Cancels any touch in progress while paused or inactive, which releases it. Not while the
+        // layout is being edited: moving the controls pauses the game by default, and the drags
+        // that move them have to reach the pad. No input reaches the game then, because every
+        // control is non-interactive while editing.
+        .allowsHitTesting(!isPaused || isEditingLayout)
         // These move controls between clusters, so a held button is rebuilt elsewhere and
         // can't report its release. Release everything.
         .onChange(of: joystickMode) { _ in cemu_bridge_release_all_buttons() }
