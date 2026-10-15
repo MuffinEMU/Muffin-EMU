@@ -10,7 +10,7 @@
 [![Downloads](https://img.shields.io/github/downloads/MuffinEMU/Muffin-EMU/total?style=for-the-badge&labelColor=1d1d1f&color=E5652E&label=downloads&logo=github&logoColor=white)](https://github.com/MuffinEMU/Muffin-EMU/releases)
 [![Build](https://img.shields.io/github/actions/workflow/status/MuffinEMU/Muffin-EMU/build-ios-app.yml?branch=main&style=for-the-badge&labelColor=1d1d1f&label=build&logo=githubactions&logoColor=white)](https://github.com/MuffinEMU/Muffin-EMU/actions/workflows/build-ios-app.yml)
 [![iPhone and iPad, iOS 15+](https://img.shields.io/badge/iPhone%20%26%20iPad-iOS%2015%2B-E5652E?style=for-the-badge&labelColor=1d1d1f&logo=apple&logoColor=white)](docs/DEVICE_SUPPORT.md)
-[![License: MPL-2.0](https://img.shields.io/badge/license-MPL--2.0-E5652E?style=for-the-badge&labelColor=1d1d1f&logo=opensourceinitiative&logoColor=white)](LICENSE.txt)
+[![License: GPL-3.0 + MPL-2.0](https://img.shields.io/badge/license-GPL--3.0%20%2B%20MPL--2.0-E5652E?style=for-the-badge&labelColor=1d1d1f&logo=opensourceinitiative&logoColor=white)](ATTRIBUTION.md)
 
 [![Add to SideStore](https://img.shields.io/badge/add%20to-SideStore%20%7C%20AltStore-E5652E?style=for-the-badge&labelColor=1d1d1f&logo=appstore&logoColor=white)](https://muffinemu.github.io/MuffinEMU/docs/installation.html)
 [![Documentation](https://img.shields.io/badge/docs-muffinemu.github.io-E5652E?style=for-the-badge&labelColor=1d1d1f&logo=readthedocs&logoColor=white)](https://muffinemu.github.io/MuffinEMU/)
@@ -126,3 +126,7 @@ xcodebuild -project MuffinEMU.xcodeproj -scheme MuffinEMU -sdk iphoneos -configu
 ## Credits
 
 MuffinEMU is created by Void. It's built on [Cemu](https://github.com/cemu-project/Cemu) by the Cemu team, and its core includes code from [MeloCafe](https://github.com/stossy11/MeloCafe) by stossy11.
+
+## Licence
+
+MuffinEMU's own app files (the Swift app, TouchLab and LoadKit) are licensed under the [GNU GPL 3.0](LICENSE-GPL-3.0.txt) with additional terms under its section 7. Anything built on them must keep the credit "Based on MuffinEMU by Void" on its About or credits screen, and must not present the work as its own or as MuffinEMU. The Cemu-based core and the bridge stay under the [MPL 2.0](LICENSE.txt). [ATTRIBUTION.md](ATTRIBUTION.md) says which files are under which licence and gives the exact terms.

@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import SwiftUI
 
 private extension Bundle {
@@ -26,6 +31,11 @@ struct AboutSettingsSection: View {
             }
 
             Text("MuffinEMU is built on Cemu, and its core includes code from MeloCafe by stossy11. The optional Melo-Controller pad is also by stossy11.")
+                .font(.system(size: 12))
+                .foregroundColor(MuffinTheme.secondaryText)
+
+            // GPL-3.0 section 5(d): the "Appropriate Legal Notices" every interactive interface must show.
+            Text("© 2026 MuffinEMU Development Team (Void). MuffinEMU is free software: you can redistribute it under the GNU GPL 3.0 with the attribution terms in ATTRIBUTION.md, and its core under the MPL 2.0. It comes with no warranty. The licences are under Open-source licences above.")
                 .font(.system(size: 12))
                 .foregroundColor(MuffinTheme.secondaryText)
 

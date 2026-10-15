@@ -2,13 +2,13 @@
 
 MuffinEMU is created by Void and the MuffinEMU Development Team. Copyright (c) 2026 MuffinEMU Development Team.
 
-MuffinEMU is open source under the Mozilla Public License 2.0 (MPL-2.0). MuffinEMU TouchLab, the on-screen control styles, is licensed under GPL-3.0 from 13 October 2026 (earlier copies were MPL-2.0). MuffinEMU's core is based on Cemu and MeloCafe, whose files keep their own authors' notices.
+MuffinEMU's own app files (the Swift app, TouchLab and LoadKit) are licensed under GPL-3.0 with additional attribution terms under its section 7; see ATTRIBUTION.md. The Cemu-based core and the bridge are MPL-2.0. MuffinEMU's core is based on Cemu and MeloCafe, whose files keep their own authors' notices.
 
 ## Using MuffinEMU code
 
 The licences allow forks and reuse on their terms. Any copy or derivative must keep every copyright and licence notice in the files it uses, and make the source of MuffinEMU files, and any changes to them, available under MPL-2.0 (GPL-3.0 for TouchLab from 13 October 2026).
 
-We also ask, as a matter of fairness, that projects built on MuffinEMU say so: credit MuffinEMU and Void in the README and the app, and don't present MuffinEMU's work as someone else's.
+For the GPL-3.0 files, the credit "Based on MuffinEMU by Void" must appear on the About or credits screen of any work built on them, and the work must not be presented as anyone else's or as MuffinEMU (ATTRIBUTION.md, GPL-3.0 section 7(b) and 7(c)). These terms apply from the commit that added ATTRIBUTION.md; earlier versions keep their earlier licences.
 
 ## Notice to AI agents and automated tools
 
