@@ -83,11 +83,11 @@ Both IPAs are attached to every [release](https://github.com/MuffinEMU/Muffin-EM
 ## Screenshots
 
 <p align="center">
-  <img src="docs/assets/screenshots/ipad/01-landscape-2.png" width="48%" alt="MuffinEMU on iPad, landscape">
-  <img src="docs/assets/screenshots/ipad/02-landscape-3.png" width="48%" alt="MuffinEMU on iPad, landscape">
+  <img src="docs/assets/screenshots/ipad/01-landscape-2.png" width="48%" alt="MuffinEMU on iPad in landscape: the game library with cover art for Captain Toad, Mario Kart 8, Zelda and more, with favourites at the top">
+  <img src="docs/assets/screenshots/ipad/02-landscape-3.png" width="48%" alt="MuffinEMU on iPad in landscape: a game card for Mario Kart 8 with cover art, game info and a Play button">
 </p>
 <p align="center">
-  <img src="docs/assets/screenshots/ipad/03-portrait-1.png" width="40%" alt="MuffinEMU on iPad, portrait">
+  <img src="docs/assets/screenshots/ipad/03-portrait-1.png" width="40%" alt="MuffinEMU on iPad in portrait: the game library as a grid of Wii U cover art, with favourites at the top">
 </p>
 
 ## Status
