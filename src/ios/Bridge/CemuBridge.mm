@@ -2948,6 +2948,10 @@ int32_t cemu_bridge_cache_loading(uint32_t* loaded, uint32_t* total) {
     return (int32_t)phase;
 }
 
+void cemu_bridge_skip_cache_loading(void) {
+    LatteShaderCache_RequestSkipLoading();
+}
+
 // Native dialogs (software keyboard, error viewer). See NativeDialogs.h.
 #include "gui/uikit/NativeDialogs.h"
 

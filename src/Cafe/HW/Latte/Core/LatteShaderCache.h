@@ -24,4 +24,8 @@ void LatteShaderCache_ApplyPipelineRekeys(class FileCache* pipelineCache, std::v
 // What the app's native loading screen draws while the cached shaders and pipelines load.
 // Returns the phase: 0 not loading, 1 shaders, 2 pipelines. loaded/total are file counts for that phase.
 uint32 LatteShaderCache_GetNativeProgress(uint32& loaded, uint32& total);
+// Stops the cache loading screen for this boot: the shaders and pipelines not loaded yet are
+// compiled when the game first needs them instead. Nothing is removed from the cache files.
+// Thread-safe; the request lasts until the next title starts loading.
+void LatteShaderCache_RequestSkipLoading();
 #endif

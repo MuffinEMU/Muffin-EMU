@@ -807,6 +807,11 @@ const char* cemu_bridge_native_overlay_text(void);
 /// may be NULL.
 int32_t cemu_bridge_cache_loading(uint32_t* loaded, uint32_t* total);
 
+/// Ends the cache loading screen for this boot. The shaders and pipelines not loaded yet are
+/// compiled when the game first needs them (expect some stutter); the cache files keep them.
+/// Thread-safe; it applies until the next title starts loading.
+void cemu_bridge_skip_cache_loading(void);
+
 /// Native dialogs. A title's software keyboard and error viewer are drawn by the app instead
 /// of by ImGui inside the game's render surface while this is on (turn it off when nothing
 /// is polling). Poll cemu_bridge_native_dialog_request() from the main thread; it is cheap

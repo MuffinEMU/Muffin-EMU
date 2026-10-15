@@ -93,6 +93,14 @@ uint32 LatteShaderCache_GetNativeProgress(uint32& loaded, uint32& total)
 	total = (uint32)(value & 0x7FFFFFFF);
 	return (uint32)(value >> 62);
 }
+
+// Set by the loading screen's "Skip this time" button, cleared when a title starts loading.
+static std::atomic<bool> s_skipLoadingRequested{ false };
+
+void LatteShaderCache_RequestSkipLoading()
+{
+	s_skipLoadingRequested.store(true, std::memory_order_relaxed);
+}
 #endif
 
 FileCache* s_shaderCacheGeneric = nullptr;	// contains hardware and version independent shader information
@@ -730,6 +738,9 @@ static void ShaderCacheGuard_AfterSession()
 
 void LatteShaderCache_Load()
 {
+#if BOOST_OS_IOS
+	s_skipLoadingRequested.store(false, std::memory_order_relaxed);
+#endif
 	shaderCacheScreenStats.compiledShaderCount = 0;
 	shaderCacheScreenStats.vertexShaderCount = 0;
 	shaderCacheScreenStats.geometryShaderCount = 0;
@@ -939,6 +950,17 @@ void LatteShaderCache_ShowProgress(const std::function <bool(void)>& loadUpdateF
 	{
         if (Latte_GetStopSignal())
             break; // thread stop requested, cancel shader loading
+#if BOOST_OS_IOS
+		// The same early exit the stop signal takes, minus the exit: what wasn't loaded compiles on first use.
+		if (s_skipLoadingRequested.load(std::memory_order_relaxed))
+		{
+			cemuLog_log(LogType::Force, "{} loading skipped by the user: {} of {} loaded, the rest compile as the game needs them",
+				isPipelines ? "Pipeline cache" : "Shader cache",
+				isPipelines ? (sint32)g_shaderCacheLoaderState.loadedPipelines : g_shaderCacheLoaderState.loadedShaderFiles,
+				isPipelines ? g_shaderCacheLoaderState.pipelineFileCount : g_shaderCacheLoaderState.shaderFileCount);
+			break;
+		}
+#endif
 		bool r = loadUpdateFunc();
 		if (!r)
 			break;
