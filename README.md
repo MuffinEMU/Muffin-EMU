@@ -21,6 +21,7 @@
 [Documentation](https://muffinemu.github.io/MuffinEMU/docs/) ·
 [Releases](https://github.com/MuffinEMU/Muffin-EMU/releases) ·
 [Report a bug](https://github.com/MuffinEMU/Muffin-EMU/issues/new/choose) ·
+[Discussions](https://github.com/MuffinEMU/Muffin-EMU/discussions) ·
 [Community stats](https://github.com/MuffinEMU/Muffin-EMU/blob/stats/STATS.md)
 
 </div>
