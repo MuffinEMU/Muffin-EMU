@@ -11,6 +11,13 @@
 #include <glslang/Public/ShaderLang.h>
 #include <glslang/SPIRV/GlslangToSpv.h>
 #include "util/helpers/helpers.h"
+#include "SpirvCacheStamp.h"
+#if __has_include(<glslang/build_info.h>)
+#include <glslang/build_info.h>
+#define MUFFIN_GLSLANG_VERSION_STAMP (uint32)((GLSLANG_VERSION_MAJOR << 20) | (GLSLANG_VERSION_MINOR << 10) | GLSLANG_VERSION_PATCH)
+#else
+#define MUFFIN_GLSLANG_VERSION_STAMP 0u
+#endif
 
 bool s_isLoadingShadersVk{ false };
 class FileCache* s_spirvCache{nullptr};
@@ -467,9 +474,9 @@ bool RendererShaderVk::WaitForCompiled()
 	return true;
 }
 
-// Bump this whenever the GLSL generation or the GLSL-to-SPIR-V translation changes what it outputs for the same shader. Cached SPIR-V
-// from an older format is then replaced; without a bump, old output keeps being served after an update.
-static constexpr uint32 SPIRV_CACHE_FORMAT_VERSION = 0x53505600; // "SPV" + 0
+// What the cached SPIR-V depends on: the shader translator's sources (MUFFIN_SPIRV_SOURCE_STAMP, a hash CMake takes of them) and the
+// glslang version. Any change there replaces the cache; an app update that changes neither keeps it.
+static constexpr uint32 SPIRV_CACHE_FORMAT_VERSION = MUFFIN_SPIRV_SOURCE_STAMP ^ MUFFIN_GLSLANG_VERSION_STAMP;
 
 void RendererShaderVk::ShaderCacheLoading_begin(uint64 cacheTitleId)
 {
@@ -478,7 +485,7 @@ void RendererShaderVk::ShaderCacheLoading_begin(uint64 cacheTitleId)
 		delete s_spirvCache;
 		s_spirvCache = nullptr;
 	}
-	// Stamped with the translation format, not the app version, so an app update keeps the cache. The per-game accurate-mul setting still
+	// Stamped with the translator, not the app version, so an app update keeps the cache. The per-game accurate-mul setting still
 	// changes the SPIR-V, so it stays in the stamp.
 	uint32 spirvCacheMagic = SPIRV_CACHE_FORMAT_VERSION + (uint32)g_current_game_profile->GetAccurateShaderMul() * 133;
 	// Favour performance compiles without the console's 0*x=0 rule (LatteShader_GetDecompilerOptions), which changes the SPIR-V. The cache id above only
