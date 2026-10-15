@@ -2437,7 +2437,7 @@ void MetalRenderer::draw_beginSequence()
         m_state.m_skipDrawSequence = true;
 }
 
-void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 instanceCount, uint32 count, MPTR indexDataMPTR, Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE indexType, bool isFirst)
+void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 instanceCount, uint32 count, MPTR indexDataMPTR, Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE indexType, const LatteDrawcallContext& drawcallContext)
 {
     PerfTelemetry::ScopedTimer execTimer(PerfTelemetry::Get().gpuExecNs);
     PerfTelemetry::Get().gpuDraws.fetch_add(1, std::memory_order_relaxed);
