@@ -350,6 +350,8 @@ void LatteTexture_RegisterTextureMemoryOccupancy(LatteTexture* texture);
 void LatteTexture_UnregisterTextureMemoryOccupancy(LatteTexture* texture);
 void LatteTexture_NotifyDCFlush(MPTR physAddress, uint32 size);
 
+void LatteTexture_Invalidate(uint32 physAddr, uint32 size);
+
 void LatteTexture_DeleteTextureRelations(LatteTexture* texture);
 void LatteTexture_DeleteDataOverlapTracking(LatteTexture* texture);
 

@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import Foundation
 import Combine
 
@@ -46,7 +51,7 @@ final class GraphicPackStore: NSObject, ObservableObject {
 
     static let repoPage = URL(string: "https://github.com/cemu-project/cemu_graphic_packs")!
     private static let latestReleaseAPI = URL(string: "https://api.github.com/repos/cemu-project/cemu_graphic_packs/releases/latest")!
-    private static let sessionIdentifier = "com.kiddreads.MuffinEMU.graphicpacks"
+    private static let sessionIdentifier = "com.void.muffinemu.graphicpacks"
 
     enum Phase: Equatable {
         case idle
@@ -85,8 +90,8 @@ final class GraphicPackStore: NSObject, ObservableObject {
         }
     }
 
-    private let bridgeQueue = DispatchQueue(label: "com.kiddreads.MuffinEMU.graphicpacks.bridge", qos: .userInitiated)
-    private let workQueue = DispatchQueue(label: "com.kiddreads.MuffinEMU.graphicpacks.install", qos: .utility)
+    private let bridgeQueue = DispatchQueue(label: "com.void.muffinemu.graphicpacks.bridge", qos: .userInitiated)
+    private let workQueue = DispatchQueue(label: "com.void.muffinemu.graphicpacks.install", qos: .utility)
     private let defaults = UserDefaults.standard
     private var cancelRequested = false
     private var apiTask: URLSessionDataTask?
@@ -615,7 +620,11 @@ extension GraphicPackStore: URLSessionDownloadDelegate {
             }
             return
         }
-        DispatchQueue.main.async { self.finishPendingInstallIfPossible() }
+        DispatchQueue.main.async {
+            // The install only starts from idle, so leave the download phase first or it stays at 100%.
+            if case .downloading = self.phase { self.phase = .idle }
+            self.finishPendingInstallIfPossible()
+        }
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {

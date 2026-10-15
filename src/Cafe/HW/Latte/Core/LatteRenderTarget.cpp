@@ -976,8 +976,38 @@ void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPa
 	g_renderer->ImguiEnd();
 }
 
+#if BOOST_OS_IOS
+std::atomic_uint32_t g_latteSkipHiddenOutputs{0};
+
+void LatteRenderTarget_SetSkipHiddenOutputs(bool tv, bool pad)
+{
+	g_latteSkipHiddenOutputs.store((tv ? 1u : 0u) | (pad ? 2u : 0u));
+}
+
+static bool LatteRenderTarget_isScreenShown(bool isTVScreen)
+{
+	const auto& windowInfo = WindowSystem::GetWindowInfo();
+	const auto visibleOutputs = windowInfo.visible_outputs.load();
+	const auto outputSources = windowInfo.output_sources.load();
+	if ((visibleOutputs & 2u) && ((outputSources & 2u) ? isTVScreen : !isTVScreen) && g_renderer->IsPadWindowActive())
+		return true;
+	if ((visibleOutputs & 1u) && ((outputSources & 1u) ? !isTVScreen : isTVScreen))
+		return true;
+	return false;
+}
+#endif
+
 void LatteRenderTarget_itHLECopyColorBufferToScanBuffer(MPTR colorBufferPtr, uint32 colorBufferWidth, uint32 colorBufferHeight, uint32 colorBufferSliceIndex, uint32 colorBufferFormat, uint32 colorBufferPitch, Latte::E_HWTILEMODE colorBufferTilemode, uint32 colorBufferSwizzle, uint32 renderTarget)
 {
+#if BOOST_OS_IOS
+	if (const auto skipFlags = g_latteSkipHiddenOutputs.load(std::memory_order_relaxed))
+	{
+		const bool isTVTarget = (renderTarget & RENDER_TARGET_TV) != 0;
+		const bool isDRCTarget = (renderTarget & RENDER_TARGET_DRC) != 0;
+		if (isTVTarget != isDRCTarget && (skipFlags & (isTVTarget ? 1u : 2u)) && !LatteRenderTarget_isScreenShown(isTVTarget))
+			return;
+	}
+#endif
 	cemu_assert_debug(colorBufferSliceIndex == 0); // todo - support for non-zero slice
 	LatteTextureView* texView = LatteTC_GetTextureSliceViewOrTryCreate(colorBufferPtr, MPTR_NULL, (Latte::E_GX2SURFFMT)colorBufferFormat, colorBufferTilemode, colorBufferWidth, colorBufferHeight, 1, colorBufferPitch, colorBufferSwizzle, 0, 0, true);
 	if (!texView)
@@ -1011,10 +1041,16 @@ void LatteRenderTarget_itHLECopyColorBufferToScanBuffer(MPTR colorBufferPtr, uin
 
 	bool showDRC = swkbd_hasKeyboardInputHook() == false && (isDRCPrimary ^ altScreenRequested);
 #if BOOST_OS_IOS
-	const auto visibleOutputs = WindowSystem::GetWindowInfo().visible_outputs.load();
-	if ((visibleOutputs & 2u) && (renderTarget & RENDER_TARGET_DRC) && g_renderer->IsPadWindowActive())
+	const auto& windowInfo = WindowSystem::GetWindowInfo();
+	const auto visibleOutputs = windowInfo.visible_outputs.load();
+	// Each output window normally shows its own screen (main = TV, pad = GamePad); output_sources lets either one show
+	// the other screen's picture, which is how a second display can repeat the first.
+	const auto outputSources = windowInfo.output_sources.load();
+	const bool isTV = (renderTarget & RENDER_TARGET_TV) != 0;
+	const bool isDRC = (renderTarget & RENDER_TARGET_DRC) != 0;
+	if ((visibleOutputs & 2u) && ((outputSources & 2u) ? isTV : isDRC) && g_renderer->IsPadWindowActive())
 		LatteRenderTarget_copyToBackbuffer(texView, true);
-	if ((visibleOutputs & 1u) && (renderTarget & RENDER_TARGET_TV))
+	if ((visibleOutputs & 1u) && ((outputSources & 1u) ? isDRC : isTV))
 		LatteRenderTarget_copyToBackbuffer(texView, false);
 	return;
 #endif

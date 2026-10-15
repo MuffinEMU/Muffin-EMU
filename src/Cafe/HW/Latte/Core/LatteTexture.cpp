@@ -191,6 +191,17 @@ void LatteTexture_NotifyDCFlush(MPTR physAddress, uint32 size)
 	}
 }
 
+void LatteTexture_Invalidate(uint32 physAddr, uint32 size)
+{
+	if (size == 0xFFFFFFFF)
+		return; // full cache invalidation for all textures is too expensive, so for now lets ignore it. Most likely games don't use this anyway when they are modifying a single texture
+	std::vector<LatteTexture*> textures;
+	LatteTC_LookupTexturesByPhysAddr(physAddr, textures);
+	uint32 invalidationVal = LatteGPUState.frameCounter - 1;
+	for (LatteTexture* texture : textures)
+		texture->lastDataUpdateFrameCounter = invalidationVal;
+}
+
 // calculate the actually accessed data range
 // the resulting range is an estimate and may be smaller than the actual slice size (but not larger)
 void LatteTexture_EstimateMipSliceAccessedDataRange(LatteTexture* texture, sint32 sliceIndex, sint32 mipIndex, LatteTextureSliceMipInfo* sliceMipInfo)
@@ -1357,7 +1368,15 @@ LatteTexture::LatteTexture(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddre
 	}
 
 	// determine if this texture should ever be mirrored to CPU RAM
-	if (this->tileMode == Latte::E_HWTILEMODE::TM_LINEAR_ALIGNED)
+	bool readbackLinear = this->tileMode == Latte::E_HWTILEMODE::TM_LINEAR_ALIGNED;
+	// small tiled render targets may be read by the CPU
+	// fixes exposure readback in games like Cars 3
+	bool readbackSmallTiled =
+		tileMode == Latte::E_HWTILEMODE::TM_1D_TILED_THIN1 &&
+		format == Latte::E_GX2SURFFMT::R32_FLOAT &&
+		!isDepth && width == 1 && height <= 8 && depth == 1 && mipLevels == 1 &&
+		g_renderer->GetType() != RendererAPI::Metal; // on Metal every readback commits the command buffer mid-frame; not enabled until measured on devices
+	if (readbackLinear || readbackSmallTiled)
 	{
 		this->enableReadback = true;
 	}

@@ -1,4 +1,14 @@
 #!/bin/bash
+# MuffinEMU — code by the MuffinEMU Development Team.
+# Copyright (c) 2026 MuffinEMU Development Team.
+# SPDX-License-Identifier: MPL-2.0
+# This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
+# MuffinEMU — code by the MuffinEMU Development Team.
+# Copyright (c) 2026 MuffinEMU Development Team.
+# SPDX-License-Identifier: MPL-2.0
+# This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 # Publishes the rolling Nightly release. Structurally unable to publish anything but an eligible
 # build of main: it re-verifies every condition itself and FAILS the job if a caller got it wrong.
 #
@@ -53,9 +63,14 @@ if [ "$MAIN" != "$SHA" ] && ! git diff --quiet "$SHA" "$MAIN" -- . "${IGNORABLE_
 fi
 
 # ---- publish -----------------------------------------------------------------------------------
+# The version stamped into the app, which the Nightly source has to list exactly.
+APP_VERSION=$(ipa_version MuffinEMU.ipa)
+
 BODY=$(mktemp)
 cat > "$BODY" <<NOTES
 The newest build of MuffinEMU, from commit $SHA on \`main\`.
+
+**App version:** $APP_VERSION
 
 **Known issue:** the on-screen controls don't respond reliably yet. A fix is on the way.
 

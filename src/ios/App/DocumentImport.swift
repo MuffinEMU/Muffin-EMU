@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import UIKit
 import UniformTypeIdentifiers
 
@@ -69,6 +74,22 @@ enum DocumentImport {
             delegate.retainSelf()
 
             presenter.present(picker, animated: true)
+        }
+    }
+
+    /// The share sheet for files we already have. Unlike presentExport this hands over the file
+    /// itself rather than a copy, which matters for an archive that can be many gigabytes.
+    static func presentShare(_ urls: [URL]) {
+        waitForStablePresenter(attemptsLeft: 20) { presenter in
+            guard let presenter else { return }
+            let sheet = UIActivityViewController(activityItems: urls, applicationActivities: nil)
+            // iPad shows the sheet as a popover, which needs somewhere to point at.
+            if let popover = sheet.popoverPresentationController {
+                popover.sourceView = presenter.view
+                popover.sourceRect = CGRect(x: presenter.view.bounds.midX, y: presenter.view.bounds.midY, width: 0, height: 0)
+                popover.permittedArrowDirections = []
+            }
+            presenter.present(sheet, animated: true)
         }
     }
 

@@ -32,6 +32,7 @@ public:
 	bool IsNullSubstitute() const {
 	    return m_isNullSubstitute;
 	}
+	bool m_isAlternateFormat{}; // true if Metal pixel format does not 1:1 match Latte format
 
 protected:
 	LatteTextureView* CreateView(Latte::E_DIM dim, Latte::E_GX2SURFFMT format, sint32 firstMip, sint32 mipCount, sint32 firstSlice, sint32 sliceCount) override;

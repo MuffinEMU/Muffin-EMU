@@ -1,7 +1,13 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import Foundation
 import SwiftUI
 #if os(iOS)
 import UIKit
+import LoadKit
 #endif
 
 struct GameMetadata: Codable, Identifiable {
@@ -37,9 +43,114 @@ struct GameMetadata: Codable, Identifiable {
     /// of CodingKeys - games.json isn't actually used (see gameListFile) and this is
     /// cheap enough to just re-read from the filesystem on every loadGames().
     var addedDate: Date? = nil
+    /// Set for a game that lives in a linked folder or is a linked file (ExternalLibrary): it stays where it is and is never
+    /// copied. Not part of CodingKeys, like `addedDate`; the scan fills it in every time.
+    var externalLocationID: String? = nil
+    /// A linked game whose drive is not connected or whose bookmark will not resolve. It stays in the library, greyed out.
+    var isUnavailable: Bool = false
+    var isExternal: Bool { externalLocationID != nil }
+
+    /// What per-game settings are stored under: the base title ID as 16 hex digits, so they follow the game through a
+    /// rename or a re-import. Only a title with no derivable ID falls back to the file-name `id`.
+    /// What Title sort and the A to Z groups order by: the player's own name for the game when
+    /// they set one, otherwise the file-name title.
+    var sortTitle: String { LibraryCustomNames.shared.name(for: installKey) ?? title }
+
+    /// Identifies this one install: its file or folder name inside the Roms folder. Unlike `settingsKey`, two
+    /// installs of the same title never share it. Relative, so it survives the app container's path changing.
+    var installKey: String {
+        // A linked game's path says nothing about the Roms folder, even when the drive has a folder called Roms.
+        isExternal ? "install:" + id : Self.installKey(forRomPath: romPath, fallback: id)
+    }
+
+    /// Wording for taking the game out of the library: a linked game's file is never deleted.
+    var removeActionTitle: String { isExternal ? "Remove from library\u{2026}" : "Remove game\u{2026}" }
+    var removeConfirmTitle: String { isExternal ? "Remove this game from your library?" : "Remove this game?" }
+    var removeConfirmButton: String { isExternal ? "Remove from library" : "Remove game" }
+    var removeConfirmMessage: String {
+        if isExternal {
+            return "\"\(cardName.name)\" is only linked, so its file stays where it is and isn't deleted. Your saves and options are kept. You can bring it back from Settings > Library."
+        }
+        return "This deletes \"\(cardName.name)\" from MuffinEMU to free up space. Your saves and options are kept. To play it again, add the game back."
+    }
+
+    static func installKey(forRomPath romPath: String, fallback: String) -> String {
+        let marker = "/Roms/"
+        guard let range = romPath.range(of: marker, options: .backwards) else { return "install:" + fallback }
+        let rest = romPath[range.upperBound...]
+        let first = rest.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: true).first.map(String.init)
+        return "install:" + (first ?? fallback)
+    }
+
+    /// Short line telling this install apart from another of the same game; nil unless the library holds a duplicate.
+    var installLabel: String? { DuplicateInstalls.shared.label(for: id) }
+
+    var settingsKey: String {
+        titleId.map(Self.settingsKey(forTitleId:)) ?? id
+    }
+
+    static func settingsKey(forTitleId titleId: UInt64) -> String {
+        String(format: "%016llX", titleId)
+    }
+
+    /// The name for the library card, with the game's own title ID taken out of it ("Mario Kart 8 [0005000010145D00]",
+    /// "0005000010145D00 - Mario Kart 8", the bare hex anywhere), and the ID as text for the card's small caption. The
+    /// caption is nil when the ID is unknown or was not in the name. Nothing on disk is renamed.
+    var cardName: (name: String, titleIdText: String?) {
+        let name = LibraryCustomNames.shared.name(for: installKey) ?? displayTitle ?? title
+        guard let titleId else { return (name, nil) }
+        let hex = Self.settingsKey(forTitleId: titleId)
+        return CardNameCache.shared.cardName(for: name, hex: hex)
+    }
 
     enum CodingKeys: String, CodingKey {
         case id, title, romPath, coverPath, region, releaseDate, genre, titleId, dumpDirectoryPath, displayTitle
+    }
+}
+
+/// Works out a card's name once per (name, title ID) instead of on every render: the card body reads it twice, and
+/// each read used to compile an NSRegularExpression. Entries are tiny, and NSCache drops them under memory pressure.
+final class CardNameCache: @unchecked Sendable {
+    static let shared = CardNameCache()
+
+    private final class Entry {
+        let name: String
+        let titleIdText: String?
+        init(name: String, titleIdText: String?) { self.name = name; self.titleIdText = titleIdText }
+    }
+
+    private let entries = NSCache<NSString, Entry>()
+    private let separators = CharacterSet.whitespaces.union(CharacterSet(charactersIn: "-\u{2013}\u{2014}_.,:;|"))
+
+    func cardName(for name: String, hex: String) -> (name: String, titleIdText: String?) {
+        let key = "\(hex)|\(name)" as NSString
+        if let hit = entries.object(forKey: key) { return (hit.name, hit.titleIdText) }
+        let result = compute(name: name, hex: hex)
+        entries.setObject(Entry(name: result.name, titleIdText: result.titleIdText), forKey: key)
+        return result
+    }
+
+    private func compute(name: String, hex: String) -> (name: String, titleIdText: String?) {
+        let pattern = "[\\[({]?\\s*(?<![0-9A-Fa-f])" + String(hex.prefix(8)) + "[-_ ]?" + String(hex.suffix(8)) + "(?![0-9A-Fa-f])\\s*[\\])}]?"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+              let match = regex.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)),
+              let range = Range(match.range, in: name) else { return (name, nil) }
+        // Only the separators next to the removed ID go, so a "." or "-" elsewhere in the name stays.
+        var before = String(name[..<range.lowerBound])
+        var after = String(name[range.upperBound...])
+        while let last = before.unicodeScalars.last, separators.contains(last) { before.unicodeScalars.removeLast() }
+        while let first = after.unicodeScalars.first, separators.contains(first) { after.unicodeScalars.removeFirst() }
+        // "Game (USA, 0005000010145D00)" loses its ID and the comma; give back the bracket that went with it.
+        let removed = name[range]
+        for (open, close) in [("(", ")"), ("[", "]"), ("{", "}")] {
+            let opens = before.filter { String($0) == open }.count
+            let closes = before.filter { String($0) == close }.count
+            if opens > closes, removed.contains(close) { before += close }
+        }
+        let cleaned: String
+        if before.isEmpty { cleaned = after } else if after.isEmpty { cleaned = before } else { cleaned = before + " " + after }
+        // A name that was nothing but the ID keeps showing it rather than going blank.
+        return cleaned.isEmpty ? (name, nil) : (cleaned, hex)
     }
 }
 
@@ -59,10 +170,11 @@ enum ImportState: Equatable {
 /// on every launch. UserDefaults, not a file: this is a handful of short strings per
 /// game, nowhere near what would justify its own cache file the way CoverArtFetcher's
 /// image cache does.
-private enum LibraryMetadataCache {
+enum LibraryMetadataCache {
     private static let regionKey = "muffin.library.regionByGameID"
     private static let titleNameKey = "muffin.library.titleNameByGameID"
     private static let versionKey = "muffin.library.metadataCacheVersion"
+    private static let titleIdKey = "muffin.library.titleIdByGameID"
     private static let currentVersion = 2
 
     /// Before version 2 a disc image that could not be opened (the scan runs before the engine has its keys) was stored as
@@ -90,6 +202,20 @@ private enum LibraryMetadataCache {
         UserDefaults.standard.set(stored, forKey: regionKey)
     }
 
+    /// The base title ID found for a game the last time its files could be read, as 16 hex digits. Kept so the game's
+    /// settings stay attached on a scan where the dump can't be opened (a disc image whose key is missing for now).
+    static func cachedTitleId(for gameID: String) -> UInt64? {
+        ((UserDefaults.standard.dictionary(forKey: titleIdKey) as? [String: String])?[gameID]).flatMap { UInt64($0, radix: 16) }
+    }
+
+    static func setCachedTitleId(_ titleId: UInt64, for gameID: String) {
+        var stored = (UserDefaults.standard.dictionary(forKey: titleIdKey) as? [String: String]) ?? [:]
+        let text = GameMetadata.settingsKey(forTitleId: titleId)
+        guard stored[gameID] != text else { return }
+        stored[gameID] = text
+        UserDefaults.standard.set(stored, forKey: titleIdKey)
+    }
+
     static func cachedTitleName(for gameID: String) -> String? {
         (UserDefaults.standard.dictionary(forKey: titleNameKey) as? [String: String])?[gameID]
     }
@@ -103,11 +229,18 @@ private enum LibraryMetadataCache {
 
 @MainActor
 class GameManager: ObservableObject {
-    @Published var games: [GameMetadata] = []
+    @Published var games: [GameMetadata] = [] {
+        didSet {
+            DuplicateInstalls.shared.update(games)
+            LibraryCustomNames.shared.migrateLegacyKeys(games: games)
+        }
+    }
     @Published var favorites: [GameMetadata] = []
     @Published var isLoading = false
     @Published var currentGame: GameMetadata?
-    @Published var emulationState: EmulationState = .idle
+    @Published var emulationState: EmulationState = .idle {
+        didSet { ScreenBrightness.shared.setGameRunning(emulationState == .running) }
+    }
     /// Last human-readable message from the engine bridge (e.g. "engine not built yet").
     @Published var lastStatusMessage: String = ""
     /// A short note about how the last launch differed from what was asked for (for example Vulkan not starting so
@@ -140,6 +273,14 @@ class GameManager: ObservableObject {
     /// outright rather than ever silently deleting what was already there.
     var confirmOverwrite: ((String) async -> Bool)?
     private var frameRateTimer: Timer?
+    /// Access to the linked location of the game that is running (or booting). Held from launch until stopEmulation().
+    private var externalHold: ExternalLibrary.Hold?
+    private var driveCheckInFlight = false
+    /// Set when a linked game can't be started because its drive isn't connected. The library shows it as an alert.
+    @Published var launchBlockedMessage: String?
+    /// True when the running game stopped because the drive holding it went away.
+    @Published private(set) var driveWasLost = false
+    private var storageFaultBaseline: UInt32 = 0
 
     private let romsDirectory = "Roms"
     private var didSweepStaging = false
@@ -154,15 +295,38 @@ class GameManager: ObservableObject {
         cemu_bridge_set_title_switch_callback { titleId in
             TitleSwitchSettings.apply(titleId: titleId)
         }
+        // A run that ended without stopEmulation (a crash) can leave a game's own layout in the shared key.
+        ActiveGameSettings.end()
         emulationEngine = EmulationEngine()
+        // Thermal throttling lowers the picture quality on its own; say so over the game.
+        ThermalMonitor.shared.onNotice = { [weak self] text in
+            guard let self, self.emulationState == .running else { return }
+            self.showLaunchNotice(text)
+        }
         Task {
             await loadGames()
         }
+        LegacyArtPackApply.migrateOnce()
+        // An art pack was installed or deleted, the cover style changed, or game data was scraped.
+        coverSourcesObserver = NotificationCenter.default.addObserver(
+            forName: .muffinCoverArtSourcesChanged, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.refreshAllCoverPaths() }
+        }
     }
 
-    func loadGames() async {
-        isLoading = true
-        defer { isLoading = false }
+    private var coverSourcesObserver: NSObjectProtocol?
+
+    /// Asks the cover chain again for every game, then lets the background pass fill what is still
+    /// missing. Cheap: stored lookups only.
+    func refreshAllCoverPaths() {
+        for game in games { refreshCoverPath(forGameID: game.id) }
+        enrichMissingCoverArt()
+    }
+
+    /// `showSpinner` is false for a rescan while the grid is on screen, so the list does not flash to the loading view.
+    func loadGames(showSpinner: Bool = true) async {
+        if showSpinner { isLoading = true }
+        defer { if showSpinner { isLoading = false } }
 
         let fileManager = FileManager.default
         guard let documentsPath = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
@@ -191,10 +355,79 @@ class GameManager: ObservableObject {
             print("Error scanning Roms directory")
             return
         }
-        self.games = discovered.sorted { $0.title < $1.title }
-        TitleSwitchSettings.shared.update(games: self.games)
+        let sortedDiscovered = discovered.sorted { $0.title < $1.title }
+        // A quiet rescan that finds the same games changes nothing, so the grid keeps its scroll position and covers.
+        if !showSpinner, sortedDiscovered.map({ $0.id + "|" + $0.romPath + "|" + ($0.isUnavailable ? "x" : "") }) == games.map({ $0.id + "|" + $0.romPath + "|" + ($0.isUnavailable ? "x" : "") }) { return }
+        self.games = sortedDiscovered
+        PerGameKeyMigration.run(games: self.games)
         self.favorites = self.games.filter { $0.isFavorite }
         enrichMissingCoverArt()
+    }
+
+    /// Looks for games dropped into Roms from the Files app while MuffinEMU was open. Only when nothing is running or
+    /// importing, and without the loading view.
+    func rescanIfIdle() async {
+        guard emulationState == .idle, !isLoading, importState == .idle else { return }
+        await loadGames(showSpinner: false)
+    }
+
+    /// Links a folder or a game file the player picked, where it is. Nothing is copied or moved: only a bookmark is kept.
+    func linkLocation(_ picked: URL) async throws {
+        _ = try await Task.detached { try ExternalLibrary.shared.link(picked) }.value
+        await loadGames(showSpinner: false)
+    }
+
+    /// Stops listing a linked location. The files in it are never touched.
+    func unlinkLocation(_ id: String) async {
+        guard emulationState == .idle else { return }
+        ExternalLibrary.shared.unlink(id)
+        await loadGames(showSpinner: false)
+    }
+
+    /// Brings back the games the player removed from a linked folder.
+    func restoreHiddenGames(in id: String) async {
+        ExternalLibrary.shared.restoreHidden(id)
+        await loadGames(showSpinner: false)
+    }
+
+    enum RemoveGameError: LocalizedError {
+        case notInLibrary
+        case failed(Error)
+
+        var errorDescription: String? {
+            switch self {
+            case .notInLibrary: return "Couldn't find that game's files."
+            case .failed(let error): return "Couldn't remove the game: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// Deletes the game's own file or folder from Documents/Roms. Save data, save states, per-game options and favourites
+    /// are kept, so adding the game back picks up where it left off.
+    func removeGame(_ game: GameMetadata) async throws {
+        guard emulationState == .idle, importState == .idle else { return }
+        // A linked game only leaves the library. Its file is on the player's drive or folder and is never touched.
+        if let locationID = game.externalLocationID {
+            ExternalLibrary.shared.removeFromLibrary(locationID: locationID, gameID: game.id)
+            await loadGames(showSpinner: false)
+            return
+        }
+        guard let roms = romsDirectoryURL?.resolvingSymlinksInPath() else { throw RemoveGameError.notInLibrary }
+        // The library entry is the item directly inside Roms: the file itself, or the top folder of a dump.
+        var item = URL(fileURLWithPath: game.romPath).resolvingSymlinksInPath()
+        while item.deletingLastPathComponent().path != roms.path {
+            let parent = item.deletingLastPathComponent()
+            guard parent.path != item.path, parent.path.hasPrefix(roms.path) else { throw RemoveGameError.notInLibrary }
+            item = parent
+        }
+        guard item.path != roms.path, FileManager.default.fileExists(atPath: item.path) else { throw RemoveGameError.notInLibrary }
+        let target = item
+        do {
+            try await Task.detached { try FileManager.default.removeItem(at: target) }.value
+        } catch {
+            throw RemoveGameError.failed(error)
+        }
+        await loadGames(showSpinner: false)
     }
 
     /// Scans Roms/ for games. Pure disk and bridge work with no main-actor state, so it is
@@ -235,9 +468,43 @@ class GameManager: ObservableObject {
         // Stable order so duplicate-id resolution below is deterministic.
         let sortedContents = contents.sorted { $0.lastPathComponent < $1.lastPathComponent }
 
+        // Documents/Roms first, then every linked location. A linked location is held open (security scope) for the whole scan,
+        // and lets go when this function returns. One that can't be opened is listed from what the last scan found there.
+        struct ScanItem { let url: URL; let locationID: String?; let root: URL? }
+        var work: [ScanItem] = sortedContents.map { ScanItem(url: $0, locationID: nil, root: nil) }
+        var unavailableLocations: [LinkedLocation] = []
+        var holds: [ExternalLibrary.Hold] = []
+        defer { holds.forEach { ExternalLibrary.shared.release($0) } }
+        var seenExternalItems = Set<String>()
+        var availability: [String: Bool] = [:]
+        for location in ExternalLibrary.shared.snapshot() {
+            guard let hold = ExternalLibrary.shared.acquire(location.id, reresolve: true) else {
+                unavailableLocations.append(location)
+                availability[location.id] = false
+                continue
+            }
+            guard let items = ExternalLibrary.shared.discover(location, root: hold.url) else {
+                ExternalLibrary.shared.release(hold)
+                unavailableLocations.append(location)
+                availability[location.id] = false
+                continue
+            }
+            holds.append(hold)
+            availability[location.id] = true
+            for item in items {
+                let rel = ExternalLibrary.relativePath(of: item, under: hold.url)
+                if location.hidden.contains(rel) { continue }
+                guard seenExternalItems.insert(item.path).inserted else { continue }
+                work.append(ScanItem(url: item, locationID: location.id, root: hold.url))
+            }
+        }
+        ExternalLibrary.shared.setAvailability(availability)
+        var externalRecords: [String: [ExternalGameRecord]] = [:]
+
         var discoveredGames: [GameMetadata] = []
         var usedIDs = Set<String>()
-        for item in sortedContents {
+        for scanItem in work {
+            let item = scanItem.url
             // A Roms entry is either a single-file dump or a dumped game DIRECTORY.
             // For a directory the engine still boots an .rpx, but it must be the one
             // sitting inside code/ so Cemu sees the real layout next to it - boot it
@@ -288,6 +555,11 @@ class GameManager: ObservableObject {
 
             let addedDate = (try? fileManager.attributesOfItem(atPath: item.path))?[.creationDate] as? Date
 
+            // Read from the game's own files once and remembered: that is what attaches a title ID to a game, and
+            // what its per-game settings are keyed by (GameMetadata.settingsKey).
+            let derivedTitleId = Self.deriveBaseTitleId(romPath: bootPath)
+            if let derivedTitleId { LibraryMetadataCache.setCachedTitleId(derivedTitleId, for: gameID) }
+
             let gameMetadata = GameMetadata(
                 id: gameID,
                 title: gameID,
@@ -296,13 +568,50 @@ class GameManager: ObservableObject {
                 region: Self.nonEmptyOrNil(LibraryMetadataCache.cachedRegion(for: gameID)),
                 releaseDate: "Unknown",
                 genre: "Game",
-                titleId: Self.deriveBaseTitleId(romPath: bootPath),
+                titleId: derivedTitleId ?? LibraryMetadataCache.cachedTitleId(for: gameID),
                 dumpDirectoryPath: dumpDirectory?.path,
                 displayTitle: Self.nonEmptyOrNil(LibraryMetadataCache.cachedTitleName(for: gameID)),
-                addedDate: addedDate
+                addedDate: addedDate,
+                externalLocationID: scanItem.locationID
             )
 
             discoveredGames.append(gameMetadata)
+            if let locationID = scanItem.locationID, let root = scanItem.root {
+                externalRecords[locationID, default: []].append(ExternalGameRecord(
+                    id: gameID,
+                    itemRel: ExternalLibrary.relativePath(of: item, under: root),
+                    bootRel: ExternalLibrary.relativePath(of: URL(fileURLWithPath: bootPath), under: root),
+                    titleId: gameMetadata.titleId))
+            }
+        }
+
+        for location in ExternalLibrary.shared.snapshot() where availability[location.id] == true {
+            ExternalLibrary.shared.updateRecords(location.id, externalRecords[location.id] ?? [], path: holds.first { $0.locationID == location.id }?.url.path ?? location.lastPath)
+        }
+
+        // Linked games whose drive isn't there: still in the library, marked, and refused at launch with a clear message.
+        for location in unavailableLocations {
+            for record in location.games where !location.hidden.contains(record.itemRel) {
+                var gameID = record.id
+                if usedIDs.contains(gameID) { gameID = (record.itemRel as NSString).lastPathComponent }
+                guard usedIDs.insert(gameID).inserted else { continue }
+                let bootPath = location.kind == .file ? location.lastPath : (location.lastPath as NSString).appendingPathComponent(record.bootRel)
+                discoveredGames.append(GameMetadata(
+                    id: gameID,
+                    title: gameID,
+                    romPath: bootPath,
+                    coverPath: Self.findCover(for: gameID, romPath: bootPath, in: romsPath),
+                    region: Self.nonEmptyOrNil(LibraryMetadataCache.cachedRegion(for: gameID)),
+                    releaseDate: "Unknown",
+                    genre: "Game",
+                    titleId: record.titleId ?? LibraryMetadataCache.cachedTitleId(for: gameID),
+                    dumpDirectoryPath: nil,
+                    displayTitle: Self.nonEmptyOrNil(LibraryMetadataCache.cachedTitleName(for: gameID)),
+                    addedDate: nil,
+                    externalLocationID: location.id,
+                    isUnavailable: true
+                ))
+            }
         }
 
         // Favorites used to be rebuilt false on every scan - nothing anywhere
@@ -482,10 +791,14 @@ class GameManager: ObservableObject {
             }
         }
 
-        // Real box art already fetched by CoverArtFetcher (see enrichMissingCoverArt())
-        // beats the in-game icon - it is what a person actually recognizes the game by.
-        if let boxArt = CoverArtFetcher.cachedCoverPath(for: gameID, romPath: romPath, in: directory) {
-            return boxArt
+        // The ordered cover chain (CoverSources.swift): stored box art, then the extracted
+        // icon. Stored lookups only here - no network, no decoding.
+        let names = [LibraryMetadataCache.cachedTitleName(for: gameID), gameID].compactMap { $0 }.filter { !$0.isEmpty }
+        if let path = CoverSourceChain.cachedPath(CoverContext(
+            gameID: gameID, romPath: romPath, dumpDirectoryPath: nil, libraryDirectory: directory, currentCoverPath: nil,
+            region: LibraryMetadataCache.cachedRegion(for: gameID), titles: names
+        )) {
+            return path
         }
 
         // No icon fallback here any more. Decoding meta/iconTex.tga used to happen
@@ -520,24 +833,25 @@ class GameManager: ObservableObject {
 
         Task.detached { [weak self, romsPath] in
             for game in candidates {
-                // Box art, when there's a real ID to look it up by and nothing already
-                // cached (or already known-missing) for it.
-                if CoverArtFetcher.shouldAttemptFetch(gameID: game.id, romPath: game.romPath, in: romsPath),
-                   let coverPath = await CoverArtFetcher.fetchAndCache(gameID: game.id, romPath: game.romPath, in: romsPath) {
-                    await self?.applyCoverPath(coverPath, forGameID: game.id)
-                } else if game.coverPath == nil, let dumpPath = game.dumpDirectoryPath {
-                    // No box art (or none to look up) and nothing already found by
-                    // loadGames()'s own findCover() - fall back to the console's own
-                    // icon. This is the TGA decode that used to run inline inside
-                    // loadGames() on the main actor for every freshly-discovered dump;
-                    // it runs here instead so the library appears immediately and
-                    // icons fill in afterward rather than the whole scan waiting on
-                    // every dump's decode.
-                    if let iconPath = WiiUIcon.cachedIconPath(
-                        for: game.id, dump: URL(fileURLWithPath: dumpPath), in: romsPath
-                    ) {
-                        await self?.applyCoverPath(iconPath, forGameID: game.id)
-                    }
+                // A linked game is read off its drive, so access is held while its files are looked at, and a game
+                // whose drive is missing is skipped: reading nothing must not be remembered as "no region, no name".
+                if game.isUnavailable { continue }
+                var externalHold: ExternalLibrary.Hold?
+                if let locationID = game.externalLocationID {
+                    guard let hold = ExternalLibrary.shared.acquire(locationID) else { continue }
+                    externalHold = hold
+                }
+                defer { if let externalHold { ExternalLibrary.shared.release(externalHold) } }
+                // Walk the cover chain (CoverSources.swift) for whatever this install is missing.
+                let context = CoverContext(
+                    gameID: game.id, romPath: game.romPath, dumpDirectoryPath: game.dumpDirectoryPath,
+                    libraryDirectory: romsPath, currentCoverPath: game.coverPath,
+                    region: game.region, titles: [game.displayTitle, game.title].compactMap { $0 }
+                )
+                if await CoverSourceChain.acquireMissing(context) != nil {
+                    // Ask the chain again rather than taking the new file as is: a higher source
+                    // (an art pack in the chosen style) may already have something better.
+                    await self?.refreshCoverPath(forGameID: game.id)
                 }
 
                 // Region and the title's real name both come from the same
@@ -548,6 +862,11 @@ class GameManager: ObservableObject {
                     || LibraryMetadataCache.cachedTitleName(for: game.id) == nil {
                     await self?.deriveAndApplyRegionAndTitleName(for: game)
                 }
+            }
+            // With names and regions in place, tie every game to its GameTDB entry (at most every few hours).
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                GameDataStore.shared.scrapeIfNeeded(games: self.games)
             }
         }
     }
@@ -725,7 +1044,7 @@ class GameManager: ObservableObject {
                 // check runs against the copy we already made, and every way it can fail
                 // - unsupported extension, supported extension over the wrong bytes -
                 // means the same thing to the person holding the iPad.
-                return "This isn't a valid Wii U game file."
+                return "This isn't a Wii U game file MuffinEMU can read. It accepts .wua, .wux, .wud, .iso, .rpx, .elf and .wuhb files, or a game folder. Encrypted games also need keys.txt."
             case .notAWiiUDump(let name):
                 return "\"\(name)\" isn't a Wii U game dump. A dump folder needs code, content and meta folders inside it, or an encrypted game folder: title.tmd and title.tik next to its .app files."
             case .accessDenied:
@@ -841,10 +1160,13 @@ class GameManager: ObservableObject {
         // The claim stays live for as long as this function hasn't returned, which
         // includes the whole `await` on the detached copy task below - `defer` runs at
         // function exit, not when execution merely suspends.
-        guard source.startAccessingSecurityScopedResource() else {
+        // A file shared into MuffinEMU ("Copy to MuffinEMU", AirDrop) arrives already inside the app's
+        // own container, with no security scope to claim; one opened in place from Files has one.
+        let scoped = source.startAccessingSecurityScopedResource()
+        guard scoped || FileManager.default.isReadableFile(atPath: source.path) else {
             throw ROMImportError.accessDenied
         }
-        defer { source.stopAccessingSecurityScopedResource() }
+        defer { if scoped { source.stopAccessingSecurityScopedResource() } }
 
         let fileManager = FileManager.default
 
@@ -900,7 +1222,8 @@ class GameManager: ObservableObject {
                 try Self.stageAndPromoteDirectory(source: source, destination: destination, stagingPath: stagingPath)
             }.value
 
-            await loadGames()
+            // A rescan, not a fresh load: keep the library on screen instead of flashing the spinner.
+            await loadGames(showSpinner: games.isEmpty)
             return
         }
 
@@ -917,7 +1240,7 @@ class GameManager: ObservableObject {
             try Self.stageAndPromoteFile(source: source, destination: destination, stagingPath: stagingPath)
         }.value
 
-        await loadGames()
+        await loadGames(showSpinner: games.isEmpty)
     }
 
     /// The actual byte-moving for a directory-dump import: stage, re-validate the
@@ -1036,22 +1359,48 @@ class GameManager: ObservableObject {
     private var launchToken = UUID()
 
     func launchGame(_ game: GameMetadata) {
+        // A second tap on a card (or the Wii U Menu tile) before the library has gone away would
+        // restart the launch underneath the one already booting. Every way back to the library
+        // goes through stopEmulation(), which leaves the state at .idle.
+        guard emulationState == .idle else { return }
+        LibraryPlayStats.shared.recordLaunch(of: game.id)
         launchToken = UUID()
         currentGame = game
         surfaceRegistered = false
+        driveWasLost = false
+        // Cleared before any early return below, so an earlier game's state can't label this one's error screen.
+        needsCleanRestart = false
+        titleEndedByEngine = false
+        storageFaultBaseline = cemu_bridge_storage_read_fault_count()
+
+        // A linked game is opened where it is. Access to its location is held until the game stops (stopEmulation), so the
+        // core can read the file, and every other file around it, for the whole run.
+        releaseExternalHold()
+        if let locationID = game.externalLocationID {
+            guard !game.isUnavailable, let hold = ExternalLibrary.shared.acquire(locationID),
+                  ExternalLibrary.isReachable(path: game.romPath) else {
+                lastStatusMessage = ExternalLibrary.unavailableMessage + ". \"\(game.cardName.name)\" is stored on a drive or folder MuffinEMU can't reach right now."
+                emulationState = .error
+                return
+            }
+            externalHold = hold
+        }
 
         // A real problem was found when the previous game stopped: starting another on top of it is likely to fault. The
         // bridge only says so for a real leftover (a GPU fault, state that could not be reset), never after a normal stop.
         if cemu_bridge_clean_start_required() {
             needsCleanRestart = true
             let reason = String(cString: cemu_bridge_clean_start_reason())
-            lastStatusMessage = "For a clean start, close and reopen MuffinEMU."
-                + (reason.isEmpty ? "" : "\n\n\(reason.prefix(1).uppercased() + reason.dropFirst()).")
+            lastStatusMessage = "MuffinEMU has to be closed and reopened before it can start another game."
+                + (reason.isEmpty ? "" : "\n\nWhat happened: \(reason).")
             emulationState = .error
             return
         }
         needsCleanRestart = false
         titleEndedByEngine = false
+        // The game's own Advanced options (Resolution, screen layout, ...) have to be in place before the
+        // surface is sized and the views mount, so this comes before .loading.
+        ActiveGameSettings.begin(gameID: game.settingsKey)
         emulationState = .loading
 
         guard let engine = emulationEngine else {
@@ -1118,7 +1467,7 @@ class GameManager: ObservableObject {
         GameControlHints.applyBeforeLaunch(titleId: game.titleId)
 
         let romPath = game.romPath
-        let gameID = game.id
+        let gameID = game.settingsKey
         let token = launchToken
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
@@ -1146,18 +1495,23 @@ class GameManager: ObservableObject {
                 UserDefaults.standard.object(forKey: "muffin.cpu.recompiler") as? Bool ?? true)
             // Per-game override first, the global switch underneath it.
             cemu_bridge_set_favour_accuracy(
-                PerGameSettingsStore.shared.effectiveFavourAccuracy(for: game.id))
+                PerGameSettingsStore.shared.effectiveFavourAccuracy(for: game.settingsKey))
+            // Global. The bridge ignores it when Favour accuracy is on for this game.
+            // Per-game override first (Advanced mode), the global switch underneath.
+            cemu_bridge_set_favour_performance(
+                PerGameSettingsStore.shared.effectiveFavourPerformance(for: game.settingsKey))
+            PerGameSettingsStore.shared.applyFullSpeedRenders(for: game.settingsKey)
             // Per-game override first, global default underneath it - PerGameSettingsStore
             // reads the same UserDefaults key directly for exactly the reason above: an
             // override that only lived in a @Published property would revert the moment
             // this background task started fresh on a relaunch.
             cemu_bridge_set_async_shader_compile(
-                PerGameSettingsStore.shared.effectivePreCompileShaders(for: game.id))
+                PerGameSettingsStore.shared.effectivePreCompileShaders(for: game.settingsKey))
             // Global, and read here for the same reason as the calls above: the core
             // count is fixed the moment _LaunchTitleThread() starts its host threads, so
             // a Settings change only takes effect on the next launch and has to be pushed
             // before boot rather than when the toggle moved.
-            cemu_bridge_set_low_power_mode(LowPowerMode.isEnabled)
+            cemu_bridge_set_low_power_mode(PerGameSettingsStore.shared.effectiveOneCoreMode(for: game.settingsKey))
             // Motion aiming (Settings > Motion & Aiming): on by default. It takes effect live, but the
             // stored choice has to reach the engine at least once per launch.
             MotionSettings.applyToBridge()
@@ -1166,11 +1520,9 @@ class GameManager: ObservableObject {
             // Per-game choice first, Settings underneath; Auto then decides in the bridge from the
             // game's profile, this device and its thermal state. The second call tells Auto whether
             // an earlier three-core run of this title went badly.
-            cemu_bridge_set_cpu_core_mode(PerGameSettingsStore.shared.effectiveCoreMode(for: game.id).bridgeValue)
-            cemu_bridge_set_cpu_auto_demoted(AutoCoreHistory.isDemotedAtLaunch(gameID: game.id))
-            // Global, not per-game - see CemuBridge.h's cemu_bridge_set_vsync_enabled().
-            // Applied once per layer (re)init, so reading it here before boot is what
-            // makes a mid-session Settings change take effect on the next launch.
+            cemu_bridge_set_cpu_core_mode(PerGameSettingsStore.shared.effectiveCoreMode(for: game.settingsKey).bridgeValue)
+            cemu_bridge_set_cpu_auto_demoted(AutoCoreHistory.isDemotedAtLaunch(gameID: game.settingsKey))
+            // Legacy stored value with no effect on iOS - see CemuBridge.h's cemu_bridge_set_vsync_enabled().
             cemu_bridge_set_vsync_enabled(
                 UserDefaults.standard.object(forKey: "muffin.render.vsync") as? Bool ?? true)
             // Same "sync from UserDefaults before boot" reason as the calls above, but for a
@@ -1188,10 +1540,12 @@ class GameManager: ObservableObject {
             // linear down.
             cemu_bridge_set_graphics_api(
                 Int32(clamping: UserDefaults.standard.object(forKey: "muffin.render.graphicsAPI") as? Int ?? 2))
-            cemu_bridge_set_upscale_filter(
-                Int32(clamping: UserDefaults.standard.object(forKey: "muffin.render.upscaleFilter") as? Int ?? 1))
-            cemu_bridge_set_downscale_filter(
-                Int32(clamping: UserDefaults.standard.object(forKey: "muffin.render.downscaleFilter") as? Int ?? 0))
+            // Favour performance swaps both for linear, the cheapest blend, unless this game favours
+            // accuracy (which wins, as in the bridge).
+            // The game's own filters (Advanced mode) come first, the global ones underneath.
+            let filters = PerGameSettingsStore.shared.filtersToPush(for: game.settingsKey)
+            cemu_bridge_set_upscale_filter(filters.upscale)
+            cemu_bridge_set_downscale_filter(filters.downscale)
 
             // Screen flip, gamma and the performance overlay - same "push from UserDefaults
             // before boot" reasoning as everything above: the engine reads all of these once
@@ -1202,6 +1556,8 @@ class GameManager: ObservableObject {
             // only reader, and Vulkan (VulkanRenderer.cpp) never looks at this field.
             cemu_bridge_set_framebuffer_fetch(
                 UserDefaults.standard.object(forKey: "muffin.render.framebufferFetch") as? Bool ?? true)
+            cemu_bridge_set_emulate_missing_effects(
+                UserDefaults.standard.object(forKey: "muffin.render.emulateMissingEffects") as? Bool ?? false)
             cemu_bridge_set_display_gamma(Float(
                 UserDefaults.standard.object(forKey: DisplayGammaSetting.storageKey) as? Double
                     ?? DisplayGammaSetting.defaultValue))
@@ -1210,9 +1566,9 @@ class GameManager: ObservableObject {
             cemu_bridge_set_override_gamma_value(Float(
                 UserDefaults.standard.object(forKey: OverrideGammaSetting.storageKey) as? Double
                     ?? OverrideGammaSetting.defaultValue))
+            // On or off for this game (Advanced mode) first, the corner chosen in Settings underneath.
             cemu_bridge_set_overlay_position(
-                Int32(clamping: UserDefaults.standard.object(forKey: OverlaySettings.positionKey) as? Int
-                    ?? OverlaySettings.defaultPosition.rawValue))
+                Int32(PerGameSettingsStore.shared.effectiveOverlayPosition(for: game.settingsKey).rawValue))
             cemu_bridge_set_overlay_text_color(
                 UInt32(clamping: UserDefaults.standard.object(forKey: OverlaySettings.textColorKey) as? Int
                     ?? OverlaySettings.defaultTextColor))
@@ -1325,7 +1681,14 @@ class GameManager: ObservableObject {
                 }
                 engine.refreshStatus()
                 self.lastStatusMessage = engine.statusText
-                let notice = String(cString: cemu_bridge_take_launch_notice())
+                var notice = String(cString: cemu_bridge_take_launch_notice())
+                // iOS slows the CPU and GPU in Low Power Mode, which no setting here can undo. Say so, but never over a more specific note.
+                if notice.isEmpty && status == CEMU_BRIDGE_OK && ProcessInfo.processInfo.isLowPowerModeEnabled {
+                    notice = "Low Power Mode is on, so games may run slowly. Turn it off in Control Centre for full speed."
+                }
+                if notice.isEmpty && status == CEMU_BRIDGE_OK, let onlineNotice = OnlineReadiness.launchNotice() {
+                    notice = onlineNotice
+                }
                 if !notice.isEmpty {
                     self.showLaunchNotice(notice)
                 }
@@ -1343,10 +1706,18 @@ class GameManager: ObservableObject {
     }
     #endif
 
-    private func showLaunchNotice(_ notice: String) {
+    /// Also used for the in-game heat notice (InGameNotices.swift): same banner, same fade.
+    func showLaunchNotice(_ notice: String) {
         launchNotice = notice
+        #if os(iOS)
+        // The banner takes no touches and VoiceOver never lands on it, so say it aloud.
+        UIAccessibility.post(notification: .announcement, argument: notice)
+        #endif
+        // About 2.5 words a second, plus a moment to notice it: a six-word line stays 6 seconds, the 28-word heat notice 14.
+        let words = notice.split(whereSeparator: \.isWhitespace).count
+        let seconds = min(20.0, max(6.0, 2.5 + Double(words) / 2.5))
         Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
             if self?.launchNotice == notice {
                 self?.launchNotice = nil
             }
@@ -1355,7 +1726,10 @@ class GameManager: ObservableObject {
 
     func stopEmulation() {
         launchToken = UUID()
-        if let gameID = currentGame?.id {
+        // Finishes a "Record audio" recording before the title and its audio go away.
+        AudioRecorder.shared.stop()
+        ScreenRecorder.shared.stop()
+        if let gameID = currentGame?.settingsKey {
             // A three-core run that Auto chose and that ended with the picture stopped is not retried.
             AutoCoreHistory.sessionEnded(gameID: gameID, stalled: videoStalled && videoStallKind == 1)
         }
@@ -1396,8 +1770,45 @@ class GameManager: ObservableObject {
         DisplayRouter.shared.titleStopped()
         #endif
         surfaceRegistered = false
+        // After the engine has let go of the game's files.
+        releaseExternalHold()
         emulationState = .idle
         currentGame = nil
+        // The player's own screen layout and controller auto-hide come back if this game had its own.
+        ActiveGameSettings.end()
+    }
+
+    private func releaseExternalHold() {
+        if let hold = externalHold { ExternalLibrary.shared.release(hold) }
+        externalHold = nil
+    }
+
+    /// Before a linked game starts: checks, off the main thread, that its drive is connected and the file is there.
+    /// Says so (launchBlockedMessage) when it isn't. A game that lives in Documents/Roms is always ready.
+    func externalGameIsReady(_ game: GameMetadata) async -> Bool {
+        guard let locationID = game.externalLocationID else { return true }
+        let path = game.romPath
+        let unavailable = game.isUnavailable
+        var ready = false
+        if !unavailable {
+            ready = await Task.detached { ExternalLibrary.shared.probe(locationID, path: path) }.value
+        }
+        if !ready {
+            launchBlockedMessage = "\"\(game.cardName.name)\" is stored on a drive or folder MuffinEMU can't reach right now. Connect the drive, then try again."
+        }
+        return ready
+    }
+
+    /// The drive holding the running game went away: stop the game the way Back does and say why.
+    private func stopBecauseDriveWasLost(fault: StorageFault = .unreachable) {
+        let game = currentGame
+        stopEmulation()
+        guard let game else { return }
+        currentGame = game
+        lastStatusMessage = fault.message(game: game.cardName.name)
+        driveWasLost = true
+        titleEndedByEngine = true
+        emulationState = .error
     }
 
     func getEmulationEngine() -> EmulationEngine? {
@@ -1445,6 +1856,27 @@ class GameManager: ObservableObject {
                     self.stopTitleEndedByEngine()
                     return
                 }
+                if self.emulationState == .running, self.currentGame?.isExternal == true,
+                   let fault = StorageFault.detect(pathReachable: true, faultCount: Int(cemu_bridge_storage_read_fault_count()), baseline: Int(self.storageFaultBaseline)) {
+                    self.stopBecauseDriveWasLost(fault: fault)
+                    return
+                }
+                // A linked game can lose its drive while it runs. Looked for off the main thread, so a slow drive can't stall the UI.
+                if self.emulationState == .running, let game = self.currentGame, game.isExternal, !self.driveCheckInFlight {
+                    self.driveCheckInFlight = true
+                    let path = game.romPath
+                    let gameID = game.id
+                    Task.detached { [weak self] in
+                        let present = ExternalLibrary.isReachable(path: path)
+                        await MainActor.run { [weak self] in
+                            guard let self else { return }
+                            self.driveCheckInFlight = false
+                            if !present, self.emulationState == .running, self.currentGame?.id == gameID {
+                                self.stopBecauseDriveWasLost()
+                            }
+                        }
+                    }
+                }
                 let fps = Int(cemu_bridge_get_fps().rounded())
                 if fps != self.frameRate {
                     self.frameRate = fps
@@ -1479,6 +1911,13 @@ class GameManager: ObservableObject {
     private func stopTitleEndedByEngine() {
         let reason = String(cString: cemu_bridge_status_text())
         let game = currentGame
+        // The engine gives up when its file disappears under it; say what really happened.
+        let driveGone = game.map { $0.isExternal && !ExternalLibrary.isReachable(path: $0.romPath) } ?? false
+        if driveGone { stopBecauseDriveWasLost(); return }
+        if game?.isExternal == true, let fault = StorageFault.detect(pathReachable: true, faultCount: Int(cemu_bridge_storage_read_fault_count()), baseline: Int(storageFaultBaseline)) {
+            stopBecauseDriveWasLost(fault: fault)
+            return
+        }
         stopEmulation()
         guard let game else { return }
         currentGame = game
@@ -1561,36 +2000,34 @@ enum EmulationState {
 /// already pushed when the Menu itself was launched and stay as they are. Runs on the engine's title-switch thread, so it only
 /// touches thread-safe state.
 final class TitleSwitchSettings {
-    static let shared = TitleSwitchSettings()
-    private let lock = NSLock()
-    private var gameIDByTitleId: [UInt64: String] = [:]
-
-    func update(games: [GameMetadata]) {
-        var map: [UInt64: String] = [:]
-        for game in games {
-            if let titleId = game.titleId { map[titleId] = game.id }
-        }
-        lock.lock()
-        gameIDByTitleId = map
-        lock.unlock()
-    }
-
-    private func gameID(for titleId: UInt64) -> String? {
-        lock.lock()
-        defer { lock.unlock() }
-        return gameIDByTitleId[titleId]
-    }
-
     static func apply(titleId: UInt64) {
-        // A title that is not in the library has no overrides, so it gets the global defaults.
-        let id = shared.gameID(for: titleId) ?? ""
+        // The same key a library launch of this game uses (GameMetadata.settingsKey). A title that is not in the
+        // library has no overrides stored under its ID, so it gets the global defaults.
+        let id = GameMetadata.settingsKey(forTitleId: cemu_bridge_derive_base_title_id(titleId))
         // The core count is decided when the incoming title's threads start, which is after this
         // call, so the game's own choice (and Auto's memory of a three-core run that went badly)
         // has to be in place now. Each setter recomputes the CPU mode, so the order does not matter.
         cemu_bridge_set_cpu_auto_demoted(AutoCoreHistory.isDemoted(gameID: id))
         cemu_bridge_set_cpu_core_mode(PerGameSettingsStore.shared.effectiveCoreMode(for: id).bridgeValue)
         cemu_bridge_set_favour_accuracy(PerGameSettingsStore.shared.effectiveFavourAccuracy(for: id))
+        cemu_bridge_set_favour_performance(PerGameSettingsStore.shared.effectiveFavourPerformance(for: id))
+        PerGameSettingsStore.shared.applyFullSpeedRenders(for: id)
+        cemu_bridge_set_low_power_mode(PerGameSettingsStore.shared.effectiveOneCoreMode(for: id))
         cemu_bridge_set_async_shader_compile(PerGameSettingsStore.shared.effectivePreCompileShaders(for: id))
+        // Advanced options the running engine can still take: the overlay corner, and the scaling filters if the
+        // renderer re-reads them (a switch does not rebuild it, so they may only apply at the next full start).
+        cemu_bridge_set_overlay_position(Int32(PerGameSettingsStore.shared.effectiveOverlayPosition(for: id).rawValue))
+        let filters = PerGameSettingsStore.shared.filtersToPush(for: id)
+        cemu_bridge_set_upscale_filter(filters.upscale)
+        cemu_bridge_set_downscale_filter(filters.downscale)
+        // Resolution, screen layout and controller auto-hide for the new game. The surfaces are resized only
+        // when the Resolution actually changed.
+        let resolutionChanged = ActiveGameSettings.begin(gameID: id)
+        #if os(iOS)
+        if resolutionChanged {
+            Task { @MainActor in DisplayRouter.shared.reapplyRenderScale(reason: "the game's own Resolution") }
+        }
+        #endif
         #if os(iOS)
         GameControlHints.applyBeforeLaunch(titleId: titleId)
         #endif

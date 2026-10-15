@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import SwiftUI
 
 struct IconPickerView: View {
@@ -8,6 +13,7 @@ struct IconPickerView: View {
     /// silence, which is indistinguishable from a button that doesn't work - the lock
     /// badge says the icon IS locked, but nothing said that's why the tap was ignored.
     @State private var lockedMessage: String?
+    @State private var style: IconStyle = IconStyle.current
 
     var body: some View {
         // NavigationStack needs iOS 16+; this project's deployment target is 15.0.
@@ -26,10 +32,24 @@ struct IconPickerView: View {
                         .transition(.opacity)
                     }
 
+                    // Revamped icons or the originals. Switching also swaps the icon in use for its
+                    // other version, so the home screen follows the choice.
+                    Picker("Icon style", selection: $style) {
+                        ForEach(IconStyle.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 16)
+                    .onChange(of: style) { newStyle in
+                        IconStyle.current = newStyle
+                        applyStyleToCurrentIcon(newStyle)
+                    }
+
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 16)], spacing: 16) {
                         ForEach(IconManifest.all) { icon in
                             IconOptionCard(
                                 icon: icon,
+                                style: style,
                                 isSelected: isSelected(icon),
                                 isLocked: icon.isPro && !Entitlements.hasProPlan,
                                 onSelect: { select(icon) }
@@ -57,18 +77,35 @@ struct IconPickerView: View {
     }
 
     private func isSelected(_ icon: AppIconOption) -> Bool {
-        icon.id == "original" ? currentIconName == nil : currentIconName == icon.alternateIconName
+        icon.id == "original" ? currentIconName == nil : IconManifest.id(forAlternateIconName: currentIconName) == icon.id
+    }
+
+    /// After a style switch, move the icon in use to its version in the new style, if it has one.
+    private func applyStyleToCurrentIcon(_ newStyle: IconStyle) {
+        guard let id = IconManifest.id(forAlternateIconName: currentIconName),
+              let icon = IconManifest.all.first(where: { $0.id == id }),
+              icon.classic != nil,
+              !(icon.isPro && !Entitlements.hasProPlan) else { return }
+        let name = icon.alternateIconName(newStyle)
+        guard name != currentIconName else { return }
+        UIApplication.shared.setAlternateIconName(name) { error in
+            if let error {
+                errorMessage = "Couldn't switch icon: \(error.localizedDescription)"
+                return
+            }
+            currentIconName = name
+        }
     }
 
     private func select(_ icon: AppIconOption) {
         guard !(icon.isPro && !Entitlements.hasProPlan) else {
             ScreenHaptics.rejected()
             withAnimation(.easeOut(duration: 0.18)) {
-                lockedMessage = "\(icon.name) is a Pro icon. Unlock Pro in Settings to use it."
+                lockedMessage = "\(icon.name) is a pro icon. Enter an unlock code under Settings > Premium to use it."
             }
             return
         }
-        let name = icon.id == "original" ? nil : icon.alternateIconName
+        let name = icon.id == "original" ? nil : icon.alternateIconName(style)
         guard name != currentIconName else { return }
         withAnimation(.easeOut(duration: 0.18)) { lockedMessage = nil }
         ScreenHaptics.selectionChanged()
@@ -85,6 +122,7 @@ struct IconPickerView: View {
 
 private struct IconOptionCard: View {
     let icon: AppIconOption
+    let style: IconStyle
     let isSelected: Bool
     let isLocked: Bool
     let onSelect: () -> Void
@@ -94,24 +132,27 @@ private struct IconOptionCard: View {
             MuffinCard {
                 VStack(alignment: .leading, spacing: 8) {
                     ZStack(alignment: .topTrailing) {
+                        // A locked Pro icon is shown blurred under a lock: enough to tell what it is,
+                        // not enough to be the icon.
                         iconThumbnail
                             .frame(width: 64, height: 64)
+                            .blur(radius: isLocked ? 3 : 0)
                             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .overlay {
+                                if isLocked {
+                                    Image(systemName: "lock.fill")
+                                        .font(.system(size: 22, weight: .bold))
+                                        .foregroundStyle(LinearGradient(colors: [Color(red: 1, green: 0.94, blue: 0.72), Color(red: 0.73, green: 0.51, blue: 0.16)],
+                                                                        startPoint: .topLeading, endPoint: .bottomTrailing))
+                                        .shadow(color: .black.opacity(0.45), radius: 3, y: 2)
+                                }
+                            }
                             .overlay(
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                                     .stroke(isSelected ? MuffinTheme.pixelBlue : MuffinTheme.wrapper, lineWidth: isSelected ? 3 : 1)
                             )
-                            .opacity(isLocked ? 0.5 : 1.0)
 
-                        if isLocked {
-                            Image(systemName: "lock.fill")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(MuffinTheme.sparkleCream)
-                                .padding(5)
-                                .background(MuffinTheme.blueberryNavy)
-                                .clipShape(Circle())
-                                .offset(x: 6, y: -6)
-                        } else if isSelected {
+                        if isSelected {
                             Image(systemName: "checkmark.circle.fill")
                                 .font(.system(size: 16, weight: .bold))
                                 .foregroundColor(MuffinTheme.accentText)
@@ -125,7 +166,7 @@ private struct IconOptionCard: View {
                         .foregroundColor(MuffinTheme.brownDarkest)
                         .lineLimit(1)
 
-                    Text(icon.tagline)
+                    Text(icon.tagline(style))
                         .font(.system(size: 11, weight: .regular, design: .rounded))
                         .foregroundColor(MuffinTheme.brownMid)
                         .lineLimit(3)
@@ -147,7 +188,7 @@ private struct IconOptionCard: View {
 
     @ViewBuilder
     private var iconThumbnail: some View {
-        if let uiImage = IconOptionCard.previewImage(for: icon) {
+        if let uiImage = IconOptionCard.previewImage(for: icon, style: style) {
             Image(uiImage: uiImage).resizable().scaledToFill()
         } else {
             // Still possible, and still better than an empty card: name the icon rather
@@ -180,8 +221,8 @@ private struct IconOptionCard: View {
     /// App-Icon-type restriction and loads via UIImage(named:) exactly like any other
     /// image asset. AppIcon itself gets one too (AppIcon-preview), since the "original"
     /// card hit the exact same restriction.
-    static func previewImage(for icon: AppIconOption) -> UIImage? {
-        let assetName = icon.id == "original" ? "AppIcon" : icon.alternateIconName
+    static func previewImage(for icon: AppIconOption, style: IconStyle) -> UIImage? {
+        let assetName = icon.id == "original" ? "AppIcon" : icon.alternateIconName(style)
         if let cached = previewCache[assetName] {
             return cached
         }

@@ -192,6 +192,10 @@ bool fsc_isDirectory(FSCVirtualFile* fscFile);
 bool fsc_isFile(FSCVirtualFile* fscFile);
 bool fsc_isWritable(FSCVirtualFile* fscFile);
 uint32 fsc_readFile(FSCVirtualFile* fscFile, void* buffer, uint32 size);
+
+// Counts reads that returned fewer bytes than the file still held. Only an I/O failure (a drive pulled mid-read) does that.
+void fscNoteShortRead();
+uint32 fscShortReadCount();
 uint32 fsc_writeFile(FSCVirtualFile* fscFile, void* buffer, uint32 size);
 
 uint8* fsc_extractFile(const char* path, uint32* fileSize, sint32 maxPriority = FSC_PRIORITY_MAX);

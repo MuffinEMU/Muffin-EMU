@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import SwiftUI
 
 /// Exports a decrypted copy to Documents/Decrypted/<id>; the original is never modified.
@@ -53,6 +58,7 @@ struct DecryptROMView: View {
     @State private var progress = DecryptProgress()
     @State private var pollTimer: Timer?
     @State private var destinationPath: String = ""
+    @State private var externalHold: ExternalLibrary.Hold?
 
     var body: some View {
         NavigationView {
@@ -174,10 +180,12 @@ struct DecryptROMView: View {
                 MuffinCard {
                     VStack(spacing: 14) {
                         if progress.completed {
-                            Image(systemName: progress.isSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            // Status 4 is the player's own Cancel: nothing failed, so it isn't shown as an error.
+                            let cancelled = progress.resultStatus == 4
+                            Image(systemName: progress.isSuccess ? "checkmark.circle.fill" : (cancelled ? "stop.circle.fill" : "xmark.circle.fill"))
                                 .font(.system(size: 44))
-                                .foregroundColor(progress.isSuccess ? .green : MuffinTheme.alertText)
-                            Text(progress.isSuccess ? "Decrypted" : "Couldn't Finish")
+                                .foregroundColor(progress.isSuccess ? .green : (cancelled ? MuffinTheme.brownMid : MuffinTheme.alertText))
+                            Text(progress.isSuccess ? "Decrypted" : (cancelled ? "Cancelled" : "Couldn't Finish"))
                                 .font(.system(size: 18, weight: .semibold, design: .rounded))
                                 .foregroundColor(MuffinTheme.brownDarkest)
                             if progress.isSuccess {
@@ -244,6 +252,9 @@ struct DecryptROMView: View {
             }
         }
         .onAppear { start(chosenFormat) }
+        .onDisappear {
+            if let hold = externalHold { ExternalLibrary.shared.release(hold); externalHold = nil }
+        }
     }
 
     private func start(_ chosenFormat: DecryptFormat) {
@@ -251,7 +262,12 @@ struct DecryptROMView: View {
         destinationPath = chosenFormat.toWua
             ? "\(documentsPath)/Decrypted/\(game.id).wua"
             : "\(documentsPath)/Decrypted/\(game.id)"
+        // A linked game is read off its drive for as long as the decrypt runs.
+        if let locationID = game.externalLocationID, externalHold == nil {
+            externalHold = ExternalLibrary.shared.acquire(locationID)
+        }
         guard cemu_bridge_start_decrypt(game.romPath, destinationPath, chosenFormat.toWua) else {
+            if let hold = externalHold { ExternalLibrary.shared.release(hold); externalHold = nil }
             // Already running or a bad path; show it as a failed result.
             progress = DecryptProgress(isRunning: false, completed: true, resultStatus: -1)
             return
@@ -288,7 +304,7 @@ struct DecryptROMView: View {
         case 1: return "Couldn't open this file - it may not be a valid disc image."
         case 2: return "No matching key in keys.txt for this disc. Import the right key and try again."
         case 3: return "Couldn't write the decrypted output."
-        case 4: return "Cancelled."
+        case 4: return "Stopped before it finished."
         case 6: return "This game folder is missing a readable title.tmd or title.tik, which MuffinEMU needs to decrypt it."
         case 7: return "MuffinEMU couldn't decrypt this game folder. Its title.tik doesn't unlock the .app files - check that title.tmd, title.tik and the .app files are from the same download."
         case 8: return "This game folder is missing one or more .app files listed in its title.tmd."

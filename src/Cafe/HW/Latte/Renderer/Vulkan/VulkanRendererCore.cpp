@@ -667,14 +667,13 @@ VkDescriptorSetInfo* VulkanRenderer::draw_getOrCreateDescriptorSet(PipelineInfo*
 			continue;
 		}
 
-		info.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
 		VkSamplerCustomBorderColorCreateInfoEXT samplerCustomBorderColor{};
 
 		VkSamplerCreateInfo samplerInfo{};
 		samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
 
-		LatteTexture* baseTexture = textureView->baseTexture;
+		LatteTextureVk* baseTexture = static_cast<LatteTextureVk*>(textureView->baseTexture);
+		info.imageLayout = baseTexture->GetDefaultLayout();
 		// get texture register word 0
 		uint32 word4 = LatteGPUState.contextRegister[texUnitRegIndex + 4];
 
@@ -687,7 +686,7 @@ VkDescriptorSetInfo* VulkanRenderer::draw_getOrCreateDescriptorSet(PipelineInfo*
 		textureView->AddDescriptorSetReference(dsInfo);
 
 		if (!baseTexture->IsCompressedFormat())
-			vectorAppendUnique(dsInfo->list_fboCandidates, (LatteTextureVk*)baseTexture);
+			vectorAppendUnique(dsInfo->list_fboCandidates, baseTexture);
 
 		uint32 stageSamplerIndex = shader->textureUnitSamplerAssignment[relative_textureUnit];
 		if (stageSamplerIndex != LATTE_DECOMPILER_SAMPLER_NONE)
@@ -739,7 +738,7 @@ VkDescriptorSetInfo* VulkanRenderer::draw_getOrCreateDescriptorSet(PipelineInfo*
 			samplerInfo.minFilter = (filterMin == Latte::LATTE_SQ_TEX_SAMPLER_WORD0_0::E_XY_FILTER::POINT || filterMin == Latte::LATTE_SQ_TEX_SAMPLER_WORD0_0::E_XY_FILTER::ANISO_POINT) ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
 
 			auto filterMag = samplerWords->WORD0.get_XY_MAG_FILTER();
-			samplerInfo.magFilter = (filterMag == Latte::LATTE_SQ_TEX_SAMPLER_WORD0_0::E_XY_FILTER::POINT || filterMin == Latte::LATTE_SQ_TEX_SAMPLER_WORD0_0::E_XY_FILTER::ANISO_POINT) ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
+			samplerInfo.magFilter = (filterMag == Latte::LATTE_SQ_TEX_SAMPLER_WORD0_0::E_XY_FILTER::POINT || filterMag == Latte::LATTE_SQ_TEX_SAMPLER_WORD0_0::E_XY_FILTER::ANISO_POINT) ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
 
 			auto filterZ = samplerWords->WORD0.get_Z_FILTER();
 			// todo: z-filter for texture array samplers is customizable for GPU7 but OpenGL/Vulkan doesn't expose this functionality?
@@ -985,9 +984,9 @@ VkDescriptorSetInfo* VulkanRenderer::draw_getOrCreateDescriptorSet(PipelineInfo*
 	return dsInfo;
 }
 
-void VulkanRenderer::sync_inputTexturesChanged()
+void VulkanRenderer::sync_inputTexturesChanged(bool withinFeedbackLoopRenderPass)
 {
-	bool writeFlushRequired = false;
+	bool writeFlushRequired = withinFeedbackLoopRenderPass; // feedback loop still requires us to emit a barrier
 
 	if (m_state.activeVertexDS)
 	{
@@ -1034,14 +1033,27 @@ void VulkanRenderer::sync_inputTexturesChanged()
 		srcStage |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
 		memoryBarrier.srcAccessMask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
-		// dst
-		dstStage |= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-		memoryBarrier.dstAccessMask |= VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+		if (withinFeedbackLoopRenderPass)
+		{
+			// this renderpass has a pixel self dependency. Feedback loop extension allows barriers during renderpass, but they must be BY_REGION
+			dstStage |= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+			memoryBarrier.dstAccessMask |= VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
 
-		dstStage |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-		memoryBarrier.dstAccessMask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+			dstStage |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+			memoryBarrier.dstAccessMask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+		}
+		else
+		{
+			// dst
+			dstStage |= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+			memoryBarrier.dstAccessMask |= VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
 
-		vkCmdPipelineBarrier(m_state.currentCommandBuffer, srcStage, dstStage, 0, 1, &memoryBarrier, 0, nullptr, 0, nullptr);
+			dstStage |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+			memoryBarrier.dstAccessMask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+		}
+
+		VkDependencyFlags dependencyFlags = withinFeedbackLoopRenderPass ? VK_DEPENDENCY_BY_REGION_BIT : 0;
+		vkCmdPipelineBarrier(m_state.currentCommandBuffer, srcStage, dstStage, dependencyFlags, 1, &memoryBarrier, 0, nullptr, 0, nullptr);
 
 		performanceMonitor.vk.numDrawBarriersPerFrame.increment();
 
@@ -1164,30 +1176,59 @@ bool s_syncOnNextDraw = false;
 void VulkanRenderer::draw_setRenderPass()
 {
 	CachedFBOVk* fboVk = m_state.activeFBO;
+	// note - vertex/geometry self dependency needs renderpass split
 
-	// update self-dependency flag
+	auto& currentSelfDependencyInfo = m_state.m_curRenderpassSelfDependencyInfo;
 	if (m_state.descriptorSetsChanged || m_state.activeRenderpassFBO != fboVk)
 	{
-		m_state.hasRenderSelfDependency = fboVk->CheckForCollision(m_state.activeVertexDS, m_state.activeGeometryDS, m_state.activePixelDS);
+		currentSelfDependencyInfo = fboVk->CheckForSelfDependency(m_state.activeVertexDS, m_state.activeGeometryDS, m_state.activePixelDS);
 	}
 
 	auto vkObjRenderPass = fboVk->GetRenderPassObj();
 	auto vkObjFramebuffer = fboVk->GetFramebufferObj();
 
-	bool overridePassReuse = m_state.hasRenderSelfDependency && (GetConfig().vk_accurate_barriers || m_state.activePipelineInfo->neverSkipAccurateBarrier);
+	bool feedbackLoopHandlesSelfDependency = UseAttachmentFeedbackLoop() && currentSelfDependencyInfo.HasSelfDependency() && !currentSelfDependencyInfo.HasVertexOrGeometrySelfDependency();
+	bool selfDependencyNeedsPassSplit = currentSelfDependencyInfo.HasSelfDependency() && !feedbackLoopHandlesSelfDependency;
+	bool overridePassReuse = selfDependencyNeedsPassSplit && (GetConfig().vk_accurate_barriers || m_state.activePipelineInfo->neverSkipAccurateBarrier);
 
 	if (!overridePassReuse && m_state.activeRenderpassFBO == fboVk)
 	{
-		if (m_state.descriptorSetsChanged)
-			sync_inputTexturesChanged();
+		if (m_state.descriptorSetsChanged || feedbackLoopHandlesSelfDependency)
+			sync_inputTexturesChanged(feedbackLoopHandlesSelfDependency);
+		if (UseAttachmentFeedbackLoop() && currentSelfDependencyInfo.GetAspectMask() != m_state.feedbackLoopImageAspect)
+		{
+			m_state.feedbackLoopImageAspect = currentSelfDependencyInfo.GetAspectMask();
+			vkCmdSetAttachmentFeedbackLoopEnableEXT(m_state.currentCommandBuffer, currentSelfDependencyInfo.GetAspectMask());
+		}
 		return;
 	}
 	draw_endRenderPass();
+	{
+		uint32 colourCount = 0, c0dims = 0, c0fmt = 0, depthFmt = 0;
+		for (auto& cb : fboVk->colorBuffer)
+		{
+			if (!cb.texture)
+				continue;
+			if (colourCount++ == 0)
+			{
+				sint32 w, h;
+				cb.texture->baseTexture->GetEffectiveSize(w, h, cb.texture->firstMip);
+				c0dims = (((uint32)w & 0xFFFF) << 16) | ((uint32)h & 0xFFFF);
+				c0fmt = (uint32)cb.texture->baseTexture->format;
+			}
+		}
+		if (fboVk->depthBuffer.texture)
+			depthFmt = ((uint32)fboVk->depthBuffer.texture->baseTexture->format & 0xFFFF) | (fboVk->depthBuffer.hasStencil ? 0x80000000u : 0u);
+		TraceOp(OpKind::RenderPass, colourCount, c0dims, c0fmt, depthFmt);
+		if (colourCount > 1)
+			cemuLog_logOnce(LogType::Force, "Vulkan: first render pass with {} colour targets this session (frame {})", colourCount, (uint32)LatteGPUState.frameCounter);
+		if (depthFmt & 0x80000000u)
+			cemuLog_logOnce(LogType::Force, "Vulkan: first render pass with a depth+stencil target this session (frame {}, game format {:04x})", (uint32)LatteGPUState.frameCounter, depthFmt & 0xFFFF);
+		if ((c0dims >> 16) > 2048 || (c0dims & 0xFFFF) > 2048)
+			cemuLog_logOnce(LogType::Force, "Vulkan: first render pass with a target over 2048 px this session (frame {}, {}x{})", (uint32)LatteGPUState.frameCounter, c0dims >> 16, c0dims & 0xFFFF);
+	}
 	if (m_state.descriptorSetsChanged)
 		sync_inputTexturesChanged();
-
-	// assume that FBO changed, update self-dependency state
-	m_state.hasRenderSelfDependency = fboVk->CheckForCollision(m_state.activeVertexDS, m_state.activeGeometryDS, m_state.activePixelDS);
 
 	sync_RenderPassLoadTextures(fboVk);
 
@@ -1212,6 +1253,11 @@ void VulkanRenderer::draw_setRenderPass()
 	}
 
 	m_state.activeRenderpassFBO = fboVk;
+	if (UseAttachmentFeedbackLoop() && currentSelfDependencyInfo.GetAspectMask() != m_state.feedbackLoopImageAspect)
+	{
+		m_state.feedbackLoopImageAspect = currentSelfDependencyInfo.GetAspectMask();
+		vkCmdSetAttachmentFeedbackLoopEnableEXT(m_state.currentCommandBuffer, currentSelfDependencyInfo.GetAspectMask());
+	}
 
 	vkObjRenderPass->flagForCurrentCommandBuffer();
 	vkObjFramebuffer->flagForCurrentCommandBuffer();
@@ -1433,10 +1479,25 @@ void VulkanRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32
 	}
 
 	auto vkObjPipeline = pipeline_info->m_vkrObjPipeline;
+	{
+		const bool streamoutOn = LatteGPUState.contextRegister[mmVGT_STRMOUT_EN] != 0;
+		const uint32 traceFlags = (hostIndexType != INDEX_TYPE::NONE ? 1u : 0u) | (streamoutOn ? 2u : 0u) | (geometryShader ? 4u : 0u) | (vkObjPipeline->GetPipeline() == VK_NULL_HANDLE ? 8u : 0u);
+		TraceOp(vkObjPipeline->GetPipeline() == VK_NULL_HANDLE ? OpKind::DrawSkipped : OpKind::Draw, count, instanceCount, traceFlags);
+		if (streamoutOn)
+			cemuLog_logOnce(LogType::Force, "Vulkan: first draw with stream-out this session (frame {}, {} vertices); stream-out is emulated with a storage buffer", (uint32)LatteGPUState.frameCounter, count);
+		if (geometryShader)
+			cemuLog_logOnce(LogType::Force, "Vulkan: first draw with a geometry shader this session (frame {}, pipeline {})", (uint32)LatteGPUState.frameCounter, vkObjPipeline->GetPipeline() == VK_NULL_HANDLE ? "skipped, none on this device" : "built");
+		if (vkObjPipeline->GetPipeline() == VK_NULL_HANDLE)
+			cemuLog_logOnce(LogType::Force, "Vulkan: first draw skipped for want of a pipeline (frame {}, {} vertices, geometry shader {}, stream-out {})", (uint32)LatteGPUState.frameCounter, count, geometryShader ? "yes" : "no", streamoutOn ? "yes" : "no");
+	}
 	if (vkObjPipeline->GetPipeline() == VK_NULL_HANDLE)
 	{
-		// invalid/uninitialized pipeline
+		// invalid/uninitialized pipeline (still compiling, failed, or skipped because the device can't run it, e.g. no geometry shader).
+		// Finish the drawcall bookkeeping like a normal draw so streamout and draw counters can't be left half-prepared,
+		// and make the next draw rebind everything instead of trusting state from before this one.
 		m_state.activeVertexDS = nullptr;
+		LatteStreamout_FinishDrawcall(m_useHostMemoryForCache);
+		LatteGPUState.drawCallCounter++;
 		return;
 	}
 

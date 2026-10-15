@@ -1,7 +1,24 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team.
+// SPDX-License-Identifier: MPL-2.0
+// This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 #pragma once
 #include <algorithm>
+#include <atomic>
+#include <condition_variable>
+#include <memory>
+#include <mutex>
+#include <thread>
 #include <vector>
 #include "LatteTextureLoader.h"
+#include "LatteTextureASTCCache.h"
+#include "LatteTextureASTCDirect.h"
+#include "PerfTelemetry.h"
+#include "Common/DeviceCapabilities.h"
+#if defined(__APPLE__)
+#include <pthread/qos.h>
+#endif
 #include "astcenc.h"
 
 static inline uint8 astcFloatToUNorm8(float v)
@@ -21,53 +38,255 @@ static inline size_t astcCompressedImageSize(sint32 width, sint32 height)
     return (size_t)((width + 3) / 4) * (size_t)((height + 3) / 4) * 16u;
 }
 
+// How many threads one encode may use, the calling (Latte) thread included. Derived from the device,
+// never from one model: the emulated PPC thread and the Latte thread each keep a performance core, an
+// efficiency core counts as half a core, and the ceiling is four. A device with fewer than three such
+// cores gets 1, which is the single-threaded encode this file always did.
+static uint32 astcEncodeThreadCount()
+{
+    static const uint32 count = []() -> uint32 {
+        const DeviceCaps::Info& info = DeviceCaps::Get();
+        if (info.perfCores == 0)
+            return 1; // not reported: do not guess
+        const uint32 usable = info.perfCores + info.effCores / 2;
+        if (usable <= 2)
+            return 1;
+        return std::min<uint32>(usable - 2, 3) + 1;
+    }();
+    return count;
+}
+
+// Images with fewer blocks than this are decoded and encoded on the calling thread alone. The helpers are
+// persistent (ASTCWorkerPool below), so handing work to them costs a wake-up, not a thread start; 256 blocks
+// (64x64 texels) is already far more encode time than that. A race start in Mario Kart 8 transcodes thousands of
+// images at about 1 ms each, most of them below the 1024 blocks this used to be, on the Latte thread alone.
+static constexpr size_t kAstcThreadedMinBlocks = 16 * 16;
+
+// The threads one decode+encode shares. They are started on first use, live for the rest of the process and
+// sleep between images, so the per-image cost is a condition-variable wake-up instead of creating and joining
+// threads. One job runs at a time (the Latte thread is the only normal caller); a second caller that finds the
+// pool busy gets false back and does the work itself, which gives the same bytes.
+class ASTCWorkerPool
+{
+public:
+    static ASTCWorkerPool& Get()
+    {
+        static ASTCWorkerPool* pool = new ASTCWorkerPool(); // never destroyed: the workers outlive static destruction
+        return *pool;
+    }
+
+    // Runs body(i) once on each of up to `threads` threads, i = 0 on the calling thread, and returns when all
+    // of them are done. Returns false without running anything if the pool is busy or has no helpers.
+    template<typename Body>
+    bool Run(uint32 threads, Body& body)
+    {
+        if (threads <= 1)
+            return false;
+        std::unique_lock<std::mutex> submit(m_submitMutex, std::try_to_lock);
+        if (!submit.owns_lock())
+            return false;
+        EnsureWorkers(threads - 1);
+        const uint32 helpers = std::min<uint32>(threads - 1, m_workerCount);
+        if (helpers == 0)
+            return false;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_trampoline = [](void* arg, uint32 index) { (*static_cast<Body*>(arg))(index); };
+            m_arg = &body;
+            m_helpers = helpers;
+            m_pending = helpers;
+            m_generation++;
+        }
+        m_wake.notify_all();
+        body(0);
+        std::unique_lock<std::mutex> lock(m_mutex);
+        m_done.wait(lock, [this]() { return m_pending == 0; });
+        return true;
+    }
+
+private:
+    void EnsureWorkers(uint32 wanted)
+    {
+        while (m_workerCount < wanted)
+        {
+            uint64 generation;
+            {
+                std::lock_guard<std::mutex> lock(m_mutex);
+                generation = m_generation;
+            }
+            const uint32 index = m_workerCount + 1;
+            try
+            {
+                std::thread([this, index, generation]() { WorkerMain(index, generation); }).detach();
+            }
+            catch (...)
+            {
+                return; // run with the helpers there are
+            }
+            m_workerCount++;
+        }
+    }
+
+    void WorkerMain(uint32 index, uint64 seen)
+    {
+#if defined(__APPLE__)
+        // Same class as the Latte thread, so the scheduler keeps these on performance cores while a decode runs.
+        pthread_set_qos_class_self_np(QOS_CLASS_USER_INITIATED, 0);
+#endif
+        for (;;)
+        {
+            void (*trampoline)(void*, uint32) = nullptr;
+            void* arg = nullptr;
+            {
+                std::unique_lock<std::mutex> lock(m_mutex);
+                m_wake.wait(lock, [&]() { return m_generation != seen; });
+                seen = m_generation;
+                if (index > m_helpers)
+                    continue; // this job wants fewer threads
+                trampoline = m_trampoline;
+                arg = m_arg;
+            }
+            trampoline(arg, index);
+            {
+                std::lock_guard<std::mutex> lock(m_mutex);
+                m_pending--;
+            }
+            m_done.notify_all();
+        }
+    }
+
+    std::mutex m_submitMutex;
+    std::mutex m_mutex;
+    std::condition_variable m_wake;
+    std::condition_variable m_done;
+    uint32 m_workerCount = 0; // only touched by the thread holding m_submitMutex
+    void (*m_trampoline)(void*, uint32) = nullptr;
+    void* m_arg = nullptr;
+    uint32 m_helpers = 0;
+    uint32 m_pending = 0;
+    uint64 m_generation = 0;
+};
+
+// chunkFn(c) for every c in [0, chunkCount), spread over the pool. Chunks are handed out dynamically; each is
+// independent, so which thread runs which one cannot change the result.
+template<typename ChunkFn>
+static void astcParallelChunks(uint32 threads, size_t chunkCount, ChunkFn chunkFn)
+{
+    std::atomic<size_t> next{0};
+    auto body = [&](uint32) {
+        for (size_t c = next.fetch_add(1, std::memory_order_relaxed); c < chunkCount; c = next.fetch_add(1, std::memory_order_relaxed))
+            chunkFn(c);
+    };
+    if (!ASTCWorkerPool::Get().Run(threads, body))
+        body(0);
+}
+
+struct ASTCEncoderContext
+{
+    astcenc_context* ctx = nullptr;
+    uint32 threads = 1; // the thread count the context was allocated for
+};
+
+// Which decoder made an image, for the transcode cache key (with the profile in the low bit).
+enum class ASTCSourceKind : uint32 { BC1 = 1, BC2, BC3, BC4U, BC4S, BC5U, BC5S };
+
 struct ASTCEncoderContextSet
 {
-    astcenc_context* ldr = nullptr;
-    astcenc_context* ldrSrgb = nullptr;
+    // [lean][srgb]
+    ASTCEncoderContext ctx[2][2];
 
     ~ASTCEncoderContextSet()
     {
-        if (ldr)
-            astcenc_context_free(ldr);
-        if (ldrSrgb)
-            astcenc_context_free(ldrSrgb);
+        for (auto& row : ctx)
+            for (auto& enc : row)
+                if (enc.ctx)
+                    astcenc_context_free(enc.ctx);
     }
 };
 
-static astcenc_context* astcGetContext(astcenc_profile profile)
+// The lean search (one partition, one candidate, one refinement pass) is for sources whose blocks are smooth
+// single lines per channel: BC2/BC3 alpha, BC4, BC5. Measured on smooth normal maps and alpha gradients it is 1.7x
+// (BC3) to 3x (BC5) faster for about 0.1 dB. BC1 keeps the full FASTEST search: its astcenc blocks are cut-outs
+// (transparent texels), where two partitions are worth about 5 dB and the lean search saves no time.
+static bool astcLeanSearch(ASTCSourceKind kind)
+{
+    return kind != ASTCSourceKind::BC1;
+}
+
+static ASTCEncoderContext* astcGetContext(astcenc_profile profile, bool lean)
 {
     thread_local ASTCEncoderContextSet contexts;
-    astcenc_context*& ctx = (profile == ASTCENC_PRF_LDR_SRGB) ? contexts.ldrSrgb : contexts.ldr;
-    if (ctx)
-        return ctx;
+    ASTCEncoderContext& enc = contexts.ctx[lean ? 1 : 0][profile == ASTCENC_PRF_LDR_SRGB ? 1 : 0];
+    if (enc.ctx)
+        return &enc;
 
     astcenc_config config;
     astcenc_error status = astcenc_config_init(
         profile,
         4, 4, 1,
-        ASTCENC_PRE_FAST,
+        // The source is already BC (4 or 8 bits per texel) and 4x4 ASTC has 8, so the fastest search loses nothing
+        // visible against it, and takes about half the time of the next preset up.
+        ASTCENC_PRE_FASTEST,
         0,
         &config);
     if (status != ASTCENC_SUCCESS)
         return nullptr;
-
-    status = astcenc_context_alloc(&config, 1, &ctx, nullptr);
-    if (status != ASTCENC_SUCCESS) {
-        ctx = nullptr;
-        return nullptr;
+    if (lean)
+    {
+        config.tune_partition_count_limit = 1;
+        config.tune_candidate_limit = 1;
+        config.tune_refinement_limit = 1;
     }
 
-    return ctx;
+    uint32 threads = astcEncodeThreadCount();
+    astcenc_context* ctx = nullptr;
+    status = astcenc_context_alloc(&config, threads, &ctx, nullptr);
+    if (status != ASTCENC_SUCCESS && threads > 1)
+    {
+        // The per-thread working buffers did not fit: take the single-threaded context instead.
+        threads = 1;
+        ctx = nullptr;
+        status = astcenc_context_alloc(&config, threads, &ctx, nullptr);
+    }
+    if (status != ASTCENC_SUCCESS)
+        return nullptr;
+
+    enc.ctx = ctx;
+    enc.threads = threads;
+    return &enc;
 }
 
-static bool astcCompressRGBA8Image(const uint8* rgba8, sint32 width, sint32 height, astcenc_profile profile, uint8* outputData)
+// One image across several threads, the way astcenc documents it: every thread calls
+// astcenc_compress_image() with its own index and the library hands out blocks dynamically, so the
+// output is byte-identical to a single-threaded run. The pool returns only when every helper has left
+// astcenc_compress_image(), which is what makes the astcenc_compress_reset() the caller does next legal.
+// If the pool cannot supply helpers the calling thread encodes the whole image.
+static astcenc_error astcCompressImageThreaded(astcenc_context* context, astcenc_image* image, const astcenc_swizzle* swizzle,
+                                               uint8* outputData, size_t outputSize, uint32 threads)
 {
-    astcenc_context* context = astcGetContext(profile);
-    if (!context) {
+    std::atomic<int> failure{(int)ASTCENC_SUCCESS};
+    auto body = [&](uint32 index) {
+        const astcenc_error st = astcenc_compress_image(context, image, swizzle, outputData, outputSize, index);
+        if (st != ASTCENC_SUCCESS)
+        {
+            int expected = (int)ASTCENC_SUCCESS;
+            failure.compare_exchange_strong(expected, (int)st);
+        }
+    };
+    if (!ASTCWorkerPool::Get().Run(threads, body))
+        body(0);
+    return (astcenc_error)failure.load();
+}
+
+static bool astcCompressRGBA8Image(const uint8* rgba8, sint32 width, sint32 height, astcenc_profile profile, bool lean, uint8* outputData,
+                                   size_t threadedMinBlocks = kAstcThreadedMinBlocks)
+{
+    ASTCEncoderContext* enc = astcGetContext(profile, lean);
+    if (!enc) {
         cemuLog_log(LogType::Force, "ASTC Encode Fail: no context");
         return false;
     }
+    astcenc_context* context = enc->ctx;
 
     astcenc_image image;
     image.dim_x = (unsigned int)width;
@@ -83,26 +302,31 @@ static bool astcCompressRGBA8Image(const uint8* rgba8, sint32 width, sint32 heig
     };
 
     size_t outputSize = astcCompressedImageSize(width, height);
-    astcenc_error status = astcenc_compress_image(
-        context,
-        &image,
-        &kIdentitySwizzle,
-        outputData,
-        outputSize,
-        0);
+    uint32 threads = enc->threads;
+    if ((size_t)((width + 3) / 4) * (size_t)((height + 3) / 4) < threadedMinBlocks)
+        threads = 1;
+
+    astcenc_error status;
+    if (threads > 1)
+        status = astcCompressImageThreaded(context, &image, &kIdentitySwizzle, outputData, outputSize, threads);
+    else
+        status = astcenc_compress_image(context, &image, &kIdentitySwizzle, outputData, outputSize, 0);
+
+    // A context allocated for more than one thread is not reset implicitly, and it must be reset after a
+    // failure as well, or the next image would find the work already marked done.
+    astcenc_compress_reset(context);
+
     if (status != ASTCENC_SUCCESS) {
-        cemuLog_log(LogType::Force, "ASTC Encode Fail: {}", status);
+        cemuLog_log(LogType::Force, "ASTC Encode Fail: {}", (int)status);
         return false;
     }
-
-    astcenc_compress_reset(context);
     return true;
 }
 
 template<typename DecodeFn>
-static void decodeBCToRGBA8Image(DecodeFn fn, LatteTextureLoaderCtx* tl, uint8* rgba8)
+static void decodeBCToRGBA8Image(DecodeFn fn, LatteTextureLoaderCtx* tl, uint8* rgba8, sint32 yBegin, sint32 yEnd)
 {
-    for (sint32 y = 0; y < tl->height; y += tl->stepY) {
+    for (sint32 y = yBegin; y < yEnd; y += tl->stepY) {
         for (sint32 x = 0; x < tl->width; x += tl->stepX) {
             uint8* blockData = LatteTextureLoader_GetInput(tl, x, y);
             sint32 bsX = std::min(4, tl->width - x);
@@ -114,7 +338,7 @@ static void decodeBCToRGBA8Image(DecodeFn fn, LatteTextureLoaderCtx* tl, uint8* 
             for (sint32 py = 0; py < bsY; ++py) {
                 for (sint32 px = 0; px < bsX; ++px) {
                     sint32 src = (py * 4 + px) * 4;
-                    sint32 dst = ((y + py) * tl->width + (x + px)) * 4;
+                    sint32 dst = ((y - yBegin + py) * tl->width + (x + px)) * 4;
                     rgba8[dst + 0] = astcFloatToUNorm8(floatBuf[src + 0]);
                     rgba8[dst + 1] = astcFloatToUNorm8(floatBuf[src + 1]);
                     rgba8[dst + 2] = astcFloatToUNorm8(floatBuf[src + 2]);
@@ -126,9 +350,9 @@ static void decodeBCToRGBA8Image(DecodeFn fn, LatteTextureLoaderCtx* tl, uint8* 
 }
 
 template<typename DecodeFn>
-static void decodeBC4ToRGBA8Image(DecodeFn fn, LatteTextureLoaderCtx* tl, uint8* rgba8, bool isSigned)
+static void decodeBC4ToRGBA8Image(DecodeFn fn, LatteTextureLoaderCtx* tl, uint8* rgba8, bool isSigned, sint32 yBegin, sint32 yEnd)
 {
-    for (sint32 y = 0; y < tl->height; y += tl->stepY) {
+    for (sint32 y = yBegin; y < yEnd; y += tl->stepY) {
         for (sint32 x = 0; x < tl->width; x += tl->stepX) {
             uint8* blockData = LatteTextureLoader_GetInput(tl, x, y);
             sint32 bsX = std::min(4, tl->width - x);
@@ -140,7 +364,7 @@ static void decodeBC4ToRGBA8Image(DecodeFn fn, LatteTextureLoaderCtx* tl, uint8*
             for (sint32 py = 0; py < bsY; ++py) {
                 for (sint32 px = 0; px < bsX; ++px) {
                     sint32 src = py * 4 + px;
-                    sint32 dst = ((y + py) * tl->width + (x + px)) * 4;
+                    sint32 dst = ((y - yBegin + py) * tl->width + (x + px)) * 4;
                     uint8 r = isSigned ? astcFloatToUNorm8FromSNorm(floatBuf[src]) : astcFloatToUNorm8(floatBuf[src]);
                     rgba8[dst + 0] = r;
                     rgba8[dst + 1] = 0;
@@ -153,9 +377,9 @@ static void decodeBC4ToRGBA8Image(DecodeFn fn, LatteTextureLoaderCtx* tl, uint8*
 }
 
 template<typename DecodeFn>
-static void decodeBC5ToRGBA8Image(DecodeFn fn, LatteTextureLoaderCtx* tl, uint8* rgba8, bool isSigned)
+static void decodeBC5ToRGBA8Image(DecodeFn fn, LatteTextureLoaderCtx* tl, uint8* rgba8, bool isSigned, sint32 yBegin, sint32 yEnd)
 {
-    for (sint32 y = 0; y < tl->height; y += tl->stepY) {
+    for (sint32 y = yBegin; y < yEnd; y += tl->stepY) {
         for (sint32 x = 0; x < tl->width; x += tl->stepX) {
             uint8* blockData = LatteTextureLoader_GetInput(tl, x, y);
             sint32 bsX = std::min(4, tl->width - x);
@@ -167,7 +391,7 @@ static void decodeBC5ToRGBA8Image(DecodeFn fn, LatteTextureLoaderCtx* tl, uint8*
             for (sint32 py = 0; py < bsY; ++py) {
                 for (sint32 px = 0; px < bsX; ++px) {
                     sint32 src = (py * 4 + px) * 2;
-                    sint32 dst = ((y + py) * tl->width + (x + px)) * 4;
+                    sint32 dst = ((y - yBegin + py) * tl->width + (x + px)) * 4;
                     uint8 r = isSigned ? astcFloatToUNorm8FromSNorm(floatBuf[src + 0]) : astcFloatToUNorm8(floatBuf[src + 0]);
                     uint8 g = isSigned ? astcFloatToUNorm8FromSNorm(floatBuf[src + 1]) : astcFloatToUNorm8(floatBuf[src + 1]);
                     rgba8[dst + 0] = r;
@@ -180,38 +404,305 @@ static void decodeBC5ToRGBA8Image(DecodeFn fn, LatteTextureLoaderCtx* tl, uint8*
     }
 }
 
-template<astcenc_profile Profile, typename DecodeFn>
-static void decodeRGBAAndCompressASTC(LatteTextureLoaderCtx* tl, uint8* outputData, DecodeFn fn)
-{
-    std::vector<uint8> rgba8((size_t)tl->width * (size_t)tl->height * 4u);
-    decodeBCToRGBA8Image(fn, tl, rgba8.data());
+// The RGBA8 copy of a BC image is the biggest scratch allocation a texture load makes (64 MB for 4096x4096) and the
+// one that failed on a device with memory to spare. ASTC blocks are encoded independently (no alpha-weight radius,
+// no cross-block state), so the image is decoded and encoded in bands of whole block rows into the matching part of
+// the output, which is byte-identical to one pass. Images whose RGBA8 copy fits the budget are one band, as before.
+static constexpr size_t kAstcScratchBudgetBytes = 8u * 1024u * 1024u;
 
-    if (!astcCompressRGBA8Image(rgba8.data(), tl->width, tl->height, Profile, outputData))
-        std::fill(outputData, outputData + astcCompressedImageSize(tl->width, tl->height), 0);
+// The scratch lives on after the call so the next texture does not map, fault in and zero a fresh block of memory
+// (the decode writes every byte of the band before the encode reads it). Only a modest buffer is kept; a band that
+// needs more is allocated for the one call.
+static constexpr size_t kAstcScratchKeepBytes = 2u * 1024u * 1024u;
+
+// The cache key: two independent 64-bit hashes of the source BC blocks, read the way the decoders read
+// them, plus the size and decoder. False for a block size the decoders never see (nothing is cached then).
+static bool astcSourceKey(LatteTextureLoaderCtx* tl, ASTCSourceKind kind, astcenc_profile profile, ASTCCacheKey& key)
+{
+    const uint32 blockBytes = tl->bpp / 8;
+    if (blockBytes != 8 && blockBytes != 16)
+        return false;
+    uint64 a = 0x243F6A8885A308D3ull ^ ((uint64)tl->width << 32 | (uint32)tl->height);
+    uint64 b = 0x13198A2E03707344ull ^ (uint64)kind;
+    for (sint32 y = 0; y < tl->height; y += tl->stepY)
+    {
+        for (sint32 x = 0; x < tl->width; x += tl->stepX)
+        {
+            const uint8* block = LatteTextureLoader_GetInput(tl, x, y);
+            for (uint32 i = 0; i < blockBytes; i += 8)
+            {
+                uint64 v;
+                memcpy(&v, block + i, 8);
+                a = (a ^ v) * 0x9E3779B97F4A7C15ull;
+                a ^= a >> 29;
+                b += v * 0xC2B2AE3D27D4EB4Full;
+                b = ((b << 31) | (b >> 33)) * 0x165667B19E3779F9ull;
+            }
+        }
+    }
+    key = ASTCCacheKey{a, b, (uint32)tl->width, (uint32)tl->height, ((uint32)kind << 1) | (profile == ASTCENC_PRF_LDR_SRGB ? 1u : 0u)};
+    return true;
+}
+
+// The direct transcoder for a source kind (LatteTextureASTCDirect.h), or null for the kinds that always go through
+// astcenc: signed BC4 (its values are remapped from -1..1, which moves them off an 8-bit line) and BC5 (two channels
+// with their own indices, which one ASTC weight plane cannot hold at full precision).
+using ASTCDirectBlockFn = bool (*)(const uint8_t* bc, uint8_t* astcBlock);
+static ASTCDirectBlockFn astcDirectFor(ASTCSourceKind kind)
+{
+    switch (kind)
+    {
+    case ASTCSourceKind::BC1: return ASTCDirect::BC1;
+    case ASTCSourceKind::BC2: return ASTCDirect::BC2;
+    case ASTCSourceKind::BC3: return ASTCDirect::BC3;
+    case ASTCSourceKind::BC4U: return ASTCDirect::BC4U;
+    default: return nullptr;
+    }
+}
+
+// A direct block costs about 10 ns, so only big images are worth spreading over the pool.
+static constexpr size_t kAstcDirectThreadedMinBlocks = 128 * 128;
+// Blocks that fail the direct path are gathered into a strip this many blocks wide and encoded with astcenc in one call.
+static constexpr size_t kAstcStripBlocksX = 64;
+// Those blocks are the expensive ones (transparency, detail that is not a line), several times the encoder's average
+// per block, so a strip is worth spreading over the pool at far fewer blocks than a whole image.
+static constexpr size_t kAstcStripThreadedMinBlocks = 32;
+
+// Transcodes every block that is a plain BC line straight to ASTC (LatteTextureASTCDirect.h), then encodes only the
+// blocks that are not with astcenc, gathered into one small image so the encoder runs once. An image with no such
+// blocks never reaches astcenc or the transcode cache; one with some looks in the cache first and stores what it
+// encoded. decodeBlock(block, rgba) decodes one BC block to 4x4 RGBA8 exactly as the band decode does.
+template<typename DecodeBlockFn>
+static void astcTranscodeDirect(LatteTextureLoaderCtx* tl, uint8* outputData, astcenc_profile profile, ASTCSourceKind kind,
+                                ASTCDirectBlockFn directFn, DecodeBlockFn decodeBlock)
+{
+    const size_t blocksX = (size_t)((tl->width + 3) / 4);
+    const size_t blocksY = (size_t)((tl->height + 3) / 4);
+    const size_t blockCount = blocksX * blocksY;
+    const uint32 threads = astcEncodeThreadCount();
+
+    // Kept per calling thread so a texture load does not allocate. The lambdas below also run on pool threads, where
+    // a thread_local name would mean that thread's own (empty) copy, so they only ever see these references.
+    thread_local std::vector<uint8> keptPending;
+    thread_local std::vector<uint32> keptTodo;
+    thread_local std::vector<uint8> keptStrip;
+    thread_local std::vector<uint8> keptStripOut;
+    std::vector<uint8>& pending = keptPending; // 1 where the block still needs astcenc
+    std::vector<uint32>& todo = keptTodo;
+    std::vector<uint8>& strip = keptStrip;
+    std::vector<uint8>& stripOut = keptStripOut;
+    pending.assign(blockCount, 0);
+    auto directRows = [&](size_t by0, size_t by1) {
+        for (size_t by = by0; by < by1; by++)
+            for (size_t bx = 0; bx < blocksX; bx++)
+            {
+                const size_t i = by * blocksX + bx;
+                if (!directFn(LatteTextureLoader_GetInput(tl, (sint32)bx * 4, (sint32)by * 4), outputData + i * 16))
+                    pending[i] = 1;
+            }
+    };
+    constexpr size_t kRowsPerChunk = 16;
+    if (threads > 1 && blockCount >= kAstcDirectThreadedMinBlocks)
+        astcParallelChunks(threads, (blocksY + kRowsPerChunk - 1) / kRowsPerChunk, [&](size_t chunk) {
+            directRows(chunk * kRowsPerChunk, std::min(blocksY, (chunk + 1) * kRowsPerChunk));
+        });
+    else
+        directRows(0, blocksY);
+
+    todo.clear();
+    for (size_t i = 0; i < blockCount; i++)
+        if (pending[i])
+            todo.push_back((uint32)i);
+    if (todo.empty())
+    {
+        PerfTelemetry::Get().textureTranscodeDirect.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+
+    ASTCCacheKey cacheKey{};
+    const bool cacheable = astcSourceKey(tl, kind, profile, cacheKey);
+    if (cacheable && LatteTextureASTCCache_Lookup(cacheKey, outputData, astcCompressedImageSize(tl->width, tl->height)))
+    {
+        PerfTelemetry::Get().textureTranscodeCacheHits.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    PerfTelemetry::Get().textureTranscodes.fetch_add(1, std::memory_order_relaxed);
+
+    // The strip is processed in batches that keep its RGBA8 copy inside the same budget as the band decode.
+    const size_t batchBlocks = std::max<size_t>(kAstcStripBlocksX, (kAstcScratchBudgetBytes / 64) / kAstcStripBlocksX * kAstcStripBlocksX);
+    for (size_t base = 0; base < todo.size(); base += batchBlocks)
+    {
+        const size_t count = std::min(batchBlocks, todo.size() - base);
+        const size_t sbx = std::min(count, kAstcStripBlocksX);
+        const size_t sby = (count + sbx - 1) / sbx;
+        const size_t stripWidth = sbx * 4;
+        strip.assign(sbx * sby * 64, 0);
+        stripOut.resize(sbx * sby * 16);
+        auto decodeSlots = [&](size_t s0, size_t s1) {
+            uint8 rgba[64];
+            for (size_t slot = s0; slot < s1; slot++)
+            {
+                const uint32 i = todo[base + slot];
+                decodeBlock(LatteTextureLoader_GetInput(tl, (sint32)(i % blocksX) * 4, (sint32)(i / blocksX) * 4), rgba);
+                uint8* dst = strip.data() + ((slot / sbx) * 4 * stripWidth + (slot % sbx) * 4) * 4;
+                for (size_t row = 0; row < 4; row++)
+                    memcpy(dst + row * stripWidth * 4, rgba + row * 16, 16);
+            }
+        };
+        constexpr size_t kSlotsPerChunk = 256;
+        if (threads > 1 && count >= kAstcThreadedMinBlocks)
+            astcParallelChunks(threads, (count + kSlotsPerChunk - 1) / kSlotsPerChunk, [&](size_t chunk) {
+                decodeSlots(chunk * kSlotsPerChunk, std::min(count, (chunk + 1) * kSlotsPerChunk));
+            });
+        else
+            decodeSlots(0, count);
+        if (!astcCompressRGBA8Image(strip.data(), (sint32)stripWidth, (sint32)(sby * 4), profile, astcLeanSearch(kind), stripOut.data(), kAstcStripThreadedMinBlocks))
+        {
+            std::fill(outputData, outputData + astcCompressedImageSize(tl->width, tl->height), 0);
+            return;
+        }
+        for (size_t slot = 0; slot < count; slot++)
+            memcpy(outputData + (size_t)todo[base + slot] * 16, stripOut.data() + slot * 16, 16);
+    }
+    if (strip.capacity() > kAstcScratchKeepBytes)
+    {
+        strip = std::vector<uint8>();
+        stripOut = std::vector<uint8>();
+    }
+    if (cacheable)
+        LatteTextureASTCCache_Store(cacheKey, outputData, astcCompressedImageSize(tl->width, tl->height));
+}
+
+template<typename BandDecodeFn, typename DecodeBlockFn>
+static void decodeBandsAndCompressASTC(LatteTextureLoaderCtx* tl, uint8* outputData, astcenc_profile profile, ASTCSourceKind kind, BandDecodeFn decodeBand, DecodeBlockFn decodeBlock)
+{
+    // Timed here because this is the one place every BC to ASTC transcode (BC1 to BC5) passes through. The time
+    // includes cache lookups and direct transcodes; textureTranscodes counts only the images astcenc encoded (all of
+    // them, or the blocks the direct path left).
+    PerfTelemetry::ScopedTimer transcodeTimer(PerfTelemetry::Get().textureTranscodeNs);
+    if (ASTCDirectBlockFn directFn = astcDirectFor(kind); directFn && tl->stepX == 4 && tl->stepY == 4)
+    {
+        astcTranscodeDirect(tl, outputData, profile, kind, directFn, decodeBlock);
+        return;
+    }
+    ASTCCacheKey cacheKey{};
+    const bool cacheable = astcSourceKey(tl, kind, profile, cacheKey);
+    if (cacheable && LatteTextureASTCCache_Lookup(cacheKey, outputData, astcCompressedImageSize(tl->width, tl->height)))
+    {
+        PerfTelemetry::Get().textureTranscodeCacheHits.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    PerfTelemetry::Get().textureTranscodes.fetch_add(1, std::memory_order_relaxed);
+
+    const sint32 width = tl->width;
+    const sint32 height = tl->height;
+    const size_t rowBytes = (size_t)width * 4u;
+    size_t bandRows = std::max<size_t>(4, (kAstcScratchBudgetBytes / std::max<size_t>(rowBytes, 1)) & ~(size_t)3);
+    bandRows = std::min<size_t>(bandRows, (size_t)((height + 3) & ~3));
+    const size_t scratchBytes = rowBytes * std::min<size_t>(bandRows, (size_t)height);
+    thread_local std::unique_ptr<uint8[]> keptScratch;
+    thread_local size_t keptScratchBytes = 0;
+    std::unique_ptr<uint8[]> tempScratch;
+    uint8* rgba8;
+    if (scratchBytes <= kAstcScratchKeepBytes)
+    {
+        if (keptScratchBytes < scratchBytes)
+        {
+            keptScratch.reset(new uint8[scratchBytes]);
+            keptScratchBytes = scratchBytes;
+        }
+        rgba8 = keptScratch.get();
+    }
+    else
+    {
+        tempScratch.reset(new uint8[scratchBytes]);
+        rgba8 = tempScratch.get();
+    }
+
+    const uint32 threads = astcEncodeThreadCount();
+    const size_t blocksX = (size_t)((width + 3) / 4);
+    // Block rows are independent, so a band is decoded in chunks of whole block rows by whichever thread is free.
+    constexpr sint32 kDecodeChunkRows = 16;
+    for (sint32 y0 = 0; y0 < height; y0 += (sint32)bandRows)
+    {
+        const sint32 y1 = std::min<sint32>(height, y0 + (sint32)bandRows);
+        if (threads > 1 && blocksX * (size_t)((y1 - y0 + 3) / 4) >= kAstcThreadedMinBlocks)
+        {
+            astcParallelChunks(threads, (size_t)((y1 - y0 + kDecodeChunkRows - 1) / kDecodeChunkRows), [&](size_t chunk) {
+                const sint32 ya = y0 + (sint32)chunk * kDecodeChunkRows;
+                decodeBand(rgba8 + (size_t)(ya - y0) * rowBytes, ya, std::min<sint32>(y1, ya + kDecodeChunkRows));
+            });
+        }
+        else
+            decodeBand(rgba8, y0, y1);
+        uint8* bandOutput = outputData + (size_t)(y0 / 4) * blocksX * 16u;
+        if (!astcCompressRGBA8Image(rgba8, width, y1 - y0, profile, astcLeanSearch(kind), bandOutput))
+        {
+            std::fill(outputData, outputData + astcCompressedImageSize(width, height), 0);
+            return;
+        }
+    }
+    if (cacheable)
+        LatteTextureASTCCache_Store(cacheKey, outputData, astcCompressedImageSize(width, height));
+}
+
+template<astcenc_profile Profile, typename DecodeFn>
+static void decodeRGBAAndCompressASTC(LatteTextureLoaderCtx* tl, uint8* outputData, ASTCSourceKind kind, DecodeFn fn)
+{
+    decodeBandsAndCompressASTC(tl, outputData, Profile, kind, [&](uint8* rgba8, sint32 y0, sint32 y1) {
+        decodeBCToRGBA8Image(fn, tl, rgba8, y0, y1);
+    }, [&](uint8* block, uint8* rgba) {
+        float floatBuf[16 * 4] = {};
+        fn(block, floatBuf);
+        for (sint32 i = 0; i < 64; i++)
+            rgba[i] = astcFloatToUNorm8(floatBuf[i]);
+    });
 }
 
 static void decodeBC4AndCompressASTC(LatteTextureLoaderCtx* tl, uint8* outputData, bool isSigned)
 {
-    std::vector<uint8> rgba8((size_t)tl->width * (size_t)tl->height * 4u);
-    if (isSigned)
-        decodeBC4ToRGBA8Image(decodeBC4Block_SNORM, tl, rgba8.data(), true);
-    else
-        decodeBC4ToRGBA8Image(decodeBC4Block_UNORM, tl, rgba8.data(), false);
-
-    if (!astcCompressRGBA8Image(rgba8.data(), tl->width, tl->height, ASTCENC_PRF_LDR, outputData))
-        std::fill(outputData, outputData + astcCompressedImageSize(tl->width, tl->height), 0);
+    decodeBandsAndCompressASTC(tl, outputData, ASTCENC_PRF_LDR, isSigned ? ASTCSourceKind::BC4S : ASTCSourceKind::BC4U, [&](uint8* rgba8, sint32 y0, sint32 y1) {
+        if (isSigned)
+            decodeBC4ToRGBA8Image(decodeBC4Block_SNORM, tl, rgba8, true, y0, y1);
+        else
+            decodeBC4ToRGBA8Image(decodeBC4Block_UNORM, tl, rgba8, false, y0, y1);
+    }, [&](uint8* block, uint8* rgba) {
+        float floatBuf[16] = {};
+        if (isSigned)
+            decodeBC4Block_SNORM(block, floatBuf);
+        else
+            decodeBC4Block_UNORM(block, floatBuf);
+        for (sint32 i = 0; i < 16; i++)
+        {
+            rgba[i * 4 + 0] = isSigned ? astcFloatToUNorm8FromSNorm(floatBuf[i]) : astcFloatToUNorm8(floatBuf[i]);
+            rgba[i * 4 + 1] = 0;
+            rgba[i * 4 + 2] = 0;
+            rgba[i * 4 + 3] = 255;
+        }
+    });
 }
 
 static void decodeBC5AndCompressASTC(LatteTextureLoaderCtx* tl, uint8* outputData, bool isSigned)
 {
-    std::vector<uint8> rgba8((size_t)tl->width * (size_t)tl->height * 4u);
-    if (isSigned)
-        decodeBC5ToRGBA8Image(decodeBC5Block_SNORM, tl, rgba8.data(), true);
-    else
-        decodeBC5ToRGBA8Image(decodeBC5Block_UNORM, tl, rgba8.data(), false);
-
-    if (!astcCompressRGBA8Image(rgba8.data(), tl->width, tl->height, ASTCENC_PRF_LDR, outputData))
-        std::fill(outputData, outputData + astcCompressedImageSize(tl->width, tl->height), 0);
+    decodeBandsAndCompressASTC(tl, outputData, ASTCENC_PRF_LDR, isSigned ? ASTCSourceKind::BC5S : ASTCSourceKind::BC5U, [&](uint8* rgba8, sint32 y0, sint32 y1) {
+        if (isSigned)
+            decodeBC5ToRGBA8Image(decodeBC5Block_SNORM, tl, rgba8, true, y0, y1);
+        else
+            decodeBC5ToRGBA8Image(decodeBC5Block_UNORM, tl, rgba8, false, y0, y1);
+    }, [&](uint8* block, uint8* rgba) {
+        float floatBuf[32] = {};
+        if (isSigned)
+            decodeBC5Block_SNORM(block, floatBuf);
+        else
+            decodeBC5Block_UNORM(block, floatBuf);
+        for (sint32 i = 0; i < 16; i++)
+        {
+            rgba[i * 4 + 0] = isSigned ? astcFloatToUNorm8FromSNorm(floatBuf[i * 2]) : astcFloatToUNorm8(floatBuf[i * 2]);
+            rgba[i * 4 + 1] = isSigned ? astcFloatToUNorm8FromSNorm(floatBuf[i * 2 + 1]) : astcFloatToUNorm8(floatBuf[i * 2 + 1]);
+            rgba[i * 4 + 2] = 0;
+            rgba[i * 4 + 3] = 255;
+        }
+    });
 }
 
 template<astcenc_profile Profile>
@@ -224,7 +715,7 @@ public:
 
     void decode(LatteTextureLoaderCtx* tl, uint8* outputData) override
     {
-        decodeRGBAAndCompressASTC<Profile>(tl, outputData, decodeBC1Block);
+        decodeRGBAAndCompressASTC<Profile>(tl, outputData, ASTCSourceKind::BC1, decodeBC1Block);
     }
 
     void decodePixelToRGBA(uint8* blockData, uint8* out, uint8 ox, uint8 oy) override
@@ -251,7 +742,7 @@ public:
 
     void decode(LatteTextureLoaderCtx* tl, uint8* outputData) override
     {
-        decodeRGBAAndCompressASTC<Profile>(tl, outputData, decodeBC2Block_UNORM);
+        decodeRGBAAndCompressASTC<Profile>(tl, outputData, ASTCSourceKind::BC2, decodeBC2Block_UNORM);
     }
 
     void decodePixelToRGBA(uint8* blockData, uint8* out, uint8 ox, uint8 oy) override
@@ -284,7 +775,7 @@ public:
 
     void decode(LatteTextureLoaderCtx* tl, uint8* outputData) override
     {
-        decodeRGBAAndCompressASTC<Profile>(tl, outputData, decodeBC3Block_UNORM);
+        decodeRGBAAndCompressASTC<Profile>(tl, outputData, ASTCSourceKind::BC3, decodeBC3Block_UNORM);
     }
 
     void decodePixelToRGBA(uint8* blockData, uint8* out, uint8 ox, uint8 oy) override

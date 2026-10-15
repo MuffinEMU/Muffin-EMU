@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import SwiftUI
 import Dispatch
 
@@ -19,10 +24,11 @@ extension Color {
 /// straight substitute, gated behind `PreviewPadStore`'s enabled flag.
 ///
 /// Reuses `HeldControl` for press/release and hit-tests the d-pad with
-/// `PadLayout.dpadDirections`. The stick is a plain octagon-gated analog without the
-/// standard pad's deadzone/curve settings. Experimental; off by default.
+/// `PadLayout.dpadDirections`. The sticks use the shared stick settings (gate, deadzone,
+/// curve, calibration), and the pad the shared opacity. Experimental; off by default.
 struct PreviewControllerPad: View {
     @ObservedObject var store: PreviewPadStore
+    @AppStorage(ControllerLayoutSettings.opacityKey) private var sharedOpacity = ControllerLayoutSettings.defaultOpacity
     let onInput: (String, Bool) -> Void
     let onStick: (Int, CGPoint) -> Void
     @Binding var isEditingLayout: Bool
@@ -37,7 +43,7 @@ struct PreviewControllerPad: View {
                                   height: full.height - insets.top - insets.bottom)
             let resolved = store.resolve(container: proxy.size, safeArea: safeArea,
                                          pointsPerInch: DeviceMetrics.current().pointsPerInch)
-            let colours = store.colourPreset.file
+            let colours = store.colourFile
 
             ZStack(alignment: .topLeading) {
                 ForEach(PadGroup.allCases) { group in
@@ -46,7 +52,7 @@ struct PreviewControllerPad: View {
                                      onInput: onInput, onStick: onStick)
                 }
             }
-            .opacity(isEditingLayout ? 1.0 : 0.85)
+            .opacity(isEditingLayout ? 1.0 : sharedOpacity)
         }
         .allowsHitTesting(true)
     }
@@ -316,8 +322,7 @@ private struct PreviewDpadView: View {
     }
 }
 
-/// A plain octagon-gated analog stick - see the scope note at the top of this file for
-/// why it does not carry the shipping pad's deadzone/curve settings.
+/// An analog stick on the shared stick settings (gate, deadzone, curve, calibration).
 private struct PreviewStickView: View {
     let id: String
     let centre: CGPoint
@@ -338,6 +343,16 @@ private struct PreviewStickView: View {
 
     @AppStorage(ControllerLayoutSettings.hapticsKey)
     private var hapticsEnabled = ControllerLayoutSettings.defaultHaptics
+    // The shared stick settings, the same keys and maths as the standard pad. This pad has always
+    // had no deadzone, so until the player sets one (the shared key and the stick's own are both
+    // absent) it keeps having none; once set, a value here means what it means everywhere else.
+    @AppStorage(ControllerLayoutSettings.stickGateKey) private var gateSetting = ControllerLayoutSettings.defaultStickGateRaw
+    @AppStorage(ControllerLayoutSettings.stickCalibrationLeftKey) private var calibrationLeft = ""
+    @AppStorage(ControllerLayoutSettings.stickCalibrationRightKey) private var calibrationRight = ""
+
+    private var gate: ControllerGeometry.StickGate {
+        ControllerGeometry.StickGate(rawValue: gateSetting) ?? ControllerLayoutSettings.defaultStickGate
+    }
 
     private var radius: CGFloat { diameter / 2 }
     private var knobRadius: CGFloat { diameter * 0.28 }
@@ -367,16 +382,17 @@ private struct PreviewStickView: View {
                     // Local to the stick's own frame, so its centre is (radius, radius).
                     let dx = value.location.x - radius, dy = value.location.y - radius
                     let distance = (dx * dx + dy * dy).squareRoot()
-                    let reach = travel * ControllerGeometry.StickGate.octagon.radiusFraction(atAngle: atan2(dy, dx))
+                    let reach = travel * gate.radiusFraction(atAngle: atan2(dy, dx))
                     let scale = distance > reach ? reach / distance : 1
                     knobOffset = CGSize(width: dx * scale, height: dy * scale)
                     let deflection = travel > 0 ? min(distance, reach) / travel : 0
                     if deflection > 0.14 { pushed = true }
-                    // Console convention: x right-positive, y UP-positive - the opposite
-                    // of screen y, which is why this negates dy and not dx.
-                    let nx = travel > 0 ? max(-1, min(1, (dx * scale) / travel)) : 0
-                    let ny = travel > 0 ? max(-1, min(1, -(dy * scale) / travel)) : 0
-                    onStick(id == "stickL" ? 0 : 1, CGPoint(x: nx, y: ny))
+                    // Console convention (x right, y UP), through the one shared stick maths.
+                    let out = SharedStick.output(dx: dx, dy: dy, travel: travel,
+                                                 feel: SharedStick.feel(left: id == "stickL", fallbackDeadzone: 0),
+                                                 gateRaw: gateSetting,
+                                                 calibrationRaw: id == "stickL" ? calibrationLeft : calibrationRight)
+                    onStick(id == "stickL" ? 0 : 1, out)
                 }
                 .onEnded { _ in
                     if !pushed { click() }

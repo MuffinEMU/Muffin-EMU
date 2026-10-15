@@ -172,7 +172,7 @@ void LatteSHRC_RemoveFromCache(LatteDecompilerShader* shader)
             cemu_assert_debug(shader->baseHash == shader->next->baseHash);
             cache.emplace(shader->baseHash, shader->next);
         }
-        shader->next = 0;
+        shader->next = nullptr;
 		removed = true;
 	}
 	else
@@ -671,6 +671,9 @@ uint64 LatteSHRC_CalcGSAuxHash(LatteDecompilerShader* geometryShader, uint32* co
 
 uint64 LatteSHRC_CalcPSAuxHash(LatteDecompilerShader* pixelShader, uint32* contextRegisters)
 {
+	// the render target state is read from the passed registers (the live GPU state while playing, the
+	// stored state while loading a cached shader), so both give the same hash for the same state
+	[[maybe_unused]] const LatteContextRegister& lcr = *(const LatteContextRegister*)contextRegisters;
 	uint64 auxHash = 0;
 	// CB_SHADER_MASK can remap pixel shader outputs
 	auxHash = (auxHash >> 3) | (auxHash << 61);
@@ -697,16 +700,23 @@ uint64 LatteSHRC_CalcPSAuxHash(LatteDecompilerShader* pixelShader, uint32* conte
 #ifdef ENABLE_VULKAN
 	if (g_renderer->GetType() == RendererAPI::Vulkan)
 	{
+		// Integer render targets need a different shader on Vulkan, so they are part of the hash. Float-only states keep the hash desktop Cemu
+		// computes (this term used to be applied unconditionally, which made every Muffin PS hash differ from desktop and so desktop shader caches miss)
+		const uint64 auxHashWithoutTargets = auxHash;
+		bool hasIntegerTarget = false;
 		for (uint8 i = 0; i < LATTE_NUM_COLOR_TARGET; i++)
 		{
-			const uint32 format = (uint32)LatteMRT::GetColorBufferFormat(i, LatteGPUState.contextNew);
+			const uint32 format = (uint32)LatteMRT::GetColorBufferFormat(i, lcr);
 			const bool isInteger = (format & (uint32)Latte::E_GX2SURFFMT::FMT_BIT_INT) != 0;
 			const bool isSigned = (format & (uint32)Latte::E_GX2SURFFMT::FMT_BIT_SIGNED) != 0;
 			const uint8 dataType = isInteger ? (isSigned ? 2 : 1) : 0;
             
 			auxHash = std::rotl<uint64>(auxHash, 7);
 			auxHash += dataType;
+			hasIntegerTarget |= isInteger;
 		}
+		if (!hasIntegerTarget)
+			auxHash = auxHashWithoutTargets;
 	}
 #endif
 
@@ -724,14 +734,14 @@ uint64 LatteSHRC_CalcPSAuxHash(LatteDecompilerShader* pixelShader, uint32* conte
 		// Color buffers
         for (uint8 i = 0; i < LATTE_NUM_COLOR_TARGET; i++)
         {
-            auto format = LatteMRT::GetColorBufferFormat(i, LatteGPUState.contextNew);
+            auto format = LatteMRT::GetColorBufferFormat(i, lcr);
             uint8 dataType = (uint8)GetMtlPixelFormatInfo(format, false).dataType;
             auxHash = std::rotl<uint64>(auxHash, 7);
             auxHash += (uint64)dataType;
         }
 
         // Depth buffer
-        bool hasDepthBuffer = LatteMRT::GetActiveDepthBufferMask(LatteGPUState.contextNew);
+        bool hasDepthBuffer = LatteMRT::GetActiveDepthBufferMask(lcr);
         if (hasDepthBuffer)
         {
             auxHash = std::rotl<uint64>(auxHash, 5);
@@ -765,6 +775,8 @@ static void InitUniformLayoutFromDecompiler(
     shader->uniform.loc_fragCoordScale = offsets.offset_fragCoordScale;
 	shader->uniform.loc_baseVertex = offsets.offset_baseVertex;
 	shader->uniform.loc_baseInstance = offsets.offset_baseInstance;
+    for (sint32 t = 0; t < LATTE_NUM_MAX_TEX_UNITS; t++)
+        shader->uniform.loc_framebufferFetchSize[t] = offsets.offset_framebufferFetchSize[t];
 
     // Texture scale uniforms
     shader->uniform.list_ufTexRescale.clear();
@@ -843,9 +855,12 @@ LatteDecompilerShader* LatteShader_CreateShaderFromDecompilerOutput(LatteDecompi
 	return shader;
 }
 
+std::atomic<bool> g_latteRelaxShaderMul{false};
+
 void LatteShader_GetDecompilerOptions(LatteDecompilerOptions& options, LatteConst::ShaderType shaderType, bool geometryShaderEnabled)
 {
 	options.usesGeometryShader = geometryShaderEnabled;
+	options.geometryShaderEmulation = g_renderer->UseGeometryShaderEmulation();
 	options.spirvInstrinsics.hasRoundingModeRTEFloat32 = false;
 	options.useTFViaSSBO = g_renderer->UseTFViaSSBO();
 #ifdef ENABLE_VULKAN
@@ -854,7 +869,8 @@ void LatteShader_GetDecompilerOptions(LatteDecompilerOptions& options, LatteCons
 		options.spirvInstrinsics.hasRoundingModeRTEFloat32 = VulkanRenderer::GetInstance()->HasSPRIVRoundingModeRTE32();
 	}
 #endif
-	options.strictMul = g_current_game_profile->GetAccurateShaderMul() != AccurateShaderMulOption::False;
+	options.strictMul = !g_latteRelaxShaderMul.load(std::memory_order_relaxed)
+		&& g_current_game_profile->GetAccurateShaderMul() != AccurateShaderMulOption::False;
 }
 
 LatteDecompilerShader* LatteShader_CompileSeparableVertexShader2(uint64 baseHash, uint64& vsAuxHash, uint8* vertexShaderPtr, uint32 vertexShaderSize, bool usesGeometryShader, LatteFetchShader* fetchShader)

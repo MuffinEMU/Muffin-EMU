@@ -1,4 +1,14 @@
 #!/bin/bash
+# MuffinEMU — code by the MuffinEMU Development Team.
+# Copyright (c) 2026 MuffinEMU Development Team.
+# SPDX-License-Identifier: MPL-2.0
+# This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
+# MuffinEMU — code by the MuffinEMU Development Team.
+# Copyright (c) 2026 MuffinEMU Development Team.
+# SPDX-License-Identifier: MPL-2.0
+# This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 # Shared by the publishing scripts. Sourced, not run.
 #
 # Every command that WRITES to GitHub goes through `w`. With DRY_RUN=1 it prints what it would run
@@ -39,4 +49,15 @@ move_tag() {
   else
     w gh api -X POST "repos/$REPO/git/refs" -f "ref=refs/tags/$tag" -f "sha=$sha"
   fi
+}
+
+# The version stamped into an IPA (CFBundleShortVersionString). An install source must list this
+# exact string or SideStore refuses the install ("does not match the version specified by the source").
+ipa_version() {
+  python3 -c '
+import plistlib, sys, zipfile
+z = zipfile.ZipFile(sys.argv[1])
+name = next(n for n in z.namelist() if n.count("/") == 2 and n.startswith("Payload/") and n.endswith(".app/Info.plist"))
+print(plistlib.loads(z.read(name))["CFBundleShortVersionString"])
+' "$1"
 }

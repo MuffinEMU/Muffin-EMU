@@ -191,7 +191,7 @@ public:
 	void GetStats(uint32& numBuffers, size_t& totalBufferSize, size_t& freeBufferSize) const;
 
 private:
-	void allocateAdditionalUploadBuffer(uint32 sizeRequiredForAlloc);
+	bool allocateAdditionalUploadBuffer(uint32 sizeRequiredForAlloc);
 	void addUploadBufferSyncPoint(AllocatorBuffer_t& buffer, uint32 offset);
 
 	const class VulkanRenderer* m_vkr;
@@ -262,10 +262,32 @@ public:
 	std::vector<uint8> m_textureUploadBuffer;
 
 	// texture upload buffer
+	// Returns nullptr when the memory can't be had (iOS address space / memory pressure): std::vector throws then, and nothing on the GPU
+	// thread's path catches it short of stopping the title. The texture loader skips the upload instead (texture_uploadBufferUnavailable).
 	void* TextureUploadBufferAcquire(uint32 size)
 	{
 		if (m_textureUploadBuffer.size() < size)
-			m_textureUploadBuffer.resize(size);
+		{
+			try
+			{
+				m_textureUploadBuffer.resize(size);
+			}
+			catch (const std::bad_alloc&)
+			{
+				// it's scratch: give back what we hold and try once more with a clean slate
+				std::vector<uint8>().swap(m_textureUploadBuffer);
+				try
+				{
+					m_textureUploadBuffer.resize(size);
+				}
+				catch (const std::bad_alloc&)
+				{
+					std::vector<uint8>().swap(m_textureUploadBuffer);
+					cemuLog_logOnce(LogType::Force, "Vulkan: could not allocate a {} byte texture upload buffer, skipping the upload", size);
+					return nullptr;
+				}
+			}
+		}
 
 		return m_textureUploadBuffer.data();
 	}
@@ -273,7 +295,12 @@ public:
 	void TextureUploadBufferRelease(uint8* mem)
 	{
 		cemu_assert_debug(m_textureUploadBuffer.data() == mem);
-		m_textureUploadBuffer.clear();
+		// clear() keeps the capacity, which would stay at the largest texture ever decoded (can be hundreds of MB): hand big blocks back
+		constexpr size_t kMaxRetainedCapacity = 16u * 1024 * 1024;
+		if (m_textureUploadBuffer.capacity() > kMaxRetainedCapacity)
+			std::vector<uint8>().swap(m_textureUploadBuffer);
+		else
+			m_textureUploadBuffer.clear();
 	}
 
 	VKRSynchronizedRingAllocator& getStagingAllocator() { return m_stagingBuffer; }; // allocator for texture/attribute/uniform uploads

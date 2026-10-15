@@ -82,7 +82,7 @@ if(BUILD_HEADLESS_DYLIB)
     set_target_properties(CemuBin PROPERTIES
         CXX_VISIBILITY_PRESET default
         VISIBILITY_INLINES_HIDDEN OFF
-        MACOSX_FRAMEWORK_IDENTIFIER com.kiddreads.MuffinEMU.Cemu
+        MACOSX_FRAMEWORK_IDENTIFIER com.void.muffinemu.Cemu
         FRAMEWORK TRUE
     )
     if(IOS)
@@ -114,7 +114,7 @@ if(IOS)
 		COMPILE_OPTIONS "-fobjc-arc;-include;${CMAKE_SOURCE_DIR}/src/Common/precompiled.h"
 		SKIP_PRECOMPILE_HEADERS ON)
 	# Motion aiming needs nothing from the core, so it is plain ARC Objective-C++ with no precompiled header.
-	set_source_files_properties(ios/Bridge/IOSMotion.mm PROPERTIES
+	set_source_files_properties(ios/Bridge/IOSMotion.mm ios/Bridge/IOSScreenRecorder.mm PROPERTIES
 		COMPILE_OPTIONS "-fobjc-arc"
 		SKIP_PRECOMPILE_HEADERS ON)
 	target_link_libraries(CemuBin PRIVATE
@@ -131,6 +131,8 @@ if(IOS)
 		ios/Bridge/IOSLiveLog.cpp
 		ios/Bridge/IOSMotion.h
 		ios/Bridge/IOSMotion.mm
+		ios/Bridge/IOSScreenRecorder.h
+		ios/Bridge/IOSScreenRecorder.mm
 		ios/Bridge/CemuDeviceCaps.h
 		ios/Bridge/IOSDeviceCaps.cpp
 		ios/Bridge/Core/IOSAccounts.cpp
@@ -143,6 +145,7 @@ if(IOS)
 		ios/Bridge/Core/IOSTitleDecrypt.cpp
 		ios/Bridge/Core/IOSTitleLaunch.cpp
 		ios/Bridge/Core/IOSTitlePause.cpp
+		ios/Bridge/Core/IOSWuaContent.cpp
 	)
 	target_include_directories(CemuBin PRIVATE ios/Bridge)
 	if(MUFFIN_AUDIT_HOOKS)
@@ -154,11 +157,15 @@ if(IOS)
 	endif()
 	target_link_libraries(CemuBin PRIVATE
 		ZArchive::zarchive
+		zstd::zstd
 		"-framework UIKit"
 		"-framework GameController"
 		"-framework CoreMotion"
 		"-framework Metal"
 		"-framework QuartzCore"
+		"-framework AVFoundation"
+		"-framework CoreMedia"
+		"-framework CoreVideo"
 	)
 endif()
 
@@ -354,7 +361,7 @@ if(IOS AND MUFFIN_BENCH_ENGINE)
 	target_compile_definitions(CemuBin PRIVATE MBENCH_COMMIT="${MBENCH_COMMIT}")
 	set_target_properties(CemuBin PROPERTIES
 		OUTPUT_NAME "${MUFFIN_BENCH_NAME}"
-		MACOSX_FRAMEWORK_IDENTIFIER "com.kiddreads.bench.${MUFFIN_BENCH_NAME}")
+		MACOSX_FRAMEWORK_IDENTIFIER "com.void.muffinemu.bench.${MUFFIN_BENCH_NAME}")
 	target_link_options(CemuBin PRIVATE
 		"-Wl,-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/ios/Bench/MuffinBenchEngine.exports")
 endif()

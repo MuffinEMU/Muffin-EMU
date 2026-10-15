@@ -1,66 +1,253 @@
 {
   "name": "MuffinEMU Experimental (TrollStore)",
-  "identifier": "com.kiddreads.MuffinEMU.experimental.trollstore",
+  "identifier": "com.void.muffinemu.experimental.trollstore",
   "subtitle": "Unfinished test builds - TrollStore.",
-  "description": "The install source for MuffinEMU, a Wii U emulator for iPhone and iPad built on Cemu. These are unfinished test builds, published by hand to try out work in progress. Each one replaces an installed MuffinEMU: it has the same bundle identifier as the standard build, so your games, saves and settings carry over. They can crash or misbehave. For normal play use the Stable source instead. This one is the ad-hoc signed build, with the JIT entitlements embedded, for TrollStore and jailbroken devices.",
-  "iconURL": "https://kiddreads.github.io/MuffinEMU/icon.png",
-  "website": "https://kiddreads.github.io/MuffinEMU/",
-  "tintColor": "E5652E",
+  "description": "Wii U on iPhone and iPad, done right. GamePad, TV, or both. Free and open source. These are unfinished test builds, published by hand to try out work in progress. Each one replaces an installed MuffinEMU: it has the same bundle identifier as the standard build, so your games, saves and settings carry over. They can crash or misbehave. For normal play use the Stable source instead. This one is the ad-hoc signed build, with the JIT entitlements embedded, for TrollStore and jailbroken devices.",
+  "iconURL": "https://muffinemu.github.io/MuffinEMU/icon.png",
+  "headerURL": "https://muffinemu.github.io/MuffinEMU/assets/source-header.jpg",
+  "website": "https://muffinemu.github.io/MuffinEMU/",
+  "tintColor": "#E5652E",
+  "featuredApps": [
+    "com.void.muffinemu"
+  ],
   "apps": [
     {
       "name": "MuffinEMU Experimental",
-      "bundleIdentifier": "com.kiddreads.MuffinEMU",
-      "developerName": "kiddreads",
+      "bundleIdentifier": "com.void.muffinemu",
+      "developerName": "Void",
       "subtitle": "Wii U emulator - experimental TrollStore builds",
-      "localizedDescription": "MuffinEMU is a Wii U emulator for iPhone and iPad (iOS 15 and later), built on Cemu.\n\n- Import games from Files: WUA, decrypted games, and encrypted dumps with your own keys.txt. DLC and updates install from the app.\n- Metal renderer by default, with Vulkan through MoltenVK as an option.\n- Runs on the interpreter out of the box, and on the faster recompiler when a JIT enabler such as StikDebug is attached.\n- An on-screen GamePad laid out from a real Wii U GamePad, with an optional analog stick, skins and a layout editor. Hardware controllers work alongside it.\n- Single screen, both screens, or the TV image on an external display.\n- Save states, graphic packs, and 31 app icons with matching themes.\n\nThese are unfinished test builds, published by hand to try out work in progress. Each one replaces an installed MuffinEMU: it has the same bundle identifier as the standard build, so your games, saves and settings carry over. They can crash or misbehave. For normal play use the Stable source instead. This one is the ad-hoc signed build, with the JIT entitlements embedded, for TrollStore and jailbroken devices.\n\nBring your own games and keys. No copyrighted content is distributed here.",
-      "iconURL": "https://kiddreads.github.io/MuffinEMU/icon.png",
-      "tintColor": "E5652E",
+      "localizedDescription": "Wii U on iPhone and iPad. Play on-screen, use the GamePad, or switch to your TV. Free, open source, and built around Cemu.\n\nGames, keys and system files are not included. Bring the games you own.\n\n- Add games from Files: WUA, WUD/WUX, decrypted or encrypted with your own keys. Updates and DLC install in the app\n- HD box art and game info find themselves: summaries, release dates and more\n- Download art packs, including 3D boxes, or add your own covers in up to 4K\n- Cards, large covers, 3D boxes, grid or list, any size, with sorting, grouping and renaming\n\n[Serious Graphics]\n- A Metal renderer built for Apple GPUs, with Vulkan as an option\n- Graphic packs, resolution scaling and a brightness boost for dim scenes\n- Bring your desktop Cemu shader caches and skip the stutter\n\n[Speed]\n- Plays out of the box\n- Turn on JIT with StikDebug or LiveContainer for the full-speed recompiler. MuffinEMU offers to do it at launch\n\n[The GamePad, Done Right]\n- On-screen controls measured from a real Wii U GamePad, with skins, analog sticks and a layout editor\n- Controllers work right alongside it\n- One screen or both, iPhone portrait, or the TV picture on an external display\n\n[Online]\n- Pretendo Network with your own Wii U account files\n- Custom servers, including ones you host at home\n\n[Make It Yours]\n- Per-game settings, Basic and Advanced modes, and one-tap settings backup\n- 31 app icons with matching themes\n\nFree, open source and updated constantly. Wii U on iOS, the way it should be.\n\nOfficial Site: https://muffinemu.github.io/MuffinEMU/\nGuides: https://muffinemu.github.io/MuffinEMU/docs/\nSource code: https://github.com/MuffinEMU/Muffin-EMU\nReport a problem: https://github.com/MuffinEMU/Muffin-EMU/issues\n\nLegal\n\nMuffinEMU is not affiliated with Nintendo or Apple. Wii U is a trademark of Nintendo. No copyrighted games, keys or firmware are distributed here.",
+      "iconURL": "https://muffinemu.github.io/MuffinEMU/icon.png",
+      "tintColor": "#E5652E",
       "category": "games",
+      "screenshots": {
+        "ipad": [
+          {
+            "imageURL": "https://muffinemu.github.io/MuffinEMU/assets/screenshots/ipad/01-landscape-2.png",
+            "width": 2732,
+            "height": 2048
+          },
+          {
+            "imageURL": "https://muffinemu.github.io/MuffinEMU/assets/screenshots/ipad/02-landscape-3.png",
+            "width": 2732,
+            "height": 2048
+          },
+          {
+            "imageURL": "https://muffinemu.github.io/MuffinEMU/assets/screenshots/ipad/03-portrait-1.png",
+            "width": 2048,
+            "height": 2732
+          },
+          {
+            "imageURL": "https://muffinemu.github.io/MuffinEMU/assets/screenshots/ipad/mario-kart-8-classic-pad.jpg",
+            "width": 1600,
+            "height": 1199
+          },
+          {
+            "imageURL": "https://muffinemu.github.io/MuffinEMU/assets/screenshots/ipad/mario-kart-8-zone-pad.jpg",
+            "width": 1600,
+            "height": 1199
+          }
+        ]
+      },
       "screenshotURLs": [],
       "versions": [
         {
-          "version": "2026.10.1.0419",
-          "date": "2026-10-01T04:19:02Z",
-          "localizedDescription": "Experiment: BotW long-session JIT memory fix\nBranch: fix/jit-arena-release\nCommit: 12f632a\nBased on: main `5be5c84` (v6.5), plus 3 commit(s) on the branch\nPublished: 2026-10-01 04:19 UTC\n\n- Long play sessions no longer slow down when the recompiler runs out of room for new code.",
-          "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/experimental-fix-jit-arena-release-12f632a/MuffinEMU-fakesigned.ipa",
-          "size": 68962325,
+          "version": "2026.10.15.0045",
+          "date": "2026-10-15T00:47:01Z",
+          "localizedDescription": "Experiment: Vulkan: lighter shader building\nBranch: fix/vulkan-more\nCommit: d357869\nBased on: main `2a1db9c` (v10.1), plus 1 commit(s) on the branch\nPublished: 2026-10-15 00:47 UTC\n\n- Vulkan renderer: uses less memory while it builds shaders for a new scene, so busy scenes are less likely to close the app.",
+          "downloadURL": "https://github.com/MuffinEMU/Muffin-EMU/releases/download/experimental-fix-vulkan-more-d357869/MuffinEMU-fakesigned.ipa",
+          "size": 146035696,
           "minOSVersion": "15.0"
         },
         {
-          "version": "2026.9.30.2129",
-          "date": "2026-09-30T21:29:22Z",
-          "localizedDescription": "Experiment: Shader cache\nBranch: feature/metal-binary-archive\nCommit: d0265b1\nBased on: main\nPublished: 2026-09-30 21:29 UTC",
-          "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/auto-d0265b15c5152a0d7ede065ec77aad5954b68c99/MuffinEMU-fakesigned.ipa",
-          "size": 68347695,
+          "version": "2026.10.14.0319",
+          "date": "2026-10-14T03:20:39Z",
+          "localizedDescription": "Experiment: Vulkan page-fault fix\nBranch: fix/vulkan-pagefault-mitigations\nCommit: 41b8218\nBased on: main `d70f299` (v10.0), plus 1 commit(s) on the branch\nPublished: 2026-10-14 03:20 UTC\n\n- Vulkan: test mitigations for the GPU page fault",
+          "downloadURL": "https://github.com/MuffinEMU/Muffin-EMU/releases/download/experimental-fix-vulkan-pagefault-mitigations-41b8218/MuffinEMU-fakesigned.ipa",
+          "size": 146014023,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "2026.10.13.0417",
+          "date": "2026-10-13T04:19:09Z",
+          "localizedDescription": "Experiment: Frame rate always on screen\nBranch: ui/fps-always-on\nCommit: 55e7bff\nBased on: main `e4fd402` (v10.0), plus 1 commit(s) on the branch\nPublished: 2026-10-13 04:19 UTC\n\n- The frame rate stays on screen when the in-game top bar hides.",
+          "downloadURL": "https://github.com/MuffinEMU/Muffin-EMU/releases/download/experimental-ui-fps-always-on-55e7bff/MuffinEMU-fakesigned.ipa",
+          "size": 146016483,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "2026.10.13.0151",
+          "date": "2026-10-13T01:52:42Z",
+          "localizedDescription": "Experiment: Direct BC to ASTC\nBranch: perf/astc-direct\nCommit: a6d86e1\nBased on: main `d04b1c8` (v9.9), plus 2 commit(s) on the branch\nPublished: 2026-10-13 01:52 UTC\n\n- Most BC textures now convert many times faster on iPhones and iPads without BC texture support, which shortens the freeze when a game loads new textures.\n- Normal maps and textures with soft transparency also convert about 2-3 times faster on iPhones and iPads without BC texture support.",
+          "downloadURL": "https://github.com/MuffinEMU/Muffin-EMU/releases/download/experimental-perf-astc-direct-a6d86e1/MuffinEMU-fakesigned.ipa",
+          "size": 146012949,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "2026.10.13.0042",
+          "date": "2026-10-13T00:43:55Z",
+          "localizedDescription": "Experiment: Direct BC to ASTC\nBranch: perf/astc-direct\nCommit: 475020f\nBased on: main `d04b1c8` (v9.9), plus 1 commit(s) on the branch\nPublished: 2026-10-13 00:43 UTC\n\n- Most BC textures now convert many times faster on iPhones and iPads without BC texture support, which shortens the freeze when a game loads new textures.",
+          "downloadURL": "https://github.com/MuffinEMU/Muffin-EMU/releases/download/experimental-perf-astc-direct-475020f/MuffinEMU-fakesigned.ipa",
+          "size": 146013226,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "2026.10.10.1648",
+          "date": "2026-10-10T16:48:03Z",
+          "localizedDescription": "Experiment: 9.x preview 3\nBranch: release/v9.0\nCommit: 409b0c5\nBased on: main `06c495d` (v9.1), plus 14 commit(s) on the branch\nPublished: 2026-10-10 16:48 UTC\n\n- On iPads without mesh shaders, geometry-shader and rectangle draws are now emulated instead of skipped, so effects that were missing show up.\n- Make on-screen buttons easier to hit, and size each half separately\n- Settings has a new switch, Emulate missing effects, to turn the effect emulation off if a game misbehaves.",
+          "downloadURL": "https://github.com/MuffinEMU/Muffin-EMU/releases/download/experimental-release-v9-0-409b0c5/MuffinEMU-fakesigned.ipa",
+          "size": 84326218,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "2026.10.10.1616",
+          "date": "2026-10-10T16:16:29Z",
+          "localizedDescription": "Experiment: 9.0 preview 2\nBranch: release/v9.0\nCommit: 1237629\nBased on: main `d4cb896` (v8.8.1), plus 17 commit(s) on the branch\nPublished: 2026-10-10 16:16 UTC\n\n- New \"Two cores (Experimental)\" CPU option: faster than one core, with less heat and fewer performance cores than three.\n- Gate CPU core modes by device capability\n- On iPads without mesh shaders, geometry-shader and rectangle draws are now emulated instead of skipped, so effects that were missing show up.\n- Make on-screen buttons easier to hit, and size each half separately\n- Settings has a new switch, Emulate missing effects, to turn the effect emulation off if a game misbehaves.",
+          "downloadURL": "https://github.com/MuffinEMU/Muffin-EMU/releases/download/experimental-release-v9-0-1237629/MuffinEMU-fakesigned.ipa",
+          "size": 84322560,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "2026.10.10.1531",
+          "date": "2026-10-10T15:31:44Z",
+          "localizedDescription": "Experiment: 9.0 preview\nBranch: release/v9.0\nCommit: bed1f7d\nBased on: main `9535938` (v8.9), plus 8 commit(s) on the branch\nPublished: 2026-10-10 15:31 UTC\n\n- On iPad in portrait, the on-screen controls can now move further down the screen.\n- On iPads without mesh shaders, geometry-shader and rectangle draws are now emulated instead of skipped, so effects that were missing show up.\n- Let the shoulder buttons move the full available height\n- Make on-screen buttons easier to hit, and size each half separately",
+          "downloadURL": "https://github.com/MuffinEMU/Muffin-EMU/releases/download/experimental-release-v9-0-bed1f7d/MuffinEMU-fakesigned.ipa",
+          "size": 84309461,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "2026.10.7.0138",
+          "date": "2026-10-07T01:38:10Z",
+          "localizedDescription": "Experiment: Store screenshot capture\nBranch: feature/store-screenshots\nCommit: f9fcd3d\nBased on: main `446478d` (v7.9.1), plus 1 commit(s) on the branch\nPublished: 2026-10-07 01:38 UTC",
+          "downloadURL": "https://github.com/MuffinEMU/Muffin-EMU/releases/download/experimental-feature-store-screenshots-f9fcd3d/MuffinEMU-fakesigned.ipa",
+          "size": 70201630,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "2026.10.6.2020",
+          "date": "2026-10-06T20:20:35Z",
+          "localizedDescription": "Experiment: Save states (same-session loads)\nBranch: feature/save-states-stage0\nCommit: 1a9129e\nBased on: main `492ce96` (v7.2), plus 3 commit(s) on the branch\nPublished: 2026-10-06 20:20 UTC\n\n- Loading a save state now tells you exactly why it was refused, with an error code, and only says \"loaded\" once the game is drawing again.\n- Loading a save state brings the graphics back in step with the restored game, and no longer gives up when the game is waiting on the screen to refresh.\n- Loading a save state works after the game has started or stopped background tasks, and timers and sleeping threads carry on from where they were.",
+          "downloadURL": "https://github.com/MuffinEMU/Muffin-EMU/releases/download/experimental-feature-save-states-stage0-1a9129e/MuffinEMU-fakesigned.ipa",
+          "size": 69169607,
           "minOSVersion": "15.0"
         }
       ],
       "appPermissions": {
-        "entitlements": [],
-        "privacy": {}
+        "entitlements": [
+          "com.apple.developer.kernel.increased-memory-limit",
+          "com.apple.security.cs.allow-jit",
+          "com.apple.security.cs.disable-executable-page-protection",
+          "dynamic-codesigning",
+          "get-task-allow"
+        ],
+        "privacy": {
+          "NSMicrophoneUsageDescription": "MuffinEMU uses the microphone only when a Wii U game asks for GamePad microphone input.",
+          "NSLocalNetworkUsageDescription": "MuffinEMU connects to game servers on your local network when you use a custom server hosted at home."
+        }
       }
     }
   ],
   "news": [
     {
-      "title": "Experimental: BotW long-session JIT memory fix",
-      "identifier": "muffinemu-experimental-12f632a",
-      "caption": "fix/jit-arena-release @ 12f632a. An unfinished test build; it replaces an installed MuffinEMU.",
-      "date": "2026-10-01",
+      "title": "Experimental: Vulkan: lighter shader building",
+      "identifier": "muffinemu-experimental-d357869",
+      "caption": "fix/vulkan-more @ d357869. An unfinished test build; it replaces an installed MuffinEMU.",
+      "date": "2026-10-15",
       "tintColor": "E5652E",
-      "url": "https://github.com/kiddreads/MuffinEMU/releases/tag/experimental-fix-jit-arena-release-12f632a",
-      "appID": "com.kiddreads.MuffinEMU",
+      "url": "https://github.com/MuffinEMU/Muffin-EMU/releases/tag/experimental-fix-vulkan-more-d357869",
+      "appID": "com.void.muffinemu",
       "notify": false
     },
     {
-      "title": "Experimental: Shader cache",
-      "identifier": "muffinemu-experimental-d0265b1",
-      "caption": "feature/metal-binary-archive @ d0265b1. An unfinished test build; it replaces an installed MuffinEMU.",
-      "date": "2026-09-30",
+      "title": "Experimental: Vulkan page-fault fix",
+      "identifier": "muffinemu-experimental-41b8218",
+      "caption": "fix/vulkan-pagefault-mitigations @ 41b8218. An unfinished test build; it replaces an installed MuffinEMU.",
+      "date": "2026-10-14",
       "tintColor": "E5652E",
-      "url": "https://github.com/kiddreads/MuffinEMU/releases/tag/auto-d0265b15c5152a0d7ede065ec77aad5954b68c99",
-      "appID": "com.kiddreads.MuffinEMU",
+      "url": "https://github.com/MuffinEMU/Muffin-EMU/releases/tag/experimental-fix-vulkan-pagefault-mitigations-41b8218",
+      "appID": "com.void.muffinemu",
+      "notify": false
+    },
+    {
+      "title": "Experimental: Frame rate always on screen",
+      "identifier": "muffinemu-experimental-55e7bff",
+      "caption": "ui/fps-always-on @ 55e7bff. An unfinished test build; it replaces an installed MuffinEMU.",
+      "date": "2026-10-13",
+      "tintColor": "E5652E",
+      "url": "https://github.com/MuffinEMU/Muffin-EMU/releases/tag/experimental-ui-fps-always-on-55e7bff",
+      "appID": "com.void.muffinemu",
+      "notify": false
+    },
+    {
+      "title": "Experimental: Direct BC to ASTC",
+      "identifier": "muffinemu-experimental-a6d86e1",
+      "caption": "perf/astc-direct @ a6d86e1. An unfinished test build; it replaces an installed MuffinEMU.",
+      "date": "2026-10-13",
+      "tintColor": "E5652E",
+      "url": "https://github.com/MuffinEMU/Muffin-EMU/releases/tag/experimental-perf-astc-direct-a6d86e1",
+      "appID": "com.void.muffinemu",
+      "notify": false
+    },
+    {
+      "title": "Experimental: Direct BC to ASTC",
+      "identifier": "muffinemu-experimental-475020f",
+      "caption": "perf/astc-direct @ 475020f. An unfinished test build; it replaces an installed MuffinEMU.",
+      "date": "2026-10-13",
+      "tintColor": "E5652E",
+      "url": "https://github.com/MuffinEMU/Muffin-EMU/releases/tag/experimental-perf-astc-direct-475020f",
+      "appID": "com.void.muffinemu",
+      "notify": false
+    },
+    {
+      "title": "Experimental: 9.x preview 3",
+      "identifier": "muffinemu-experimental-409b0c5",
+      "caption": "release/v9.0 @ 409b0c5. An unfinished test build; it replaces an installed MuffinEMU.",
+      "date": "2026-10-10",
+      "tintColor": "E5652E",
+      "url": "https://github.com/MuffinEMU/Muffin-EMU/releases/tag/experimental-release-v9-0-409b0c5",
+      "appID": "com.void.muffinemu",
+      "notify": false
+    },
+    {
+      "title": "Experimental: 9.0 preview 2",
+      "identifier": "muffinemu-experimental-1237629",
+      "caption": "release/v9.0 @ 1237629. An unfinished test build; it replaces an installed MuffinEMU.",
+      "date": "2026-10-10",
+      "tintColor": "E5652E",
+      "url": "https://github.com/MuffinEMU/Muffin-EMU/releases/tag/experimental-release-v9-0-1237629",
+      "appID": "com.void.muffinemu",
+      "notify": false
+    },
+    {
+      "title": "Experimental: 9.0 preview",
+      "identifier": "muffinemu-experimental-bed1f7d",
+      "caption": "release/v9.0 @ bed1f7d. An unfinished test build; it replaces an installed MuffinEMU.",
+      "date": "2026-10-10",
+      "tintColor": "E5652E",
+      "url": "https://github.com/MuffinEMU/Muffin-EMU/releases/tag/experimental-release-v9-0-bed1f7d",
+      "appID": "com.void.muffinemu",
+      "notify": false
+    },
+    {
+      "title": "Experimental: Store screenshot capture",
+      "identifier": "muffinemu-experimental-f9fcd3d",
+      "caption": "feature/store-screenshots @ f9fcd3d. An unfinished test build; it replaces an installed MuffinEMU.",
+      "date": "2026-10-07",
+      "tintColor": "E5652E",
+      "url": "https://github.com/MuffinEMU/Muffin-EMU/releases/tag/experimental-feature-store-screenshots-f9fcd3d",
+      "appID": "com.void.muffinemu",
+      "notify": false
+    },
+    {
+      "title": "Experimental: Save states (same-session loads)",
+      "identifier": "muffinemu-experimental-1a9129e",
+      "caption": "feature/save-states-stage0 @ 1a9129e. An unfinished test build; it replaces an installed MuffinEMU.",
+      "date": "2026-10-06",
+      "tintColor": "E5652E",
+      "url": "https://github.com/MuffinEMU/Muffin-EMU/releases/tag/experimental-feature-save-states-stage0-1a9129e",
+      "appID": "com.void.muffinemu",
       "notify": false
     }
-  ]
+  ],
+  "sourceURL": "https://muffinemu.github.io/MuffinEMU/experimental-trollstore.json"
 }

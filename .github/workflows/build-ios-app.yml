@@ -73,9 +73,9 @@ on:
   workflow_dispatch:
     inputs:
       channel:
-        description: 'Off main only: "experimental" publishes an Experimental pre-release; anything else leaves run artifacts only'
+        description: 'Off main only: "experimental" publishes an Experimental pre-release; "release" publishes the next numbered release from this branch (it must contain the latest release); anything else leaves run artifacts only'
         type: choice
-        options: [ artifacts-only, experimental ]
+        options: [ artifacts-only, experimental, release ]
         default: artifacts-only
       experiment_name:
         description: 'Experimental builds: a short name for the release title (defaults to the branch name)'
@@ -83,6 +83,10 @@ on:
         default: ''
       fresh_core:
         description: 'Ignore the cached core and any prebuilt IPA: compile everything fresh and, on main, promote the result as the new current core'
+        type: boolean
+        default: false
+      point_release:
+        description: 'On main only: publish a point release (7.7 -> 7.7.1, 7.7.1 -> 7.7.2) instead of the next X.Y. Does not move the next normal release: after 7.7.1 the next normal one is still 7.8'
         type: boolean
         default: false
   push:
@@ -409,6 +413,11 @@ jobs:
           swift run --package-path src/ios/Packages/MuffinTouchLab \
             --scratch-path "$RUNNER_TEMP/touchlab-build" touchlab-check
 
+      - name: LoadKit validation and storage checks
+        run: |
+          swift run --package-path src/ios/Packages/MuffinLoadKit \
+            --scratch-path "$RUNNER_TEMP/loadkit-build" loadkit-check
+
       - name: Identify the pinned vcpkg
         if: steps.go.outputs.reuse != 'true' && steps.core.outputs.build == 'true'
         id: vcpkg
@@ -454,10 +463,10 @@ jobs:
         run: ./ci/core-cache-key.sh --stamp build-ios/out
 
       - name: Upload the fresh core (so main can promote it without recompiling)
-        # A pull request never changes what is current. When it merges, the run that publishes the
-        # release adopts this exact core - after re-checking it against main's own tree - instead
-        # of compiling it a second time.
-        if: steps.go.outputs.reuse != 'true' && steps.core.outputs.build == 'true' && github.event_name == 'pull_request'
+        # A pull request or a compile check on any other branch never changes what is current. When
+        # that tree reaches main, the run that publishes the release adopts this exact core - after
+        # re-checking it against main's own tree - instead of compiling it a second time.
+        if: steps.go.outputs.reuse != 'true' && steps.core.outputs.build == 'true' && github.ref != 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
           name: cemu-core-${{ steps.fp.outputs.fingerprint }}
@@ -465,6 +474,34 @@ jobs:
           retention-days: 14
 
       # ---- the Swift app ----
+      # The Pro app icons' real art lives in a private repo; this public one carries a locked
+      # placeholder for each, so the art exists only in the IPAs we publish. A numbered release must
+      # have it. Any other build without the key (a fork's pull request) keeps the placeholders.
+      - name: Bring in the Pro icon art
+        if: steps.go.outputs.reuse != 'true'
+        env:
+          PRO_ART_KEY: ${{ secrets.PRO_ART_DEPLOY_KEY }}
+          MUFFIN_CHANNEL: ${{ steps.channel.outputs.channel }}
+        run: |
+          set -eo pipefail
+          if [ -z "$PRO_ART_KEY" ]; then
+            if [ "$GITHUB_REF_NAME" = "main" ] || [ "$MUFFIN_CHANNEL" = "release" ]; then
+              echo "::error::PRO_ART_DEPLOY_KEY is missing; a release would ship locked Pro icons"
+              exit 1
+            fi
+            echo "::notice::No Pro art key; the Pro icons stay as locked placeholders"
+            exit 0
+          fi
+          keyfile="$RUNNER_TEMP/proart_key"
+          printf '%s\n' "$PRO_ART_KEY" > "$keyfile"
+          chmod 600 "$keyfile"
+          GIT_SSH_COMMAND="ssh -i $keyfile -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" \
+            git clone -q --depth 1 git@github.com:MuffinEMU/MuffinEMU-ProArt.git "$RUNNER_TEMP/proart"
+          rm -f "$keyfile"
+          cp -R "$RUNNER_TEMP/proart/Assets.xcassets/." src/ios/Resources/Assets.xcassets/
+          rm -rf "$RUNNER_TEMP/proart"
+          echo "Pro icon art in place: $(ls src/ios/Resources/Assets.xcassets | grep -c '^AltIcon-pro-.*appiconset$') icon(s)"
+
       - name: xcodegen generate
         if: steps.go.outputs.reuse != 'true'
         run: |
@@ -606,6 +643,12 @@ jobs:
           key: muffin-spm-v1-${{ hashFiles('src/ios/project.yml') }}
 
       - name: Choose the version
+        env:
+          MUFFIN_CHANNEL: ${{ steps.channel.outputs.channel }}
+          MUFFIN_POINT: ${{ github.event_name == 'workflow_dispatch' && inputs.point_release || 'false' }}
+        # A dispatch of main with point_release=true is a point release instead: the newest tag
+        # (vX.Y or vX.Y.Z) plus one patch step, 7.7 -> 7.7.1 -> 7.7.2. A normal build counts vX.Y
+        # tags only, so a point release never changes which X.Y comes next.
         # Every build of main is the next release: the highest vX.Y tag plus 0.1, with .9
         # rolling over to the next whole number (1.9 -> 2.0). With no numbered tag yet the
         # first release is ci/VERSION. Other branches build unnumbered test builds. A build
@@ -614,20 +657,37 @@ jobs:
           set -eo pipefail
           git fetch --tags --force -q origin
           PUBLISH=true
-          if [ "$GITHUB_REF_NAME" = "main" ]; then
+          # A branch dispatched with channel=release is numbered exactly like main.
+          if [ "$GITHUB_REF_NAME" = "main" ] || [ "$MUFFIN_CHANNEL" = "release" ]; then
             LAST=$(git tag -l 'v*' | sed -nE 's/^v([0-9]+)\.([0-9])$/\1 \2/p' | sort -n -k1,1 -k2,2 | tail -n1)
+            # The newest tag of any shape, vX.Y or vX.Y.Z, as "MAJ MIN PATCH".
+            NEWEST=$(git tag -l 'v*' | sed -nE 's/^v([0-9]+)\.([0-9])(\.([0-9]+))?$/\1 \2 \4/p' | awk '{print $1, $2, ($3==""?0:$3)}' | sort -n -k1,1 -k2,2 -k3,3 | tail -n1)
+            if [ "$MUFFIN_POINT" = "true" ] && [ "$GITHUB_REF_NAME" != "main" ]; then
+              echo "::error::point_release only works on main"
+              exit 1
+            fi
             if [ -z "$LAST" ]; then
+              if [ "$MUFFIN_POINT" = "true" ]; then echo "::error::no numbered release to patch yet"; exit 1; fi
               VER=$(./ci/version.sh)
             else
-              MAJ=${LAST% *}; MIN=${LAST#* }
+              set -- $NEWEST
               # The release we are building on top of - the range the notes describe.
-              PREV="v$MAJ.$MIN"
-              MIN=$((MIN + 1))
-              if [ "$MIN" -ge 10 ]; then MAJ=$((MAJ + 1)); MIN=0; fi
-              VER="$MAJ.$MIN"
+              if [ "$3" = "0" ]; then PREV="v$1.$2"; else PREV="v$1.$2.$3"; fi
+              if [ "$MUFFIN_POINT" = "true" ]; then
+                VER="$1.$2.$(($3 + 1))"
+              else
+                MAJ=${LAST% *}; MIN=${LAST#* }
+                MIN=$((MIN + 1))
+                if [ "$MIN" -ge 10 ]; then MAJ=$((MAJ + 1)); MIN=0; fi
+                VER="$MAJ.$MIN"
+              fi
               # A numbered release must strictly contain the latest one. A re-run of an old build of
               # main would otherwise ship old code as the newest version.
               if ! ./ci/check-stable.sh "$PREV"; then
+                if [ "$MUFFIN_CHANNEL" = "release" ]; then
+                  echo "::error::$GITHUB_REF_NAME does not contain $PREV. Merge main into it before releasing from it."
+                  exit 1
+                fi
                 PUBLISH=false
                 # Not a release, so it must not claim the next number: this IPA can still be picked up
                 # by the rolling build job (it decides that on its own), and an app saying "6.5" would
@@ -643,6 +703,13 @@ jobs:
             fi
             LABEL="$VER"; RELEASE=true
             [ "$PUBLISH" = true ] || LABEL="$VER+$(echo "$GITHUB_SHA" | cut -c1-7)"
+          elif [ "$MUFFIN_CHANNEL" = "experimental" ]; then
+            # The Experimental source lists each build as YYYY.M.D.HHMM, and SideStore refuses an install
+            # whose app version differs from the listing. Stamp the same form here; publish-experimental.sh
+            # records it in the release notes and the source generator lists exactly that string.
+            VER=$(date -u '+%Y %m %d %H%M' | awk '{ printf "%d.%d.%d.%s", $1, $2, $3, $4 }')
+            TAG="auto-${GITHUB_SHA}"
+            LABEL=$(echo "$GITHUB_SHA" | cut -c1-7); RELEASE=false
           else
             VER=$(./ci/version.sh)
             TAG="auto-${GITHUB_SHA}"
@@ -838,7 +905,7 @@ jobs:
         # only reads published releases) and looking from the outside like the build
         # simply produced nothing. A retry re-attaches the missing files to the same
         # draft and publishes it.
-        if: steps.channel.outputs.channel == 'main' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && env.MUFFIN_PUBLISH != 'false'
+        if: ((steps.channel.outputs.channel == 'main' && github.ref == 'refs/heads/main') || (steps.channel.outputs.channel == 'release' && github.event_name == 'workflow_dispatch')) && github.event_name != 'pull_request' && env.MUFFIN_PUBLISH != 'false'
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         id: publish
         continue-on-error: true
@@ -868,7 +935,7 @@ jobs:
         # assets is not installable and must not read as a green build. That also means
         # no separate guard step is needed - and a guard checking failure() would never
         # have fired anyway, because continue-on-error above keeps the job green.
-        if: steps.channel.outputs.channel == 'main' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && env.MUFFIN_PUBLISH != 'false' && steps.publish.outcome == 'failure'
+        if: ((steps.channel.outputs.channel == 'main' && github.ref == 'refs/heads/main') || (steps.channel.outputs.channel == 'release' && github.event_name == 'workflow_dispatch')) && github.event_name != 'pull_request' && env.MUFFIN_PUBLISH != 'false' && steps.publish.outcome == 'failure'
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ env.MUFFIN_TAG }}

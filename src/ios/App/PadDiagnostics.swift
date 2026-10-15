@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import SwiftUI
 import Combine
 
@@ -134,7 +139,7 @@ struct PadDiagnosticsOverlay: View {
             row("paused", isPaused ? "YES" : "no", warn: isPaused)
 
             if diag.activePad == .preview {
-                Text("The experimental new pad is active. If controls don't respond, turn it off in Settings.")
+                Text("The experimental new pad is active. If controls don't respond, turn off Use the new pad system in Settings > On-screen Controls > New pad system (preview).")
                     .font(.system(size: 10, weight: .semibold, design: .rounded))
                     .foregroundColor(.yellow)
                     .fixedSize(horizontal: false, vertical: true)

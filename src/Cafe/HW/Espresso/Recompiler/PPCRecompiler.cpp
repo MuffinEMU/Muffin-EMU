@@ -32,6 +32,7 @@
 #include <dlfcn.h>
 #include <stdlib.h>
 #include <sys/sysctl.h>
+#include <sys/proc.h>
 #endif
 #endif
 
@@ -160,11 +161,34 @@ static bool PPCRecompiler_shouldUseDualMapByDefault()
 #endif
 }
 
+// True while a debugger is attached to this process right now (P_TRACED). CS_DEBUGGED is not
+// enough: it stays set after a JIT enabler detaches, and on a TXM device the brk #0xf00d calls below
+// only return when an attached debugger answers them; with none, they are a SIGTRAP crash.
+static bool PPCRecompiler_isDebuggerAttached()
+{
+    struct kinfo_proc info = {};
+    size_t size = sizeof(info);
+    int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid() };
+    if (sysctl(mib, 4, &info, &size, nullptr, 0) != 0)
+        return false;
+    return (info.kp_proc.p_flag & P_TRACED) != 0;
+}
+
 bool PPCRecompiler_readTXMEnvVar()
 {
     if (!s_dualMapJITEnabled) { return false; }
+    if (PPCRecompiler_readBoolEnvVar("HAS_TXM") != 1) { return false; }
 
-    return PPCRecompiler_readBoolEnvVar("HAS_TXM") == 1;
+    // Without a debugger the TXM mapping calls cannot succeed, so leave them out; the arena then
+    // fails to allocate and PPCRecompiler_Init26 falls back to the interpreter instead of crashing.
+    if (!PPCRecompiler_isDebuggerAttached())
+    {
+        static std::atomic<bool> s_logged{false};
+        if (!s_logged.exchange(true))
+            cemuLog_log(LogType::Force, "Recompiler: TXM device with no debugger attached, so no JIT mapping; using the interpreter");
+        return false;
+    }
+    return true;
 }
 
 static void PPCRecompiler_finishJitMappingSession()
@@ -889,6 +913,8 @@ bool PPCRecompiler_ApplyIMLPasses(ppcImlGenContext_t& ppcImlGenContext)
 
 	IMLOptimizer_StandardOptimizationPass(ppcImlGenContext);
 
+	IMLOptimizer_OptimizeSinglePrecisionStores(ppcImlGenContext);
+
 	PPCRecompiler_NativeRegisterAllocatorPass(ppcImlGenContext);
 
 	return true;
@@ -933,6 +959,38 @@ bool PPCRecompiler_makeRecompiledFunctionActive(uint32 initialEntryPoint, PPCFun
     }
     
     
+    // register ranges first: this is the only step that allocates, and nothing is published until it has succeeded.
+    // On bad_alloc the ranges stored so far are removed again, the jump table is untouched, the lock is released and the
+    // function keeps running in the interpreter (its entry stays marked visited so it is not queued again).
+    size_t registeredRanges = 0;
+    try
+    {
+        for (auto& r : ppcRecFunc->list_ranges)
+        {
+            r.storedRange = rangeStore_ppcRanges.storeRange(ppcRecFunc, r.ppcAddress, r.ppcAddress + r.ppcSize);
+            registeredRanges++;
+        }
+    }
+    catch (const std::bad_alloc&)
+    {
+        size_t undone = 0;
+        for (auto& r : ppcRecFunc->list_ranges)
+        {
+            if (undone++ >= registeredRanges)
+                break;
+            rangeStore_ppcRanges.deleteRange(r.storedRange);
+            r.storedRange = nullptr;
+        }
+        for (uint32 v = range.startAddress; v < (range.startAddress + range.length); v += 4)
+        {
+            if (v != initialEntryPoint && ppcRecompilerInstanceData->ppcRecompilerDirectJumpTable[v / 4] == PPCRecompiler_leaveRecompilerCode_visited)
+                ppcRecompilerInstanceData->ppcRecompilerDirectJumpTable[v / 4] = PPCRecompiler_leaveRecompilerCode_unvisited;
+        }
+        PPCRecompilerState.recompilerSpinlock.unlock();
+        delete ppcRecFunc;
+        throw;
+    }
+
     // update jump table
     for (auto& itr : entryPoints)
     {
@@ -951,16 +1009,11 @@ bool PPCRecompiler_makeRecompiledFunctionActive(uint32 initialEntryPoint, PPCFun
             ppcRecompilerInstanceData->ppcRecompilerDirectJumpTable[v / 4] = PPCRecompiler_leaveRecompilerCode_unvisited;
     }
     
-    // register ranges
-    for (auto& r : ppcRecFunc->list_ranges)
-    {
-        r.storedRange = rangeStore_ppcRanges.storeRange(ppcRecFunc, r.ppcAddress, r.ppcAddress + r.ppcSize);
-    }
     PPCRecompilerState.recompilerSpinlock.unlock();
     return true;
 }
 
-void PPCRecompiler_recompileAtAddress(uint32 address)
+static void PPCRecompiler_recompileAtAddressImpl(uint32 address)
 {
 	cemu_assert_debug(ppcRecompilerInstanceData->ppcRecompilerDirectJumpTable[address / 4] == PPCRecompiler_leaveRecompilerCode_visited);
 
@@ -987,17 +1040,62 @@ void PPCRecompiler_recompileAtAddress(uint32 address)
 
 	std::vector<std::pair<MPTR, uint32>> functionEntryPoints;
 	const uint64 compileStartNs = PerfTelemetry::NowNs();
-	auto func = PPCRecompiler_recompileFunction(range, entryAddresses, functionEntryPoints, funcBoundaries);
+	PPCRecFunction_t* func = nullptr;
+	try
+	{
+		func = PPCRecompiler_recompileFunction(range, entryAddresses, functionEntryPoints, funcBoundaries);
+	}
+	catch (const std::bad_alloc&)
+	{
+		// Out of memory while generating or allocating registers (the crash log showed several workers failing in the same moment).
+		// Nothing has been published for this function yet, so leave it as it is: the entry stays marked visited and the
+		// interpreter keeps running it. An exception escaping a worker thread is std::terminate and ends the app.
+		static std::atomic<uint32> s_outOfMemoryCount{0};
+		if (s_outOfMemoryCount.fetch_add(1) < 3)
+			cemuLog_log(LogType::Force, "Recompiler: out of memory compiling the function at {:08x}; it runs in the interpreter", address);
+		return;
+	}
 
 	if (!func)
 	{
 		return; // recompilation failed
 	}
-	bool r = PPCRecompiler_makeRecompiledFunctionActive(address, range, func, functionEntryPoints);
+	try
+	{
+		PPCRecompiler_makeRecompiledFunctionActive(address, range, func, functionEntryPoints);
+	}
+	catch (const std::bad_alloc&)
+	{
+		// makeRecompiledFunctionActive has already rolled back (ranges unregistered, jump table untouched, lock released, function freed)
+		static std::atomic<uint32> s_activateOomCount{0};
+		if (s_activateOomCount.fetch_add(1) < 3)
+			cemuLog_log(LogType::Force, "Recompiler: out of memory activating the function at {:08x}; it runs in the interpreter", address);
+		return;
+	}
 	PerfTelemetry::Get().jitBlocks.fetch_add(1, std::memory_order_relaxed);
 	PerfTelemetry::Get().jitCompileNs.fetch_add(PerfTelemetry::NowNs() - compileStartNs, std::memory_order_relaxed);
 }
 
+
+void PPCRecompiler_recompileAtAddress(uint32 address)
+{
+	// Runs on worker threads: no exception may escape (std::terminate). Allocations outside the compile step (boundary tracker,
+	// entry set, entry point vectors) are covered here; the function simply stays in the interpreter.
+	try
+	{
+		PPCRecompiler_recompileAtAddressImpl(address);
+	}
+	catch (const std::bad_alloc&)
+	{
+		static std::atomic<uint32> s_outerOomCount{0};
+		if (s_outerOomCount.fetch_add(1) < 3)
+			cemuLog_log(LogType::Force, "Recompiler: out of memory preparing the function at {:08x}; it runs in the interpreter", address);
+	}
+	catch (const std::exception& e)
+	{
+		cemuLog_log(LogType::Force, "Recompiler: exception while compiling the function at {:08x} ({}); it runs in the interpreter", address, e.what());
+	}
+}
 
 /*
 void PPCRecompiler_thread()
@@ -1047,6 +1145,17 @@ constexpr uint32 PPCRecompiler_GetNumAddressSpaceBlocks()
 }
 
 std::bitset<PPCRecompiler_GetNumAddressSpaceBlocks()> ppcRecompiler_reservedBlockMask;
+
+static bool PPCRecompiler_isLookupTableBlockReserved(uint32 address)
+{
+	uint32 blockIndex = address / PPC_REC_ALLOC_BLOCK_SIZE;
+	return blockIndex < ppcRecompiler_reservedBlockMask.size() && ppcRecompiler_reservedBlockMask[blockIndex];
+}
+
+static uint32 PPCRecompiler_lookupTableBlockSize()
+{
+	return PPC_REC_ALLOC_BLOCK_SIZE;
+}
 
 void PPCRecompiler_reserveLookupTableBlock(uint32 offset)
 {
@@ -1154,6 +1263,10 @@ void PPCRecompiler_deleteFunction(PPCRecFunction_t* func)
     }
 }
 
+// Whether the lookup-table block holding this address has been committed (defined below).
+static bool PPCRecompiler_isLookupTableBlockReserved(uint32 address);
+static uint32 PPCRecompiler_lookupTableBlockSize();
+
 namespace
 {
 void PPCRecompiler_invalidateRangeInternal(uint32 startAddr, uint32 endAddr)
@@ -1170,9 +1283,21 @@ void PPCRecompiler_invalidateRangeInternal(uint32 startAddr, uint32 endAddr)
 	uint32 rEnd;
 	PPCRecFunction_t* rFunc;
 
-	// mark range as unvisited
-	for (uint64 currentAddr = (uint64)startAddr&~3; currentAddr < (uint64)(endAddr&~3); currentAddr += 4)
-		ppcRecompilerInstanceData->ppcRecompilerDirectJumpTable[currentAddr / 4] = PPCRecompiler_leaveRecompilerCode_unvisited;
+	// mark range as unvisited - only in lookup-table blocks that have been committed. The table is reserved
+	// for the whole code area but committed block by block as code is found; writing into an uncommitted
+	// block faults (a save-state load invalidates the entire code area).
+	const uint64 blockSize = PPCRecompiler_lookupTableBlockSize();
+	const uint64 rangeEnd = (uint64)(endAddr & ~3);
+	for (uint64 blockStart = (uint64)startAddr & ~3; blockStart < rangeEnd; )
+	{
+		uint64 blockEnd = std::min<uint64>((blockStart / blockSize + 1) * blockSize, rangeEnd);
+		if (PPCRecompiler_isLookupTableBlockReserved((uint32)blockStart))
+		{
+			for (uint64 currentAddr = blockStart; currentAddr < blockEnd; currentAddr += 4)
+				ppcRecompilerInstanceData->ppcRecompilerDirectJumpTable[currentAddr / 4] = PPCRecompiler_leaveRecompilerCode_unvisited;
+		}
+		blockStart = blockEnd;
+	}
 
 	// add entry to invalidation queue
 	PPCRecompilerState.invalidationRanges.emplace_back(startAddr, endAddr-startAddr);
@@ -1283,6 +1408,20 @@ bool PPCRecompiler_Init26() {
     
     if (!s_dualMapJITEnabled)
         return true;
+
+#if defined(__APPLE__) && defined(__aarch64__)
+    // On a TXM device the arena can only be mapped through a debugger, whatever the CPU mode says.
+    // With none attached now (a JIT enabler that never attached, or one that already detached),
+    // go to the interpreter here instead of reaching the brk in BreakGetJITMapping.
+    if (PPCRecompiler_readBoolEnvVar("HAS_TXM") == 1 && !PPCRecompiler_isDebuggerAttached())
+    {
+        cemuLog_log(LogType::Force, "Recompiler: TXM device and no debugger attached, so JIT can't map memory; using the interpreter");
+        s_dualMapJITEnabled = false;
+        ppcRecompilerEnabled = false;
+        PPCCore_InitializePointer(ppcRecompilerEnabled);
+        return false;
+    }
+#endif
     
     if (s_jitArena.region.rxAlias)
         return true;
@@ -1397,7 +1536,7 @@ void PPCRecompiler_init()
 {
     s_recompilerEnableCount = 0;
     // PPCRecompiler_notifyWorkers();
-    if (ActiveSettings::GetCPUMode() == CPUMode::SinglecoreInterpreter || ActiveSettings::GetCPUMode() == CPUMode::MulticoreInterpreter)
+    if (ActiveSettings::GetCPUMode() == CPUMode::SinglecoreInterpreter || ActiveSettings::GetCPUMode() == CPUMode::MulticoreInterpreter || ActiveSettings::GetCPUMode() == CPUMode::TwocoreInterpreter)
     {
         ppcRecompilerEnabled = false;
         PPCCore_InitializePointer(ppcRecompilerEnabled);

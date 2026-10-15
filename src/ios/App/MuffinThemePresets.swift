@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import Foundation
 
 // Palettes derived from each icon's artwork; Autism Muffin is hand-tuned. Bakery is the
@@ -432,6 +437,42 @@ enum MuffinThemePresets {
         shadowLight: "#28353A", shadowDark: "#000000"
     )
 
+    static let proRoyalVelvet = MuffinThemeDefinition(
+        id: "pro-royal-velvet", name: "Royal Velvet", iconId: "pro-royal-velvet",
+        backgroundTopLight: "#C2304E", backgroundTopDark: "#6E0F24",
+        backgroundBottomLight: "#7A0F2A", backgroundBottomDark: "#2A0610",
+        muffinTopLightLight: "#D02A45", muffinTopLightDark: "#D02A45",
+        muffinTopDarkLight: "#7A0C22", muffinTopDarkDark: "#A3172F",
+        creamLight: "#FFF9F2", creamDark: "#24090F",
+        wrapperLight: "#F6E3C4", wrapperDark: "#3D1A14",
+        blueberryNavyLight: "#B8862B", blueberryNavyDark: "#F2C658",
+        pixelBlueLight: "#C8133D", pixelBlueDark: "#FF6B86",
+        blushPinkLight: "#E7899A", blushPinkDark: "#F2A9B6",
+        brownDarkestLight: "#2A0610", brownDarkestDark: "#FFF5F0",
+        brownDarkLight: "#5A1424", brownDarkDark: "#F6DDE0",
+        brownMidLight: "#8A3A4A", brownMidDark: "#E2B4BC",
+        sparkleCreamLight: "#FFE9B8", sparkleCreamDark: "#FFE9B8",
+        shadowLight: "#3A0010", shadowDark: "#000000"
+    )
+
+    static let proAurora = MuffinThemeDefinition(
+        id: "pro-aurora", name: "Aurora", iconId: "pro-aurora",
+        backgroundTopLight: "#9EF0DA", backgroundTopDark: "#0C2A5C",
+        backgroundBottomLight: "#7F86F2", backgroundBottomDark: "#050A24",
+        muffinTopLightLight: "#7DF9D6", muffinTopLightDark: "#7DF9D6",
+        muffinTopDarkLight: "#6F7BE0", muffinTopDarkDark: "#8A8CF0",
+        creamLight: "#F7FBFF", creamDark: "#0D1430",
+        wrapperLight: "#E4EDFF", wrapperDark: "#1C2A50",
+        blueberryNavyLight: "#3B4FC4", blueberryNavyDark: "#8FA2FF",
+        pixelBlueLight: "#12B48A", pixelBlueDark: "#4DFFB8",
+        blushPinkLight: "#A974FF", blushPinkDark: "#C9A6FF",
+        brownDarkestLight: "#0C1230", brownDarkestDark: "#F4F8FF",
+        brownDarkLight: "#26305E", brownDarkDark: "#DCE6FF",
+        brownMidLight: "#56628F", brownMidDark: "#AEBBE6",
+        sparkleCreamLight: "#FFFFFF", sparkleCreamDark: "#FFFFFF",
+        shadowLight: "#0A1640", shadowDark: "#000000"
+    )
+
     static let progressPride = MuffinThemeDefinition(
         id: "progress-pride", name: "Progress Pride", iconId: "progress-pride",
         backgroundTopLight: "#C4BBC0", backgroundTopDark: "#5C5156",
@@ -576,7 +617,151 @@ enum MuffinThemePresets {
         shadowLight: "#16313C", shadowDark: "#000000"
     )
 
+    static let cherryBlossom = MuffinThemeDefinition(
+        id: "cherry-blossom", name: "Cherry Blossom", iconId: "cherry-blossom",
+        backgroundTopLight: "#FFD3E6", backgroundTopDark: "#7A2E52",
+        backgroundBottomLight: "#A9DCFF", backgroundBottomDark: "#2A2E5E",
+        muffinTopLightLight: "#FFB3CC", muffinTopLightDark: "#FFB3CC",
+        muffinTopDarkLight: "#F58FB1", muffinTopDarkDark: "#E07AA0",
+        creamLight: "#FFF8FB", creamDark: "#2A1620",
+        wrapperLight: "#FFE6EF", wrapperDark: "#432532",
+        blueberryNavyLight: "#D94C7D", blueberryNavyDark: "#FF9FC0",
+        pixelBlueLight: "#3E8F5A", pixelBlueDark: "#8FD9A6",
+        blushPinkLight: "#F28DB2", blushPinkDark: "#F7B6CE",
+        brownDarkestLight: "#3A1424", brownDarkestDark: "#FFF3F8",
+        brownDarkLight: "#6B2E46", brownDarkDark: "#FBDDE9",
+        brownMidLight: "#9A5A74", brownMidDark: "#E9B6CA",
+        sparkleCreamLight: "#FFFFFF", sparkleCreamDark: "#FFFFFF",
+        shadowLight: "#5A1F33", shadowDark: "#000000"
+    )
+
+    static let cookiesAndCream = MuffinThemeDefinition(
+        id: "cookies-and-cream", name: "Cookies & Cream", iconId: "cookies-and-cream",
+        backgroundTopLight: "#9FD8FF", backgroundTopDark: "#1E2C4A",
+        backgroundBottomLight: "#3F86D6", backgroundBottomDark: "#0E1626",
+        muffinTopLightLight: "#FFFDF7", muffinTopLightDark: "#FFFDF7",
+        muffinTopDarkLight: "#E9DFD3", muffinTopDarkDark: "#CFC3B6",
+        creamLight: "#FFFDF9", creamDark: "#1C1512",
+        wrapperLight: "#EFE7DD", wrapperDark: "#2E2420",
+        blueberryNavyLight: "#2A1B17", blueberryNavyDark: "#E9DFD3",
+        pixelBlueLight: "#3F86D6", pixelBlueDark: "#8FC4FF",
+        blushPinkLight: "#FF9FB0", blushPinkDark: "#FFB8C4",
+        brownDarkestLight: "#1E1210", brownDarkestDark: "#FFFAF3",
+        brownDarkLight: "#3A2620", brownDarkDark: "#EDE4D8",
+        brownMidLight: "#6B5A4E", brownMidDark: "#C9BBAE",
+        sparkleCreamLight: "#FFFFFF", sparkleCreamDark: "#FFFFFF",
+        shadowLight: "#2A1B17", shadowDark: "#000000"
+    )
+
+    static let campfireSmores = MuffinThemeDefinition(
+        id: "campfire-smores", name: "Campfire S'mores", iconId: "campfire-smores",
+        backgroundTopLight: "#FF9A5A", backgroundTopDark: "#4B2A6E",
+        backgroundBottomLight: "#4B2A6E", backgroundBottomDark: "#140F2E",
+        muffinTopLightLight: "#E9B26B", muffinTopLightDark: "#E9B26B",
+        muffinTopDarkLight: "#B9783A", muffinTopDarkDark: "#C98A4A",
+        creamLight: "#FFF7EE", creamDark: "#1E1428",
+        wrapperLight: "#FFE8D0", wrapperDark: "#33223F",
+        blueberryNavyLight: "#C42E25", blueberryNavyDark: "#FF8A70",
+        pixelBlueLight: "#E8A24E", pixelBlueDark: "#FFC27A",
+        blushPinkLight: "#FF8D6B", blushPinkDark: "#FFB39C",
+        brownDarkestLight: "#2A1408", brownDarkestDark: "#FFF4EA",
+        brownDarkLight: "#5A2E10", brownDarkDark: "#F7DCC6",
+        brownMidLight: "#8A5A36", brownMidDark: "#D9B396",
+        sparkleCreamLight: "#FFE9B0", sparkleCreamDark: "#FFE9B0",
+        shadowLight: "#2A1408", shadowDark: "#000000"
+    )
+
+    static let underTheSea = MuffinThemeDefinition(
+        id: "under-the-sea", name: "Under the Sea", iconId: "under-the-sea",
+        backgroundTopLight: "#5FE1F5", backgroundTopDark: "#0B4A8A",
+        backgroundBottomLight: "#0B5FA8", backgroundBottomDark: "#06223F",
+        muffinTopLightLight: "#6FE3F5", muffinTopLightDark: "#6FE3F5",
+        muffinTopDarkLight: "#1C8FD0", muffinTopDarkDark: "#2AA3E0",
+        creamLight: "#F4FDFF", creamDark: "#071E33",
+        wrapperLight: "#DDF6F7", wrapperDark: "#0E3350",
+        blueberryNavyLight: "#0B5FA8", blueberryNavyDark: "#7FD4FF",
+        pixelBlueLight: "#FF7E79", pixelBlueDark: "#FFA39F",
+        blushPinkLight: "#FF8DA8", blushPinkDark: "#FFB3C6",
+        brownDarkestLight: "#06233F", brownDarkestDark: "#F1FBFF",
+        brownDarkLight: "#0E3A5E", brownDarkDark: "#D3EEFA",
+        brownMidLight: "#3E6E8E", brownMidDark: "#A6D3E6",
+        sparkleCreamLight: "#FFFFFF", sparkleCreamDark: "#FFFFFF",
+        shadowLight: "#04325A", shadowDark: "#000000"
+    )
+
+    static let rainyDay = MuffinThemeDefinition(
+        id: "rainy-day", name: "Rainy Day", iconId: "rainy-day",
+        backgroundTopLight: "#7FA2DA", backgroundTopDark: "#26386A",
+        backgroundBottomLight: "#4A6AAE", backgroundBottomDark: "#111A36",
+        muffinTopLightLight: "#EDB062", muffinTopLightDark: "#EDB062",
+        muffinTopDarkLight: "#A8622A", muffinTopDarkDark: "#C98A46",
+        creamLight: "#F8FAFF", creamDark: "#141B30",
+        wrapperLight: "#E6EEFF", wrapperDark: "#22304F",
+        blueberryNavyLight: "#E8344A", blueberryNavyDark: "#FF8A96",
+        pixelBlueLight: "#E0B21C", pixelBlueDark: "#FFE45C",
+        blushPinkLight: "#FF8D8D", blushPinkDark: "#FFB3B3",
+        brownDarkestLight: "#141B30", brownDarkestDark: "#F5F8FF",
+        brownDarkLight: "#2E3F6E", brownDarkDark: "#DCE5FA",
+        brownMidLight: "#5A6C99", brownMidDark: "#AAB9DE",
+        sparkleCreamLight: "#FFFFFF", sparkleCreamDark: "#FFFFFF",
+        shadowLight: "#1A2A4A", shadowDark: "#000000"
+    )
+
+    static let cafeLatte = MuffinThemeDefinition(
+        id: "cafe-latte", name: "Café Latte", iconId: "cafe-latte",
+        backgroundTopLight: "#FFE7C2", backgroundTopDark: "#5A3418",
+        backgroundBottomLight: "#D98A4A", backgroundBottomDark: "#24130A",
+        muffinTopLightLight: "#FFFBF2", muffinTopLightDark: "#FFFBF2",
+        muffinTopDarkLight: "#B97A4A", muffinTopDarkDark: "#C98A5A",
+        creamLight: "#FFFAF3", creamDark: "#1E140D",
+        wrapperLight: "#F3E4CF", wrapperDark: "#352418",
+        blueberryNavyLight: "#6E3E1E", blueberryNavyDark: "#E8B888",
+        pixelBlueLight: "#B6774A", pixelBlueDark: "#E0A87A",
+        blushPinkLight: "#FF9A8A", blushPinkDark: "#FFB8AC",
+        brownDarkestLight: "#2A1406", brownDarkestDark: "#FFF6EC",
+        brownDarkLight: "#4A2A10", brownDarkDark: "#F2DEC8",
+        brownMidLight: "#7E5A3E", brownMidDark: "#D4B396",
+        sparkleCreamLight: "#FFF5E0", sparkleCreamDark: "#FFF5E0",
+        shadowLight: "#3A2010", shadowDark: "#000000"
+    )
+
+    static let retroPixel = MuffinThemeDefinition(
+        id: "retro-pixel", name: "Retro Pixel", iconId: "retro-pixel",
+        backgroundTopLight: "#7990FF", backgroundTopDark: "#2E4099",
+        backgroundBottomLight: "#2A33C8", backgroundBottomDark: "#151A64",
+        muffinTopLightLight: "#F2AE5A", muffinTopLightDark: "#F2AE5A",
+        muffinTopDarkLight: "#8F4F1C", muffinTopDarkDark: "#9C6437",
+        creamLight: "#F4F5FA", creamDark: "#252526",
+        wrapperLight: "#DADFF2", wrapperDark: "#3D3E44",
+        blueberryNavyLight: "#2A33C8", blueberryNavyDark: "#7F85DE",
+        pixelBlueLight: "#E8283E", pixelBlueDark: "#F17E8B",
+        blushPinkLight: "#FF5A7A", blushPinkDark: "#FF9CAF",
+        brownDarkestLight: "#05050C", brownDarkestDark: "#F6F6F8",
+        brownDarkLight: "#0A0C1C", brownDarkDark: "#EDEDF1",
+        brownMidLight: "#121430", brownMidDark: "#DDDEE5",
+        sparkleCreamLight: "#FBFBFD", sparkleCreamDark: "#FBFBFD",
+        shadowLight: "#070712", shadowDark: "#000000"
+    )
+
+    static let proGoldVipGlow = MuffinThemeDefinition(
+        id: "pro-gold-vip-glow", name: "Gold VIP Glow", iconId: "pro-gold-vip-glow",
+        backgroundTopLight: "#F8C522", backgroundTopDark: "#7B5F04",
+        backgroundBottomLight: "#B47C17", backgroundBottomDark: "#4C3409",
+        muffinTopLightLight: "#F7CD61", muffinTopLightDark: "#F7CD61",
+        muffinTopDarkLight: "#AD9044", muffinTopDarkDark: "#D4B053",
+        creamLight: "#FDF7EA", creamDark: "#291F0A",
+        wrapperLight: "#FAEDCD", wrapperDark: "#3F3110",
+        blueberryNavyLight: "#999D25", blueberryNavyDark: "#D2D666",
+        pixelBlueLight: "#A94519", pixelBlueDark: "#D68866",
+        blushPinkLight: "#D6A94F", blushPinkDark: "#D6B166",
+        brownDarkestLight: "#211906", brownDarkestDark: "#FEFAF0",
+        brownDarkLight: "#47350E", brownDarkDark: "#FCF2DB",
+        brownMidLight: "#7F6019", brownMidDark: "#F9E6BC",
+        sparkleCreamLight: "#FFFCF6", sparkleCreamDark: "#FFFCF6",
+        shadowLight: "#392B0B", shadowDark: "#000000"
+    )
+
     static let all: [MuffinThemeDefinition] = [
-        bakery, adhdAwareness, audhdAwareness, autismAwareness, bisexualPride, blueberryBlast, dark, disabilityPride, doubleChocolate, equality, fixTheWorld, galaxySpace, happy, holidayFrost, lemonZest, lesbianPride, mentalHealthPride, mintMatcha, neonCyber, nonbinaryPride, proDiamondIce, proGoldVip, proHolographic, progressPride, pumpkinSpice, rainbowPride, retro, spookyHalloween, strawberry, summerBeach, transgenderPride
+        bakery, adhdAwareness, audhdAwareness, autismAwareness, bisexualPride, blueberryBlast, dark, disabilityPride, doubleChocolate, equality, fixTheWorld, galaxySpace, happy, holidayFrost, lemonZest, lesbianPride, mentalHealthPride, mintMatcha, neonCyber, nonbinaryPride, proDiamondIce, proGoldVip, proHolographic, proRoyalVelvet, proAurora, progressPride, pumpkinSpice, rainbowPride, retro, spookyHalloween, strawberry, summerBeach, transgenderPride, cherryBlossom, cookiesAndCream, campfireSmores, underTheSea, rainyDay, cafeLatte, retroPixel, proGoldVipGlow
     ]
 }

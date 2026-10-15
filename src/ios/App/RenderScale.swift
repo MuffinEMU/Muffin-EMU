@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import Foundation
 #if os(iOS)
 import UIKit
@@ -56,11 +61,22 @@ enum RenderScale: String, CaseIterable, Identifiable {
 
     static let storageKey = "renderScale"
 
-    /// What the person chose, or the preset picked for this device (`deviceDefault`) if they never did.
-    static var current: RenderScale {
+    /// What the person chose in Settings, or the preset picked for this device (`deviceDefault`) if they never did.
+    static var storedChoice: RenderScale {
         guard let raw = UserDefaults.standard.string(forKey: storageKey),
               let value = RenderScale(rawValue: raw) else { return deviceDefault }
         return value
+    }
+
+    /// What the picture is drawn at now: the running game's own Resolution if it has one (Advanced mode,
+    /// see ActiveGameSettings), otherwise `storedChoice`. While the thermal governor is holding Resolution at
+    /// battery saver, that wins over the game's own.
+    static var current: RenderScale {
+        if !ThermalSettings.isHoldingScale,
+           let own = ActiveGameSettings.overrides.renderScale.flatMap(RenderScale.init(rawValue:)) {
+            return own
+        }
+        return storedChoice
     }
 
     /// The preset for someone who never touched Resolution, worked out from this device. The only place
@@ -103,13 +119,72 @@ enum RenderScale: String, CaseIterable, Identifiable {
 ///
 /// Independent of `Favour accuracy` (which also ends up on one core, for a different
 /// reason) and of Render Scale, which stays the user's own choice.
-enum LowPowerMode {
+enum OneCoreMode {
     static let storageKey = "muffin.cpu.lowPowerMode"
     /// Off by default.
     static let defaultValue = false
 
     static var isEnabled: Bool {
         UserDefaults.standard.object(forKey: storageKey) as? Bool ?? defaultValue
+    }
+}
+
+/// Speed before picture quality. On, the bridge builds shaders without strict multiply, always
+/// compiles them in the background and skips crash breadcrumbs (see
+/// cemu_bridge_set_favour_performance), and the app presents the picture at Balanced at most with
+/// linear scaling. It never writes `RenderScale.storageKey`: ThermalMonitor already uses that key
+/// to remember the person's own choice while it throttles, so the cap is applied on read instead.
+/// Favour accuracy wins for everything but the resolution cap, which is global (it changes only the
+/// presented picture, never the emulation).
+enum FavourPerformance {
+    static let storageKey = "muffin.cpu.favourPerformance"
+    /// Off by default.
+    static let defaultValue = false
+
+    /// The running game's own choice if it has one (Advanced mode), otherwise Settings. Read by the
+    /// resolution cap in `effectiveRenderScale`; the launch push uses PerGameSettingsStore directly.
+    static var isEnabled: Bool {
+        ActiveGameSettings.overrides.favourPerformance
+            ?? UserDefaults.standard.object(forKey: storageKey) as? Bool ?? defaultValue
+    }
+}
+
+/// "Full speed renders!" (Settings > Graphics). See cemu_bridge_set_full_speed_renders.
+enum FullSpeedRenders {
+    static let storageKey = "muffin.render.fullSpeedRenders"
+    static let defaultValue = false
+    /// What happens the first time a game needs a shader it has never built.
+    static let shaderModeKey = "muffin.render.fullSpeedShaderMode"
+    enum ShaderMode: Int, CaseIterable, Identifiable {
+        /// Build it before drawing: a short hitch, never a missing or flickering object.
+        case waitForIt = 0
+        /// Draw without it this once: never a hitch, the object can be missing for a moment.
+        case keepGoing = 1
+        var id: Int { rawValue }
+        var title: String {
+            switch self {
+            case .waitForIt: return "Wait for it"
+            case .keepGoing: return "Keep going"
+            }
+        }
+        var summary: String {
+            switch self {
+            case .waitForIt: return "Never flickers. A short hitch the first time a new effect appears."
+            case .keepGoing: return "Never freezes. A new effect can be missing for a moment the first time."
+            }
+        }
+    }
+    static let defaultShaderMode = ShaderMode.waitForIt
+
+    static var isEnabled: Bool {
+        UserDefaults.standard.object(forKey: storageKey) as? Bool ?? defaultValue
+    }
+    static var shaderMode: ShaderMode {
+        ShaderMode(rawValue: UserDefaults.standard.object(forKey: shaderModeKey) as? Int ?? defaultShaderMode.rawValue)
+            ?? defaultShaderMode
+    }
+    static func applyToBridge() {
+        cemu_bridge_set_full_speed_renders(isEnabled, Int32(shaderMode.rawValue))
     }
 }
 
@@ -129,11 +204,12 @@ enum PadSurfaceScale {
 ///
 /// `auto` decides per game at launch: from the game's own profile, the device's performance-core
 /// count and its thermal state (see ios_decide_core_count in CemuBridge.mm). It leans to one
-/// core, because on a fanless A12Z iPad Pro three host threads drew about three times the power,
-/// the SoC throttled within a minute, and Wind Waker HD ran 4-20 fps against 40-60 on one. Three
+/// core unless the device qualifies (four or more performance cores, memory Tier High or above,
+/// nominal thermal state) or the game's profile asks for three, because three host threads draw
+/// about three times the power and a part that throttles can end up slower than on one. Three
 /// cores stay available as a labelled experiment, globally and per game.
 enum CoreMode: String, CaseIterable, Identifiable {
-    case auto, single, multi
+    case auto, single, two, multi
 
     var id: String { rawValue }
 
@@ -141,14 +217,16 @@ enum CoreMode: String, CaseIterable, Identifiable {
         switch self {
         case .auto:   return "Auto"
         case .single: return "One core"
+        case .two:    return "Two cores (Experimental)"
         case .multi:  return "Three cores (Experimental)"
         }
     }
 
     var summary: String {
         switch self {
-        case .auto:   return "Picks per game and per device. Uses one core unless the game's profile asks for three and this device has the headroom."
-        case .single: return "One core. Cooler, and usually faster on this hardware."
+        case .auto:   return "Picks per game and per device. Uses three cores when the game's profile asks for them or this device has the performance cores, memory and cooling headroom, and one core otherwise."
+        case .single: return "One core. Cooler, and often faster on devices without spare performance cores."
+        case .two:    return "Two cores. Runs the console's three cores on two host threads: faster than one core, with less heat and fewer performance cores than three."
         case .multi:  return "Three cores. Can be faster on a device with spare performance cores and cooling, but heats up quickly on most iPads and has hung some games."
         }
     }
@@ -159,7 +237,44 @@ enum CoreMode: String, CaseIterable, Identifiable {
         case .auto:   return 0
         case .single: return 1
         case .multi:  return 2
+        case .two:    return 3
         }
+    }
+
+    /// Host threads the mode needs. Auto and One core need one.
+    var hostThreads: Int {
+        switch self {
+        case .auto, .single: return 1
+        case .two:           return 2
+        case .multi:         return 3
+        }
+    }
+
+    /// Whether this device can run the mode's host threads (DeviceCapabilities.maxHostThreads).
+    var isAvailable: Bool { hostThreads <= DeviceCapabilities.current.maxHostThreads }
+
+    /// Basic lists only what the device can run; Advanced lists every mode.
+    static var listed: [CoreMode] { SettingsMode.isAdvanced ? allCases : allCases.filter(\.isAvailable) }
+
+    /// Whether the device offers anything beyond Auto and One core.
+    static var hasMultiOption: Bool { allCases.filter(\.isAvailable).count > 2 }
+
+    /// Shown when an Advanced user picks a mode the device cannot run.
+    var limitWarning: String {
+        let caps = DeviceCapabilities.current
+        let cores = caps.performanceCores
+        let threads = caps.maxHostThreads
+        return "\(title) probably won't work on this device. It has \(cores) performance core\(cores == 1 ? "" : "s") and can run \(threads) host thread\(threads == 1 ? "" : "s") for the console's cores; this mode needs \(hostThreads). It will be tried anyway, and a game that never starts runs on one core the next time."
+    }
+
+    /// The mode itself. A mode the device cannot run stands only in Advanced; Basic uses Auto (logged), such as
+    /// after switching back from Advanced or restoring a backup from a bigger device.
+    static func resolved(_ mode: CoreMode) -> CoreMode {
+        guard mode.isAvailable || SettingsMode.isAdvanced else {
+            cemu_bridge_log_line("CPU cores: \(mode.title) is not available on this device in Basic settings, using Auto")
+            return .auto
+        }
+        return mode
     }
 
     static let storageKey = "muffin.cpu.coreMode"
@@ -170,10 +285,10 @@ enum CoreMode: String, CaseIterable, Identifiable {
     static var current: CoreMode {
         let defaults = UserDefaults.standard
         if let raw = defaults.string(forKey: storageKey), let value = CoreMode(rawValue: raw) {
-            return value
+            return resolved(value)
         }
         if let legacy = defaults.object(forKey: legacyKey) as? Bool {
-            return legacy ? .multi : .single
+            return resolved(legacy ? .multi : .single)
         }
         return defaultValue
     }
@@ -203,6 +318,17 @@ enum AutoCoreHistory {
     /// that does not go through `isDemotedAtLaunch` (the Wii U Menu starting a game).
     static func isDemoted(gameID: String) -> Bool {
         Set(UserDefaults.standard.stringArray(forKey: demotedKey) ?? []).contains(gameID)
+    }
+
+    /// Carries a title's entry over when its settings key changes from the file-name id to the title ID. Its pending run is
+    /// left alone: that is a live session, settled by the key it started under.
+    static func adoptTitleIDKey(from oldID: String, to newID: String) {
+        let defaults = UserDefaults.standard
+        var demoted = Set(defaults.stringArray(forKey: demotedKey) ?? [])
+        guard demoted.contains(oldID) else { return }
+        demoted.remove(oldID)
+        demoted.insert(newID)
+        defaults.set(demoted.sorted(), forKey: demotedKey)
     }
 
     /// Call once a title that Auto put on three cores has booted.
@@ -249,7 +375,11 @@ extension UIScreen {
     /// a 3x scale is only 585 pixels, which is below the picture the game draws. Devices whose
     /// screen is already taller than that at the chosen scale (every iPad) are unaffected.
     var effectiveRenderScale: Double {
-        let choice = RenderScale.current
+        var choice = RenderScale.current
+        // Favour performance caps the picture at Balanced without touching the stored choice.
+        if FavourPerformance.isEnabled && choice.factor > RenderScale.balanced.factor {
+            choice = .balanced
+        }
         var value = Double(scale) * choice.factor
         if choice != .battery {
             let shortSide = Double(min(bounds.width, bounds.height))

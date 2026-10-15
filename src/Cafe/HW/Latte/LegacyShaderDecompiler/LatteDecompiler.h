@@ -196,6 +196,13 @@ struct LatteDecompilerShader
 	// analyzer stage (geometry shader parameters/inputs)
 	uint32 ringParameterCount{ 0 };
 	uint32 ringParameterCountFromPrevStage{ 0 }; // used in geometry shader to hold VS ringParameterCount
+	// Metal geometry-shader emulation (GPUs without mesh shaders): sizes of the device buffers the compute stages hand
+	// to each other. The emitter writes the structs, so it is the one place that can say how big they are. Upper
+	// bounds are fine: the kernels index by sizeof, the host only has to allocate at least as much.
+	uint32 mtlGsPayloadStride{ 0 };
+	uint32 mtlGsVertexStride{ 0 };
+	uint32 mtlGsMaxVertices{ 0 };
+	std::string mtlRectVertexOutDef; // the RECTS vertex stage's VertexOut, so the generated RECTS kernel lays it out identically
 	// analyzer stage (misc)
 	std::bitset<LATTE_NUM_STREAMOUT_BUFFER> streamoutBufferWriteMask;
 	bool hasStreamoutBufferWrite{ false };
@@ -220,6 +227,7 @@ struct LatteDecompilerShader
 		sint32 loc_fragCoordScale;
 		sint32 loc_baseVertex;
 		sint32 loc_baseInstance;
+		sint32 loc_framebufferFetchSize[LATTE_NUM_MAX_TEX_UNITS];
 		std::vector<LatteUniformTextureScaleEntry_t> list_ufTexRescale; // list of mappings for uf_tex*Scale <-> uniform location
 		float ufCurrentValueAlphaTestRef;
 		float ufCurrentValueFragCoordScale[2];
@@ -248,6 +256,7 @@ struct LatteDecompilerOutputUniformOffsets
 	sint32 offset_alphaTestRef;
 	sint32 offset_pointSize;
 	sint32 offset_fragCoordScale;
+	sint32 offset_framebufferFetchSize[LATTE_NUM_MAX_TEX_UNITS];
 	sint32 offset_windowSpaceToClipSpaceTransform;
 	sint32 offset_texScale[LATTE_NUM_MAX_TEX_UNITS];
 	sint32 offset_baseVertex{-1};
@@ -267,7 +276,10 @@ struct LatteDecompilerOutputUniformOffsets
 		offset_fragCoordScale = -1;
 		offset_windowSpaceToClipSpaceTransform = -1;
 		for (sint32 i = 0; i < LATTE_NUM_MAX_TEX_UNITS; i++)
+		{
+			offset_framebufferFetchSize[i] = -1;
 			offset_texScale[i] = -1;
+		}
 		offset_endOfBlock = 0;
 	}
 };
@@ -275,6 +287,8 @@ struct LatteDecompilerOutputUniformOffsets
 struct LatteDecompilerOptions
 {
 	bool usesGeometryShader{ false };
+	// Metal only: the GPU has no mesh shaders, so geometry-shader and RECTS draws run as compute kernels plus a passthrough vertex shader
+	bool geometryShaderEmulation{ false };
 	// floating point math
 	bool strictMul{}; // if true, 0*anything=0 rule is emulated
 	// Vulkan-specific

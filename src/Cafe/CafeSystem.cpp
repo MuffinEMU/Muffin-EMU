@@ -173,7 +173,11 @@ void LoadMainExecutable()
 		applicationRPX = RPLLoader_LoadFromMemory(rpxData, rpxSize, (char*)_pathToExecutable.c_str());
 		if (!applicationRPX)
 		{
+			#if BOOST_OS_IOS
+			WindowSystem::ShowErrorDialog(_tr("This game's files look damaged. Try importing it again."));
+			#else
 			WindowSystem::ShowErrorDialog(_tr("Failed to run this title because the executable is damaged"));
+			#endif
 			cemuLog_createLogFile(false);
 			cemuLog_waitForFlush();
 			exit(0);
@@ -223,7 +227,9 @@ void InfoLog_TitleLoaded()
 	cemuLog_log(LogType::Force, "Save path:   {}{}", _pathToUtf8(effectiveSavePath), saveDirExists ? "" : " (not present)");
 
 	// log shader cache name
-	cemuLog_log(LogType::Force, "Shader cache file: shaderCache/transferable/{:016x}.bin", titleId);
+	// The file this renderer actually reads (LatteShaderCache_Load), not the old generic name
+	cemuLog_log(LogType::Force, "Shader cache file: shaderCache/transferable/{:016x}{}.bin", titleId,
+		ActiveSettings::GetGraphicsAPI() == GraphicAPI::kMetal ? "_mtlshaders" : "_shaders");
 	// game profile info
 	std::string gameProfilePath;
 	if(g_current_game_profile->IsDefaultProfile())
@@ -960,8 +966,11 @@ namespace CafeSystem
 			module->TitleStart();
 		cemu_initForGame();
 		// enter scheduler
-		if ((ActiveSettings::GetCPUMode() == CPUMode::MulticoreRecompiler || ActiveSettings::GetCPUMode() == CPUMode::MulticoreInterpreter || LaunchSettings::ForceMultiCoreInterpreter()) && !LaunchSettings::ForceInterpreter())
+		const CPUMode cpuMode = ActiveSettings::GetCPUMode();
+		if ((cpuMode == CPUMode::MulticoreRecompiler || cpuMode == CPUMode::MulticoreInterpreter || LaunchSettings::ForceMultiCoreInterpreter()) && !LaunchSettings::ForceInterpreter())
 			coreinit::OSSchedulerBegin(Espresso::CORE_COUNT);
+		else if ((cpuMode == CPUMode::TwocoreRecompiler || cpuMode == CPUMode::TwocoreInterpreter) && !LaunchSettings::ForceInterpreter())
+			coreinit::OSSchedulerBegin(2);
 		else
 			coreinit::OSSchedulerBegin(1);
 	}

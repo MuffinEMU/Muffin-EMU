@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team.
+// SPDX-License-Identifier: MPL-2.0
+// This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 // CafeSystem calls back into its host through a SystemImplementation: to recreate the
 // render canvas, and - since upstream Cemu's coreinit exit() - when the emulated process
 // exits on its own. Desktop Cemu's MainWindow is the only implementation there is, and
@@ -28,6 +33,10 @@ void IOSBridge_TitleSwitching(uint64 titleId);
 static std::atomic_bool sTitleExitedItself{false};
 static std::atomic<sint32> sTitleExitStatus{0};
 static std::atomic_bool sTitleSwitchFailed{false};
+static std::atomic_bool sSystemAppletRequested{false};
+
+// Defined in sysapp.cpp
+bool _SYSIsSystemApplicationTitleId(uint64 titleId);
 
 class IOSSystemImplementation final : public CafeSystem::SystemImplementation
 {
@@ -63,6 +72,7 @@ public:
 	{
 		cemuLog_log(LogType::Force, "iOS: the title switch to {:016x} failed - the previous title is already shut down", (uint64)titleId);
 		sTitleSwitchFailed.store(true);
+		sSystemAppletRequested.store(_SYSIsSystemApplicationTitleId((uint64)titleId));
 		sTitleExitStatus.store(-1);
 		sTitleExitedItself.store(true);
 	}
@@ -79,6 +89,13 @@ bool IOSSystemImplementation_TitleExited(int* statusOut)
 	if (statusOut)
 		*statusOut = sTitleExitStatus.load();
 	return sTitleExitedItself.load();
+}
+
+// True when the last failed title switch was a request to open a Wii U system application
+// (Account Settings, System Settings, ...), which MuffinEMU can't run.
+bool IOSSystemImplementation_SystemAppletRequested()
+{
+	return sSystemAppletRequested.load();
 }
 
 bool IOSSystemImplementation_TitleSwitchFailed()
@@ -108,4 +125,5 @@ void IOSSystemImplementation_ResetExit()
 	sTitleExitedItself.store(false);
 	sTitleExitStatus.store(0);
 	sTitleSwitchFailed.store(false);
+	sSystemAppletRequested.store(false);
 }

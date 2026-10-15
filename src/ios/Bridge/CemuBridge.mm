@@ -15,6 +15,9 @@
 //  CemuBridge.h, which is plain C.
 //
 #include "Common/precompiled.h"
+#include "audio/IAudioAPI.h"
+#include "audio/iOSAudioRecorder.h"
+#include "IOSScreenRecorder.h"
 #include <cxxabi.h>
 #include <typeinfo>
 #import "CemuBridge.h"
@@ -54,8 +57,14 @@
 #include <sys/ucontext.h>
 
 #include "Cafe/CafeSystem.h"
+#include "Cafe/OS/libs/nn_ac/nn_ac_reachability.h"
 #include "Cafe/Filesystem/FST/KeyCache.h"
+#include "Cafe/Filesystem/fsc.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
+#include "Cafe/HW/Latte/Core/LatteOverlay.h"
+#include "Cafe/HW/Latte/Core/LatteShader.h"
+#include "Cafe/HW/Latte/Core/LatteShaderCache.h"
+#include "Cemu/FileCache/FileCache.h"
 #include "Cafe/HW/Latte/Core/LatteWaitInfo.h"
 #include "StallDetector.h"
 #include "Cafe/HW/Latte/Core/PerfTelemetry.h"
@@ -104,6 +113,7 @@ void CemuUIKit_UpdateMainWindowSize(CGFloat width, CGFloat height, CGFloat scale
 
 void CemuUIKit_UpdatePadWindowSize(void);
 void CemuUIKit_SetVisibleOutputs(bool tv, bool pad);
+void CemuUIKit_SetOutputSources(bool mainShowsGamePad, bool padShowsTV);
 void CemuUIKit_DescribeMainSurface(char* out, size_t outSize);
 void CemuUIKit_SetPadTouch(CGFloat x, CGFloat y, bool down);
 void* GCControllerBridge_add(const GCBridgeControllerDesc* desc);
@@ -123,6 +133,10 @@ int IOSTitleDecrypt_ExtractToFolder(const char* srcPath, const char* destFolderP
 int IOSTitleDecrypt_ExtractToWua(const char* srcPath, const char* destPath,
     std::atomic_bool& cancelRequested,
     const std::function<void(uint64_t bytesWritten, uint32_t filesWritten)>& progressCallback);
+int IOSWuaContent_Build(const std::vector<std::string>& srcs, const char* destPath,
+    std::atomic_bool& cancelRequested,
+    const std::function<void(uint64_t bytesWritten, uint32_t filesWritten)>& progressCallback);
+std::string IOSWuaContent_ListTitles(const char* wuaPath);
 std::string IOSCoverArt_DeriveGameTdbId(const char* romPath);
 std::string IOSCoverArt_GetTitleName(const char* romPath);
 bool IOSDlcUpdateImport_DeriveTitleId(const char* romPath, uint64_t* titleIdOut);
@@ -140,6 +154,8 @@ std::string IOSEmulatedDevices_Load(int device, int slot, const char* path);
 std::string IOSEmulatedDevices_Clear(int device, int slot);
 std::string IOSEmulatedDevices_Create(int device, uint32_t figureId, uint16_t variant, const char* path);
 std::string IOSEmulatedDevices_MoveDimensions(int fromSlot, int toSlot);
+bool nnNfp_isInitialized();
+bool nnNfp_touchNfcTagFromFile(const fs::path& filePath, uint32* nfcError);
 std::string IOSGraphicPacks_List();
 void IOSGraphicPacks_Refresh();
 void IOSGraphicPacks_SetEnabled(int index, bool enabled);
@@ -160,19 +176,28 @@ bool IOSAccounts_SetBirthdate(uint32_t persistentId, uint16_t year, uint8_t mont
 uint32_t IOSAccounts_ActivePersistentId();
 void IOSAccounts_SetActivePersistentId(uint32_t persistentId);
 bool IOSAccounts_IsOnlineValid(uint32_t persistentId);
+int IOSAccounts_OnlineError(uint32_t persistentId);
+std::string IOSAccounts_OnlineHint();
 std::string IOSAccounts_CountriesList();
 int IOSAccounts_NetworkService(uint32_t persistentId);
 void IOSAccounts_SetNetworkService(uint32_t persistentId, int service);
 bool IOSAccounts_CustomNetworkServiceAvailable();
+bool IOSAccounts_ReloadCustomNetworkService();
+bool IOSAccounts_IsValidNetworkServicesXML(const char* path);
 bool IOSTitlePause_Pause();
 bool IOSTitlePause_Resume();
 bool IOSTitlePause_IsPaused();
 void IOSTitlePause_Forget();
 bool IOSSaveState_Save(const char* path);
 bool IOSSaveState_Load(const char* path);
+void IOSSaveState_BeginSession();
+int IOSSaveState_LastErrorCode();
+const char* IOSSaveState_LastErrorMessage();
+int IOSSaveState_InspectFile(const char* path);
 void IOSSystemImplementation_Install();
 bool IOSSystemImplementation_TitleExited(int* statusOut);
 bool IOSSystemImplementation_TitleSwitchFailed();
+bool IOSSystemImplementation_SystemAppletRequested();
 void IOSSystemImplementation_ReportFatal(const char* reason);
 const char* IOSSystemImplementation_FatalReason();
 void IOSSystemImplementation_ResetExit();
@@ -214,6 +239,98 @@ namespace {
         char out[24];
         for (int j = 0; j < i; j++) out[j] = digits[i - 1 - j];
         if (g_crashLogFd >= 0) write(g_crashLogFd, out, (size_t)i);
+    }
+
+    const char* crash_vm_tag_name(unsigned tag) {
+        switch (tag) {
+            case 0: return "untagged (direct vm_allocate)";
+            case 1: return "malloc";
+            case 2: return "malloc small";
+            case 3: return "malloc large";
+            case 4: return "malloc huge";
+            case 6: return "realloc";
+            case 7: return "malloc tiny";
+            case 11: return "malloc nano";
+            case 21: return "IOKit";
+            case 30: return "stack";
+            case 31: return "guard";
+            case 33: return "dylib";
+            case 88: return "IOSurface";
+            default: return "other";
+        }
+    }
+
+    // Where the address space goes and where it is free. Written for the allocation-failure reports: a 32 MB
+    // MTLBuffer and operator new failing while os_proc_available_memory() still shows gigabytes means the limit
+    // being hit is not physical memory, and this names which one (a full map, a map of holes too small to use,
+    // or one region type holding most of it). Stack memory and write() only, so it is safe with malloc failing.
+    void cemu_vm_report(const char* why, uint64_t wantedBytes) {
+        struct Top { uint64_t size; uint64_t addr; unsigned tag; };
+        Top top[5] = {};
+        uint64_t tagBytes[256] = {};
+        uint64_t regions = 0, mapped = 0, gapTotal = 0, gapMax = 0, gapMaxAt = 0, gaps1M = 0, gaps32M = 0, highestEnd = 0, prevEnd = 0;
+        vm_address_t addr = 0;
+        natural_t depth = 0;
+        for (int guard = 0; guard < 200000; guard++) {
+            vm_size_t size = 0;
+            vm_region_submap_info_data_64_t info;
+            mach_msg_type_number_t count = VM_REGION_SUBMAP_INFO_COUNT_64;
+            if (vm_region_recurse_64(mach_task_self(), &addr, &size, &depth, (vm_region_recurse_info_t)&info, &count) != KERN_SUCCESS)
+                break;
+            if (info.is_submap) {
+                depth++;
+                continue;
+            }
+            regions++;
+            mapped += size;
+            if (prevEnd != 0 && addr > prevEnd) {
+                const uint64_t gap = (uint64_t)addr - prevEnd;
+                gapTotal += gap;
+                if (gap >= (1ull << 20)) gaps1M++;
+                if (gap >= (32ull << 20)) gaps32M++;
+                if (gap > gapMax) { gapMax = gap; gapMaxAt = prevEnd; }
+            }
+            prevEnd = (uint64_t)addr + size;
+            highestEnd = prevEnd;
+            const unsigned tag = info.user_tag & 0xFF;
+            tagBytes[tag] += size;
+            for (int i = 0; i < 5; i++) {
+                if (size > top[i].size) {
+                    for (int j = 4; j > i; j--) top[j] = top[j - 1];
+                    top[i] = { (uint64_t)size, (uint64_t)addr, tag };
+                    break;
+                }
+            }
+            addr += size;
+        }
+        cemu_crash_write("\nADDRESS SPACE at "); cemu_crash_write(why ? why : "?");
+        cemu_crash_write(" (wanted "); crash_dec((int64_t)(wantedBytes >> 10)); cemu_crash_write(" KB): ");
+        crash_dec((int64_t)regions); cemu_crash_write(" regions, ");
+        crash_dec((int64_t)(mapped >> 20)); cemu_crash_write(" MB mapped, highest end "); crash_hex(highestEnd);
+        cemu_crash_write(", free holes below it ");  crash_dec((int64_t)(gapTotal >> 20)); cemu_crash_write(" MB in total, ");
+        crash_dec((int64_t)gaps1M); cemu_crash_write(" holes of 1 MB or more, "); crash_dec((int64_t)gaps32M);
+        cemu_crash_write(" of 32 MB or more, largest "); crash_dec((int64_t)(gapMax >> 20)); cemu_crash_write(" MB at "); crash_hex(gapMaxAt);
+        cemu_crash_write("\n");
+        for (int i = 0; i < 5 && top[i].size; i++) {
+            cemu_crash_write("  region "); crash_hex(top[i].addr); cemu_crash_write(" "); crash_dec((int64_t)(top[i].size >> 20));
+            cemu_crash_write(" MB tag "); crash_dec((int64_t)top[i].tag); cemu_crash_write(" "); cemu_crash_write(crash_vm_tag_name(top[i].tag)); cemu_crash_write("\n");
+        }
+        for (int round = 0; round < 4; round++) {
+            unsigned best = 0; uint64_t bestBytes = 0;
+            for (unsigned t = 0; t < 256; t++) if (tagBytes[t] > bestBytes) { bestBytes = tagBytes[t]; best = t; }
+            if (!bestBytes) break;
+            cemu_crash_write("  by type: tag "); crash_dec((int64_t)best); cemu_crash_write(" "); cemu_crash_write(crash_vm_tag_name(best));
+            cemu_crash_write(" "); crash_dec((int64_t)(bestBytes >> 20)); cemu_crash_write(" MB\n");
+            tagBytes[best] = 0;
+        }
+        task_vm_info_data_t vi{};
+        mach_msg_type_number_t viCount = TASK_VM_INFO_COUNT;
+        if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&vi, &viCount) == KERN_SUCCESS) {
+            cemu_crash_write("  footprint "); crash_dec((int64_t)(vi.phys_footprint >> 20)); cemu_crash_write(" MB, resident "); crash_dec((int64_t)(vi.resident_size >> 20));
+            cemu_crash_write(" MB, internal "); crash_dec((int64_t)(vi.internal >> 20)); cemu_crash_write(" MB, compressed "); crash_dec((int64_t)(vi.compressed >> 20));
+            cemu_crash_write(" MB, virtual "); crash_dec((int64_t)(vi.virtual_size >> 20)); cemu_crash_write(" MB, os_proc_available_memory "); 
+            crash_dec((int64_t)(os_proc_available_memory() >> 20)); cemu_crash_write(" MB\n");
+        }
     }
 
     // "0x... Image +offset symbol +offset". The raw address always goes out first: dladdr takes dyld's lock,
@@ -391,6 +508,10 @@ namespace {
             }
             catch (const std::exception& ex)
             {
+                // Several threads can fail at once; one report is enough.
+                static std::atomic_flag s_reportedOnce = ATOMIC_FLAG_INIT;
+                if (dynamic_cast<const std::bad_alloc*>(&ex) && !s_reportedOnce.test_and_set())
+                    cemu_vm_report("std::bad_alloc escaping a thread", 0);
                 cemu_crash_write("uncaught C++ exception, type: ");
                 cemu_crash_write(typeid(ex).name());
                 cemu_crash_write("\nwhat(): ");
@@ -405,6 +526,14 @@ namespace {
         else
         {
             cemu_crash_write("terminate called with no in-flight exception\n");
+        }
+        // The throw has not unwound anything yet when terminate runs, so this stack names the code that threw.
+        {
+            cemu_crash_write("terminate backtrace:\n");
+            void* frames[40];
+            const int frameCount = backtrace(frames, 40);
+            if (g_crashLogFd >= 0)
+                backtrace_symbols_fd(frames, frameCount, g_crashLogFd);
         }
         if (g_previousTerminateHandler && g_previousTerminateHandler != cemu_terminate_handler)
             g_previousTerminateHandler();
@@ -645,6 +774,13 @@ void cemu_bridge_memory_note(const char* tag) {
     cemu_mem_write_line(tag && tag[0] ? tag : "checkpoint", avail, foot);
 }
 
+bool MetalPipelineCache_FlushArchive(uint32_t timeoutMs);
+
+void cemu_bridge_flush_pipeline_cache(void) {
+    if (!MetalPipelineCache_FlushArchive(4000))
+        cemu_bridge_log_checkpoint("pipeline cache flush did not finish in 4 s");
+}
+
 void cemu_bridge_start_memory_watchdog(void) {
     if (g_memWatchRunning.exchange(true))
         return;
@@ -669,6 +805,7 @@ void cemu_bridge_start_memory_watchdog(void) {
         uint64_t lastAvailBucket = UINT64_MAX;
         bool criticalAnnounced = false;
         auto lastForced = std::chrono::steady_clock::now();
+        auto lastWritten = lastForced;
         while (g_memWatchRunning.load())
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -680,15 +817,18 @@ void cemu_bridge_start_memory_watchdog(void) {
             const uint64_t availBucket = avail / (64ull << 20);
             const auto now = std::chrono::steady_clock::now();
 
-            bool report = footBucket > lastFootBucket || availBucket < lastAvailBucket;
+            // A footprint that wobbles across a bucket edge used to write a line every tick (8,000 lines in one session). A change
+            // is written at most once every 5 seconds, and the buckets only advance when a line is written, so a real climb still shows.
+            bool report = (footBucket > lastFootBucket || availBucket < lastAvailBucket) && now - lastWritten >= std::chrono::seconds(5);
             if (now - lastForced >= std::chrono::seconds(60)) report = true;
-            lastFootBucket = footBucket;
-            lastAvailBucket = availBucket;
 
             if (report)
             {
+                lastFootBucket = footBucket;
+                lastAvailBucket = availBucket;
                 cemu_mem_write_line("sample", avail, foot);
                 lastForced = now;
+                lastWritten = now;
             }
 
             if (!criticalAnnounced && avail > 0 && avail < (128ull << 20))
@@ -739,19 +879,27 @@ namespace {
     std::atomic<int> g_cpuMode{kCpuModeUndecided};
     std::atomic<bool> g_recompilerRequested{false};
     std::atomic<bool> g_favourAccuracy{false};
-    // Low Power Mode. Separate from Favour accuracy on purpose: both end up asking for
+    // Favour performance: the opposite trade to Favour accuracy, applied in
+    // ios_apply_render_profile(). Ignored while Favour accuracy is on.
+    std::atomic<bool> g_favourPerformance{false};
+    // Full speed renders: on/off and its shader choice (0 wait for a new shader, 1 keep going).
+    // Applied in ios_apply_render_profile(), after both Favour switches, so it has the last word.
+    std::atomic<bool> g_fullSpeedRenders{false};
+    std::atomic<int> g_fullSpeedShaderMode{0};
+    // One-core mode. Separate from Favour accuracy on purpose: both end up asking for
     // one emulated CPU core, but for opposite reasons and with different side effects.
     // Favour accuracy also forces synchronous shader compilation, accurate Vulkan
     // barriers and GX2DrawDone sync - all of which cost MORE work, not less, and are the
-    // last thing a device that is already too hot needs. Low power wants the core count
+    // last thing a device that is already too hot needs. One-core mode wants the core count
     // down and nothing else changed.
     std::atomic<bool> g_lowPowerMode{false};
     // Core count choice from Settings (or this game's override): 0 Auto, 1 one core, 2 three
-    // cores. Auto decides per title in ios_decide_core_count(); see there for why it leans
+    // cores, 3 two host threads. Auto decides per title in ios_decide_core_count(); see there for why it leans
     // to one core.
     constexpr int kCoreModeAuto   = 0;
     constexpr int kCoreModeSingle = 1;
     constexpr int kCoreModeMulti  = 2;
+    constexpr int kCoreModeTwo    = 3;
     std::atomic<int> g_coreModeSetting{kCoreModeAuto};
     // Set by the app when an earlier three-core run of this title crashed or hung (Auto only).
     std::atomic<bool> g_autoDemoted{false};
@@ -784,6 +932,8 @@ namespace {
 
 static void ios_timebase_ladder_start();
 static void ios_timebase_ladder_stop();
+static void ios_two_core_watch_start();
+static void ios_two_core_watch_stop();
 
 // ---------------------------------------------------------------------------
 // JIT environment
@@ -819,7 +969,7 @@ bool ios_has_txm_classic()
     return false;
 }
 
-// "Apple M2" -> ('M', 2), "Apple A12Z GPU" -> ('A', 12).
+// "Apple M2" -> ('M', 2), "Apple A17 Pro GPU" -> ('A', 17).
 bool ios_chip(char& series, int& number)
 {
     id<MTLDevice> device = MTLCreateSystemDefaultDevice();
@@ -937,39 +1087,64 @@ namespace {
         }
     }
 
-    // Titles recorded as running well on three host threads, per device class. Empty on purpose:
-    // nothing measured so far says three threads help (see ios_decide_core_count). Add a title
-    // here only with a before/after from a real device, and say which device.
-    bool ios_multicore_known_good(uint64_t titleId, const IosDeviceFacts& device)
+    // Auto may use three host threads only on a device with the cores, the memory tier and the
+    // thermal room for them: at least four performance cores, Tier High or above, and a nominal
+    // thermal state right now. Every input is read from the running device. Parts that fall short
+    // (fewer performance cores, less memory, already warm) stay on one core.
+    bool ios_auto_multicore_viable(const IosDeviceFacts& device, int thermalState)
     {
-        (void)titleId;
-        (void)device;
-        return false;
+        return device.perfCores >= 4
+            && DeviceCaps::Get().tier() >= DeviceCaps::Tier::High
+            && thermalState == 0;
+    }
+
+    NSString* ios_two_core_hang_key() { return @"muffin.cpu.twoCoreHung"; }
+
+    NSString* ios_title_key(uint64_t titleId) { return [NSString stringWithFormat:@"%016llx", (unsigned long long)titleId]; }
+
+    bool ios_two_core_hang_recorded(uint64_t titleId)
+    {
+        return [[[NSUserDefaults standardUserDefaults] stringArrayForKey:ios_two_core_hang_key()] containsObject:ios_title_key(titleId)];
+    }
+
+    void ios_two_core_hang_set(uint64_t titleId, bool hung)
+    {
+        NSUserDefaults* defaults = [NSUserDefaults standardUserDefaults];
+        NSMutableArray<NSString*>* list = [([defaults stringArrayForKey:ios_two_core_hang_key()] ?: @[]) mutableCopy];
+        NSString* key = ios_title_key(titleId);
+        if (hung && ![list containsObject:key])
+            [list addObject:key];
+        else if (!hung && [list containsObject:key])
+            [list removeObject:key];
+        else
+            return;
+        [defaults setObject:list forKey:ios_two_core_hang_key()];
     }
 
     struct CoreDecision
     {
         bool singleCore = true;
+        bool twoCores = false;
         bool autoPickedMulti = false;
         std::string reason;
     };
 
     // The emulated console has three cores. Running them on three host threads only pays off
-    // when the device has spare performance cores AND the thermal room to power them: on a
-    // fanless iPad Pro (A12Z, 4 performance cores) three threads drew about three times the power,
-    // the SoC throttled within a minute, and Wind Waker HD ran 4-20 fps against 40-60 on one
-    // thread. No shipped Cemu game profile asks for multi-core either (every cpuMode entry is
-    // single-core), so Auto leans to one core and uses three only when the title's profile asks for
-    // it or it is on the known-good list, on a device with at least three performance cores that is
-    // not already hot, and never after an earlier three-core run of the same title crashed or hung.
+    // when the device has spare performance cores AND the thermal room to power them: three
+    // threads draw about three times the power of one, and a part that throttles loses more than
+    // it gains. Auto therefore picks three only when the title's game profile asks for it, or when
+    // the device itself qualifies (ios_auto_multicore_viable: four or more performance cores, Tier
+    // High or above, nominal thermal state), and never after an earlier three-core run of the same
+    // title crashed or hung. The thermal and stall fallbacks (ThermalMonitor, StallDetector) drop a
+    // running three-core session back to one core. Every other device stays on one core.
     CoreDecision ios_decide_core_count(uint64_t titleId)
     {
         const IosDeviceFacts& device = ios_device_facts();
         const int setting = g_coreModeSetting.load();
         const int thermal = ios_thermal_state();
         char deviceText[96];
-        snprintf(deviceText, sizeof(deviceText), "%llu performance core(s), thermal %s",
-            (unsigned long long)device.perfCores, ios_thermal_name(thermal));
+        snprintf(deviceText, sizeof(deviceText), "%llu performance core(s), tier %s, thermal %s",
+            (unsigned long long)device.perfCores, DeviceCaps::TierName(DeviceCaps::Get().tier()), ios_thermal_name(thermal));
         CoreDecision d;
 
         if (g_favourAccuracy.load())
@@ -979,7 +1154,7 @@ namespace {
         }
         if (g_lowPowerMode.load())
         {
-            d.reason = "one core because Low Power Mode is on";
+            d.reason = "one core because One-core mode is on";
             return d;
         }
         if (setting == kCoreModeSingle)
@@ -987,13 +1162,30 @@ namespace {
             d.reason = "one core, chosen in Settings";
             return d;
         }
-        // A hard limit of the device, ahead of both the manual and the Auto choice: under 4.5 GB of RAM, or with
-        // fewer than three host cores, three host threads starve the GPU and heat the part (DeviceCapabilities.h).
-        if (!DeviceCaps::GetBudgets().multicoreViable)
+        // Auto never exceeds the device: under 4.5 GB of RAM, or with fewer than three performance cores, three host
+        // threads starve the GPU and heat the part (DeviceCapabilities.h). A manual Two or Three cores here came from an
+        // Advanced choice (Basic resolves an unavailable one to Auto in Swift), so it is attempted, and the GX2Init guard
+        // drops a stuck title to one core on its next launch.
+        const uint32_t maxThreads = DeviceCaps::GetBudgets().maxHostThreads;
+        if (setting == kCoreModeAuto && maxThreads < 3)
         {
-            d.reason = std::string(setting == kCoreModeMulti ? "one core: three were chosen in Settings, but this device has too little memory or too few cores to run three at once"
-                                                              : "one core: this device has too little memory or too few cores to run three at once")
-                + " (" + deviceText + ")";
+            d.reason = std::string("one core: this device has too little memory or too few performance cores to run three at once (") + deviceText + ")";
+            return d;
+        }
+        if (setting != kCoreModeAuto && maxThreads < (setting == kCoreModeTwo ? 2u : 3u))
+            cemu_bridge_log_line((std::string("CPU cores: ") + (setting == kCoreModeTwo ? "two" : "three") + " cores chosen in Advanced settings, more than this device can run (up to " + std::to_string(maxThreads) + " host thread(s); " + deviceText + "). Attempting it anyway").c_str());
+        if (setting == kCoreModeTwo)
+        {
+            if (titleId != 0 && ios_two_core_hang_recorded(titleId))
+            {
+                d.reason = std::string("one core: a two-core run of this title never reached GX2Init before (") + deviceText + ")";
+                return d;
+            }
+            d.singleCore = false;
+            d.twoCores = true;
+            d.reason = std::string("two cores, chosen in Settings (experimental; ") + deviceText + ")";
+            if (device.perfCores < 2)
+                d.reason += ". This device has fewer than two performance cores, so expect it to run slower than one core";
             return d;
         }
         if (setting == kCoreModeMulti)
@@ -1040,14 +1232,14 @@ namespace {
             d.reason = std::string("Auto picked three cores: this title's game profile asks for multi-core (") + deviceText + ")";
             return d;
         }
-        if (titleId != 0 && ios_multicore_known_good(titleId, device))
+        if (ios_auto_multicore_viable(device, thermal))
         {
             d.singleCore = false;
             d.autoPickedMulti = true;
-            d.reason = std::string("Auto picked three cores: this title is recorded as faster on three (") + deviceText + ")";
+            d.reason = std::string("Auto picked three cores: this device has the performance cores, memory and thermal room (") + deviceText + ")";
             return d;
         }
-        d.reason = std::string("Auto picked one core: no game profile or recorded result says three help this title (") + deviceText + ")";
+        d.reason = std::string("Auto picked one core: this device does not meet the cores, memory tier and thermal state needed for three (") + deviceText + ")";
         return d;
     }
 }
@@ -1075,27 +1267,35 @@ void ios_apply_cpu_mode(bool announce = false)
 
     if (announce)
         cemuLog_log(LogType::Force, "CPU cores: {}", cores.reason);
-    g_coresRunning.store(singleCore ? 1 : 3);
+    const char* coreWord = singleCore ? "single-core" : (cores.twoCores ? "two-core" : "multi-core");
+    g_coresRunning.store(singleCore ? 1 : (cores.twoCores ? 2 : 3));
     g_autoPickedMulti.store(cores.autoPickedMulti);
 
     if (!g_recompilerRequested.load() || !debugged)
     {
+        if (announce)
+        {
+            if (!g_recompilerRequested.load())
+                cemuLog_log(LogType::Force, "Recompiler not used: the recompiler (JIT) setting is off");
+            else
+                cemuLog_log(LogType::Force, "Recompiler not used: the recompiler is on in Settings but no JIT enabler is attached to this process (cs_flags 0x{:08x}, CS_DEBUGGED not set)", csFlags);
+        }
         // Without CS_DEBUGGED the interpreter is the only option, not a preference: the
         // kernel kills the process the moment it runs generated code, and an explicit
         // recompiler mode skips the debugger check the core applies to Auto.
-        config.cpu_mode = singleCore ? CPUMode::SinglecoreInterpreter : CPUMode::MulticoreInterpreter;
+        config.cpu_mode = singleCore ? CPUMode::SinglecoreInterpreter : (cores.twoCores ? CPUMode::TwocoreInterpreter : CPUMode::MulticoreInterpreter);
         g_cpuMode.store(kCpuModeInterpreter);
         if (!g_recompilerRequested.load())
             snprintf(detail, sizeof(detail), "The recompiler is off in Settings, so the %s interpreter is running. Cores: %s.",
-                singleCore ? "single-core" : "multi-core", cores.reason.c_str());
+                coreWord, cores.reason.c_str());
         else
             snprintf(detail, sizeof(detail), "The recompiler is on in Settings, but no JIT enabler is attached (cs_flags 0x%08x), "
                 "so the %s interpreter is running. Launch through StikJIT, SideStore or LiveContainer to use the recompiler. Cores: %s.",
-                csFlags, singleCore ? "single-core" : "multi-core", cores.reason.c_str());
+                csFlags, coreWord, cores.reason.c_str());
         setCpuModeDetail(detail);
         return;
     }
-    config.cpu_mode = singleCore ? CPUMode::SinglecoreRecompiler : CPUMode::MulticoreRecompiler;
+    config.cpu_mode = singleCore ? CPUMode::SinglecoreRecompiler : (cores.twoCores ? CPUMode::TwocoreRecompiler : CPUMode::MulticoreRecompiler);
     g_cpuMode.store(kCpuModeRecompiler);
     snprintf(detail, sizeof(detail), "A JIT enabler is attached, so the AArch64 recompiler runs this launch. Cores: %s.",
         cores.reason.c_str());
@@ -1110,13 +1310,29 @@ void ios_apply_render_profile()
 {
     auto& config = GetConfig();
     const bool accuracy = g_favourAccuracy.load();
+    const bool performance = g_favourPerformance.load() && !accuracy;
     config.vk_accurate_barriers = accuracy;
     config.gx2drawdone_sync = accuracy;
     if (accuracy)
         config.async_compile = false;
-    cemuLog_log(LogType::Force, "iOS: {} - async shaders {}, accurate barriers {}, GX2DrawDone sync {}",
-        accuracy ? "favouring accuracy" : "favouring speed",
-        config.async_compile.GetValue(), config.vk_accurate_barriers.GetValue(), config.gx2drawdone_sync.GetValue());
+    // Favour performance goes past the default speed path: a missing shader never stalls the
+    // frame, multiplies skip the console's 0*anything=0 rule, and draws skip the breadcrumbs that
+    // only a crash report reads. Set on every title start so turning it off restores all three.
+    if (performance)
+        config.async_compile = true;
+    g_latteRelaxShaderMul.store(performance, std::memory_order_relaxed);
+    const bool fullSpeed = g_fullSpeedRenders.load();
+    if (fullSpeed)
+        config.async_compile = g_fullSpeedShaderMode.load() == 1;
+    g_latteFullSpeedRenders.store(fullSpeed, std::memory_order_relaxed);
+    PerfTelemetry::DrawBreadcrumbsEnabled().store(!(performance || fullSpeed), std::memory_order_relaxed);
+    if (fullSpeed)
+        cemuLog_log(LogType::Force, "iOS: full speed renders - GPU thread user-interactive, presents paced to the game, new shaders {}",
+            g_fullSpeedShaderMode.load() == 1 ? "in the background" : "waited for");
+    cemuLog_log(LogType::Force, "iOS: {} - async shaders {}, accurate barriers {}, GX2DrawDone sync {}, strict shader mul {}",
+        accuracy ? "favouring accuracy" : (performance ? "favouring performance" : "favouring speed"),
+        config.async_compile.GetValue(), config.vk_accurate_barriers.GetValue(), config.gx2drawdone_sync.GetValue(),
+        performance ? "off" : "per game profile");
 }
 
 }  // namespace
@@ -1238,8 +1454,25 @@ namespace {
         uint32_t mtlCommandBuffers = 0, tvPresents = 0, padPresents = 0;
         uint32_t shaderCompiles = 0, pipelineCompiles = 0, pipelineSyncCompiles = 0;
         uint64_t shaderCompileNs = 0, pipelineCompileNs = 0;
+        uint32_t textureDecodes = 0;
+        uint64_t textureDecodeNs = 0;
+        uint32_t textureTranscodes = 0, textureTranscodeCacheHits = 0, textureTranscodeDirect = 0;
+        uint64_t textureTranscodeNs = 0;
         uint32_t jitBlocks = 0, jitInvalidations = 0, jitArenaReleases = 0, jitArenaAllocFails = 0;
         uint64_t jitCompileNs = 0;
+        // GPU thread breakdown (see PerfTelemetry::Counters)
+        uint32_t gpuDraws = 0, gpuTexHashes = 0;
+        uint64_t gpuBeginNs = 0, gpuTexUpdateNs = 0, gpuTexHashNs = 0, gpuTexHashBytes = 0;
+        uint64_t gpuExecNs = 0, gpuIndexNs = 0, gpuFlushNs = 0, gpuBufferNs = 0, gpuSnapshotCompareBytes = 0, gpuSnapshotCopyBytes = 0;
+        uint64_t gpuPassNs = 0, gpuPipelineNs = 0, gpuBindNs = 0, gpuEndNs = 0;
+        uint32_t gpuUseResourceCalls = 0, gpuUseResourceSkips = 0, gpuArgEncodes = 0, gpuArgReuses = 0, gpuSamplerLookups = 0, gpuTexViewLookups = 0;
+        uint64_t gpuUseResourceNs = 0, gpuArgEncodeNs = 0, gpuArgReuseNs = 0, gpuSamplerLookupNs = 0, gpuTexViewLookupNs = 0;
+        uint32_t gpuArgMissNoBase = 0, gpuArgMissSupport = 0, gpuArgMissSupportOnly = 0, gpuArgMissUniform = 0, gpuArgMissTexture = 0;
+        uint32_t gpuArgMissSampler = 0, gpuArgMissVertexIndex = 0, gpuArgMissConstant = 0, gpuArgDeltaEncodes = 0;
+        uint64_t gpuArgDeltaSlots = 0;
+        uint64_t gpuArgEncAllocNs = 0, gpuArgEncCopyNs = 0, gpuArgEncSetNs = 0, gpuArgEncFlushNs = 0;
+        uint64_t gpuBindTextureLoopNs = 0, gpuBindResidencyNs = 0, gpuBindSupportPrepNs = 0, gpuBindRemappedNs = 0, gpuBindSnapshotNs = 0;
+        uint64_t gpuBindUniformLoopNs = 0, gpuBindTrackNs = 0, gpuBindCrumbNs = 0, gpuBindVertexNs = 0, gpuBindFinalNs = 0;
     };
 
     PerfSnapshot ios_perf_take()
@@ -1262,11 +1495,68 @@ namespace {
         s.pipelineCompiles = c.pipelineCompiles.load(std::memory_order_relaxed);
         s.pipelineCompileNs = c.pipelineCompileNs.load(std::memory_order_relaxed);
         s.pipelineSyncCompiles = c.pipelineSyncCompiles.load(std::memory_order_relaxed);
+        s.textureDecodes = c.textureDecodes.load(std::memory_order_relaxed);
+        s.textureDecodeNs = c.textureDecodeNs.load(std::memory_order_relaxed);
+        s.textureTranscodes = c.textureTranscodes.load(std::memory_order_relaxed);
+        s.textureTranscodeNs = c.textureTranscodeNs.load(std::memory_order_relaxed);
+        s.textureTranscodeCacheHits = c.textureTranscodeCacheHits.load(std::memory_order_relaxed);
+        s.textureTranscodeDirect = c.textureTranscodeDirect.load(std::memory_order_relaxed);
         s.jitBlocks = c.jitBlocks.load(std::memory_order_relaxed);
         s.jitCompileNs = c.jitCompileNs.load(std::memory_order_relaxed);
         s.jitInvalidations = c.jitInvalidations.load(std::memory_order_relaxed);
         s.jitArenaReleases = c.jitArenaReleases.load(std::memory_order_relaxed);
         s.jitArenaAllocFails = c.jitArenaAllocFails.load(std::memory_order_relaxed);
+        s.gpuDraws = c.gpuDraws.load(std::memory_order_relaxed);
+        s.gpuTexHashes = c.gpuTexHashes.load(std::memory_order_relaxed);
+        s.gpuBeginNs = c.gpuBeginNs.load(std::memory_order_relaxed);
+        s.gpuTexUpdateNs = c.gpuTexUpdateNs.load(std::memory_order_relaxed);
+        s.gpuTexHashNs = c.gpuTexHashNs.load(std::memory_order_relaxed);
+        s.gpuTexHashBytes = c.gpuTexHashBytes.load(std::memory_order_relaxed);
+        s.gpuExecNs = c.gpuExecNs.load(std::memory_order_relaxed);
+        s.gpuIndexNs = c.gpuIndexNs.load(std::memory_order_relaxed);
+        s.gpuFlushNs = c.gpuFlushNs.load(std::memory_order_relaxed);
+        s.gpuBufferNs = c.gpuBufferNs.load(std::memory_order_relaxed);
+        s.gpuSnapshotCompareBytes = c.gpuSnapshotCompareBytes.load(std::memory_order_relaxed);
+        s.gpuSnapshotCopyBytes = c.gpuSnapshotCopyBytes.load(std::memory_order_relaxed);
+        s.gpuPassNs = c.gpuPassNs.load(std::memory_order_relaxed);
+        s.gpuPipelineNs = c.gpuPipelineNs.load(std::memory_order_relaxed);
+        s.gpuBindNs = c.gpuBindNs.load(std::memory_order_relaxed);
+        s.gpuEndNs = c.gpuEndNs.load(std::memory_order_relaxed);
+        s.gpuUseResourceCalls = c.gpuUseResourceCalls.load(std::memory_order_relaxed);
+        s.gpuUseResourceSkips = c.gpuUseResourceSkips.load(std::memory_order_relaxed);
+        s.gpuArgEncodes = c.gpuArgEncodes.load(std::memory_order_relaxed);
+        s.gpuArgReuses = c.gpuArgReuses.load(std::memory_order_relaxed);
+        s.gpuSamplerLookups = c.gpuSamplerLookups.load(std::memory_order_relaxed);
+        s.gpuTexViewLookups = c.gpuTexViewLookups.load(std::memory_order_relaxed);
+        s.gpuUseResourceNs = c.gpuUseResourceNs.load(std::memory_order_relaxed);
+        s.gpuArgEncodeNs = c.gpuArgEncodeNs.load(std::memory_order_relaxed);
+        s.gpuArgReuseNs = c.gpuArgReuseNs.load(std::memory_order_relaxed);
+        s.gpuSamplerLookupNs = c.gpuSamplerLookupNs.load(std::memory_order_relaxed);
+        s.gpuTexViewLookupNs = c.gpuTexViewLookupNs.load(std::memory_order_relaxed);
+        s.gpuArgMissNoBase = c.gpuArgMissNoBase.load(std::memory_order_relaxed);
+        s.gpuArgMissSupport = c.gpuArgMissSupport.load(std::memory_order_relaxed);
+        s.gpuArgMissSupportOnly = c.gpuArgMissSupportOnly.load(std::memory_order_relaxed);
+        s.gpuArgMissUniform = c.gpuArgMissUniform.load(std::memory_order_relaxed);
+        s.gpuArgMissTexture = c.gpuArgMissTexture.load(std::memory_order_relaxed);
+        s.gpuArgMissSampler = c.gpuArgMissSampler.load(std::memory_order_relaxed);
+        s.gpuArgMissVertexIndex = c.gpuArgMissVertexIndex.load(std::memory_order_relaxed);
+        s.gpuArgMissConstant = c.gpuArgMissConstant.load(std::memory_order_relaxed);
+        s.gpuArgDeltaEncodes = c.gpuArgDeltaEncodes.load(std::memory_order_relaxed);
+        s.gpuArgDeltaSlots = c.gpuArgDeltaSlots.load(std::memory_order_relaxed);
+        s.gpuArgEncAllocNs = c.gpuArgEncAllocNs.load(std::memory_order_relaxed);
+        s.gpuArgEncCopyNs = c.gpuArgEncCopyNs.load(std::memory_order_relaxed);
+        s.gpuArgEncSetNs = c.gpuArgEncSetNs.load(std::memory_order_relaxed);
+        s.gpuArgEncFlushNs = c.gpuArgEncFlushNs.load(std::memory_order_relaxed);
+        s.gpuBindTextureLoopNs = c.gpuBindTextureLoopNs.load(std::memory_order_relaxed);
+        s.gpuBindResidencyNs = c.gpuBindResidencyNs.load(std::memory_order_relaxed);
+        s.gpuBindSupportPrepNs = c.gpuBindSupportPrepNs.load(std::memory_order_relaxed);
+        s.gpuBindRemappedNs = c.gpuBindRemappedNs.load(std::memory_order_relaxed);
+        s.gpuBindSnapshotNs = c.gpuBindSnapshotNs.load(std::memory_order_relaxed);
+        s.gpuBindUniformLoopNs = c.gpuBindUniformLoopNs.load(std::memory_order_relaxed);
+        s.gpuBindTrackNs = c.gpuBindTrackNs.load(std::memory_order_relaxed);
+        s.gpuBindCrumbNs = c.gpuBindCrumbNs.load(std::memory_order_relaxed);
+        s.gpuBindVertexNs = c.gpuBindVertexNs.load(std::memory_order_relaxed);
+        s.gpuBindFinalNs = c.gpuBindFinalNs.load(std::memory_order_relaxed);
         return s;
     }
 
@@ -1293,7 +1583,7 @@ namespace {
         const double wallNs = dt * 1e9;
         const double frames = (double)(uint32_t)(b.frames - a.frames);
         const double flips = (double)(uint32_t)(b.flips - a.flips);
-        const double hostPresents = (double)(uint32_t)(b.tvPresents - a.tvPresents);
+        const double hostPresents = std::max<double>((double)(uint32_t)(b.tvPresents - a.tvPresents), (double)(uint32_t)(b.padPresents - a.padPresents));
         const double hostThreads = std::max<double>(1.0, PerfTelemetry::Get().ppcHostThreads.load(std::memory_order_relaxed));
 
         const double hostFps = hostPresents / dt;
@@ -1315,6 +1605,12 @@ namespace {
         const uint32_t pipelinesOnGpuThread = b.pipelineSyncCompiles - a.pipelineSyncCompiles;
         const double shaderMs = (double)(b.shaderCompileNs - a.shaderCompileNs) / 1e6;
         const double pipelineMs = (double)(b.pipelineCompileNs - a.pipelineCompileNs) / 1e6;
+        const uint32_t textureDecodes = b.textureDecodes - a.textureDecodes;
+        const double textureDecodeMs = (double)(b.textureDecodeNs - a.textureDecodeNs) / 1e6;
+        const uint32_t textureTranscodes = b.textureTranscodes - a.textureTranscodes;
+        const double textureTranscodeMs = (double)(b.textureTranscodeNs - a.textureTranscodeNs) / 1e6;
+        const uint32_t textureTranscodeCacheHits = b.textureTranscodeCacheHits - a.textureTranscodeCacheHits;
+        const uint32_t textureTranscodeDirect = b.textureTranscodeDirect - a.textureTranscodeDirect;
         const uint32_t jitBlocks = b.jitBlocks - a.jitBlocks;
         const double jitMs = (double)(b.jitCompileNs - a.jitCompileNs) / 1e6;
         const int thermal = ios_thermal_state();
@@ -1355,22 +1651,76 @@ namespace {
                 cemu_bridge_device_summary(), (uint32_t)hostThreads, GetConfig().async_compile.GetValue() ? "on" : "off",
                 (uint64_t)(PPCRecompiler_getJitArenaSize() / (1024 * 1024)));
         }
+        if (logHeader)
+        {
+            // Said once per title, next to the arena size, so a log that shows "arena 0 MB" also says why
+            std::string cpuDetail = getCpuModeDetail();
+            cemuLog_log(LogType::Force, "perf: cpu path {} | {}", g_cpuMode.load() == kCpuModeRecompiler ? "recompiler" : "interpreter", cpuDetail);
+        }
         cemuLog_log(LogType::Force,
             "perf {:.0f}s: fps host {:.1f} game {:.1f} vsync {:.1f} (speed {:.0f}%) | ppc thread run {:.0f}% wait {:.0f}% | "
             "gpu thread busy {:.0f}% idle {:.0f}% sync {:.0f}% (drawable {:.0f} ms) | metal gpu {:.1f} ms/frame ({:.0f}% busy, {:.1f} cb/frame) | "
-            "compiled shaders {} ({:.0f} ms) pipelines {} ({:.0f} ms, {} on the gpu thread) | "
+            "compiled shaders {} ({:.0f} ms) pipelines {} ({:.0f} ms, {} on the gpu thread) | texture decodes {} ({:.0f} ms, BC->ASTC {} = {:.0f} ms, {} from cache, {} direct) | "
             "jit blocks {} ({:.0f} ms) invalidated {} arena released {} alloc-failed {} used {}/{} MB | thermal {} | limit: {}",
             dt, hostFps, guestFps, vsyncRate, speedPct, ppcRun * 100.0, ppcWait * 100.0,
             gpuThreadBusy * 100.0, gpuIdle * 100.0, gpuSync * 100.0, (double)(b.drawableWaitNs - a.drawableWaitNs) / 1e6,
             mtlMsPerFrame, mtlBusy * 100.0, cbPerFrame,
-            shaders, shaderMs, pipelines, pipelineMs, pipelinesOnGpuThread,
+            shaders, shaderMs, pipelines, pipelineMs, pipelinesOnGpuThread, textureDecodes, textureDecodeMs, textureTranscodes, textureTranscodeMs, textureTranscodeCacheHits, textureTranscodeDirect,
             jitBlocks, jitMs, b.jitInvalidations - a.jitInvalidations, b.jitArenaReleases - a.jitArenaReleases, b.jitArenaAllocFails - a.jitArenaAllocFails,
             (uint64_t)(PPCRecompiler_getJitArenaUsed() / (1024 * 1024)), (uint64_t)(PPCRecompiler_getJitArenaSize() / (1024 * 1024)),
             ios_thermal_name(thermal), PerfTelemetry::BottleneckName(verdict));
 
-        char line[160];
-        snprintf(line, sizeof(line), "host %.1f game %.1f fps | ppc %.0f%% gpu thread %.0f%% metal %.1f ms | %s",
-            hostFps, guestFps, ppcRun * 100.0, gpuThreadBusy * 100.0, mtlMsPerFrame, PerfTelemetry::BottleneckName(verdict));
+        // Where the GPU thread's busy time went, per emulated frame. begin, execute and end/commit are
+        // disjoint; the indented parts are inside execute (textures and hashing inside begin). "other" is
+        // the busy time none of them covers (command decoding, register state, shader lookup outside a draw).
+        {
+            const double perFrame = frames > 0.0 ? 1.0 / (frames * 1e6) : 0.0;
+            auto ms = [&](uint64_t x, uint64_t y) { return (double)(x - y) * perFrame; };
+            // counts per emulated frame
+            auto n = [&](uint32_t x, uint32_t y) { return frames > 0.0 ? (double)(x - y) / frames : 0.0; };
+            const double busyMs = gpuThreadBusy * wallNs * perFrame;
+            const double beginMs = ms(b.gpuBeginNs, a.gpuBeginNs);
+            const double execMs = ms(b.gpuExecNs, a.gpuExecNs);
+            const double endMs = ms(b.gpuEndNs, a.gpuEndNs);
+            const double otherMs = std::max(0.0, busyMs - beginMs - execMs - endMs);
+            const uint32_t draws = b.gpuDraws - a.gpuDraws;
+            const double mbPerFrame = frames > 0.0 ? 1.0 / (frames * 1048576.0) : 0.0;
+            cemuLog_log(LogType::Force,
+                "perf gpu thread ms/frame {:.1f}: draws {:.0f}/frame | begin {:.1f} (textures {:.1f}, hashing {:.1f} = {} textures {:.1f} MB/frame) | "
+                "execute {:.1f} (index {:.1f}, flush queue {:.1f}, buffers {:.1f} [compared {:.1f} MB/frame, copied {:.1f} MB/frame], render pass {:.1f}, pipeline {:.1f}, resource bind {:.1f} [sampled 1/8: useResource {:.0f} calls/frame {:.1f} ms, {:.0f} skipped; argument buffers {:.0f} encoded {:.1f} ms, {:.0f} reused {:.1f} ms; sampler lookups {:.0f} {:.1f} ms; texture views {:.0f} {:.1f} ms]) | "
+                "arg misses/frame {:.0f} [no base {:.0f}; differing vs latest: support {:.0f} (only {:.0f}), uniform {:.0f}, texture {:.0f}, sampler {:.0f}, vertex/index {:.0f}, constant {:.0f}; delta encodes {:.0f} writing {:.1f} slots each; encode parts ms/frame: alloc {:.1f}, copy+retain+slot {:.1f}, encoder calls {:.1f}, flush {:.1f}] | "
+                "bind parts (sampled 1/8) ms/frame [texture loop {:.1f}, support prep {:.1f}, remapped uniforms {:.1f}, support snapshot {:.1f}, uniform loop {:.1f} (shared cache track {:.1f}, breadcrumbs {:.1f}), vertex/index {:.1f}, arg buffer bind {:.1f}, residency lookups {:.1f}, rest {:.1f}] | "
+                "end/commit {:.1f} | other {:.1f}",
+                busyMs, frames > 0.0 ? draws / frames : 0.0, beginMs, ms(b.gpuTexUpdateNs, a.gpuTexUpdateNs), ms(b.gpuTexHashNs, a.gpuTexHashNs),
+                frames > 0.0 ? (uint32_t)((b.gpuTexHashes - a.gpuTexHashes) / frames) : 0u, (double)(b.gpuTexHashBytes - a.gpuTexHashBytes) * mbPerFrame,
+                execMs, ms(b.gpuIndexNs, a.gpuIndexNs), ms(b.gpuFlushNs, a.gpuFlushNs), ms(b.gpuBufferNs, a.gpuBufferNs),
+                (double)(b.gpuSnapshotCompareBytes - a.gpuSnapshotCompareBytes) * mbPerFrame, (double)(b.gpuSnapshotCopyBytes - a.gpuSnapshotCopyBytes) * mbPerFrame,
+                ms(b.gpuPassNs, a.gpuPassNs), ms(b.gpuPipelineNs, a.gpuPipelineNs), ms(b.gpuBindNs, a.gpuBindNs),
+                n(b.gpuUseResourceCalls, a.gpuUseResourceCalls), ms(b.gpuUseResourceNs, a.gpuUseResourceNs), n(b.gpuUseResourceSkips, a.gpuUseResourceSkips),
+                n(b.gpuArgEncodes, a.gpuArgEncodes), ms(b.gpuArgEncodeNs, a.gpuArgEncodeNs), n(b.gpuArgReuses, a.gpuArgReuses), ms(b.gpuArgReuseNs, a.gpuArgReuseNs),
+                n(b.gpuSamplerLookups, a.gpuSamplerLookups), ms(b.gpuSamplerLookupNs, a.gpuSamplerLookupNs),
+                n(b.gpuTexViewLookups, a.gpuTexViewLookups), ms(b.gpuTexViewLookupNs, a.gpuTexViewLookupNs),
+                n(b.gpuArgEncodes, a.gpuArgEncodes),
+                n(b.gpuArgMissNoBase, a.gpuArgMissNoBase), n(b.gpuArgMissSupport, a.gpuArgMissSupport), n(b.gpuArgMissSupportOnly, a.gpuArgMissSupportOnly),
+                n(b.gpuArgMissUniform, a.gpuArgMissUniform), n(b.gpuArgMissTexture, a.gpuArgMissTexture), n(b.gpuArgMissSampler, a.gpuArgMissSampler),
+                n(b.gpuArgMissVertexIndex, a.gpuArgMissVertexIndex), n(b.gpuArgMissConstant, a.gpuArgMissConstant),
+                n(b.gpuArgDeltaEncodes, a.gpuArgDeltaEncodes),
+                b.gpuArgDeltaEncodes != a.gpuArgDeltaEncodes ? (double)(b.gpuArgDeltaSlots - a.gpuArgDeltaSlots) / (double)(b.gpuArgDeltaEncodes - a.gpuArgDeltaEncodes) : 0.0,
+                ms(b.gpuArgEncAllocNs, a.gpuArgEncAllocNs), ms(b.gpuArgEncCopyNs, a.gpuArgEncCopyNs), ms(b.gpuArgEncSetNs, a.gpuArgEncSetNs), ms(b.gpuArgEncFlushNs, a.gpuArgEncFlushNs),
+                ms(b.gpuBindTextureLoopNs, a.gpuBindTextureLoopNs), ms(b.gpuBindSupportPrepNs, a.gpuBindSupportPrepNs), ms(b.gpuBindRemappedNs, a.gpuBindRemappedNs),
+                ms(b.gpuBindSnapshotNs, a.gpuBindSnapshotNs), ms(b.gpuBindUniformLoopNs, a.gpuBindUniformLoopNs), ms(b.gpuBindTrackNs, a.gpuBindTrackNs),
+                ms(b.gpuBindCrumbNs, a.gpuBindCrumbNs), ms(b.gpuBindVertexNs, a.gpuBindVertexNs), ms(b.gpuBindFinalNs, a.gpuBindFinalNs),
+                ms(b.gpuBindResidencyNs, a.gpuBindResidencyNs),
+                std::max(0.0, ms(b.gpuBindNs, a.gpuBindNs) - ms(b.gpuBindTextureLoopNs, a.gpuBindTextureLoopNs) - ms(b.gpuBindSupportPrepNs, a.gpuBindSupportPrepNs) -
+                    ms(b.gpuBindRemappedNs, a.gpuBindRemappedNs) - ms(b.gpuBindSnapshotNs, a.gpuBindSnapshotNs) - ms(b.gpuBindUniformLoopNs, a.gpuBindUniformLoopNs) -
+                    ms(b.gpuBindVertexNs, a.gpuBindVertexNs) - ms(b.gpuBindFinalNs, a.gpuBindFinalNs)),
+                endMs, otherMs);
+        }
+
+        char line[200];
+        snprintf(line, sizeof(line), "host %.1f game %.1f fps | ppc %.0f%% gpu thread %.0f%% metal %.1f ms | %s%s",
+            hostFps, guestFps, ppcRun * 100.0, gpuThreadBusy * 100.0, mtlMsPerFrame, PerfTelemetry::BottleneckName(verdict),
+            g_cpuMode.load() == kCpuModeRecompiler ? "" : (g_recompilerRequested.load() ? " | interpreter (no JIT enabler)" : " | interpreter (recompiler off)"));
         std::lock_guard<std::mutex> lock(g_perfLineMutex);
         g_perfLine = line;
     }
@@ -1506,7 +1856,7 @@ namespace {
         g_stallResetGen.fetch_add(1);
     }
 
-    // Windows get longer when iOS is throttling the device: a hot A12Z legitimately runs slowly.
+    // Windows get longer when iOS is throttling the device: a hot device legitimately runs slowly.
     double ios_stall_thermal_scale(int* stateOut)
     {
         const NSInteger state = [[NSProcessInfo processInfo] thermalState];
@@ -1634,11 +1984,13 @@ namespace {
             return;
 
         [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidEnterBackgroundNotification object:nil queue:nil
-            usingBlock:^(NSNotification*) { g_appIsActive.store(false); }];
+            usingBlock:^(NSNotification*) { g_appIsActive.store(false); PerfTelemetry::AppInBackground().store(true); }];
         [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:nil
             usingBlock:^(NSNotification*) { g_appIsActive.store(false); }];
         [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:nil
-            usingBlock:^(NSNotification*) { g_appIsActive.store(true); }];
+            usingBlock:^(NSNotification*) { g_appIsActive.store(true); PerfTelemetry::AppInBackground().store(false); }];
+        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationWillEnterForegroundNotification object:nil queue:nil
+            usingBlock:^(NSNotification*) { PerfTelemetry::AppInBackground().store(false); }];
 
         std::thread([] {
             StallDetect::Detector detector;
@@ -1747,6 +2099,19 @@ namespace {
     void* g_inputHandle = nullptr;
     GCController* g_boundController = nil;
     bool g_homeWarned = false;
+
+    // The controller's own HOME / guide button and the app's menus. HOME never reaches the game (the core's GamePad
+    // mapping has no HOME bit); it is reported to the app instead. While menu capture is on, the same controller also
+    // drives the app's menu: the game sees nothing and four more events (up, down, A, B) are reported.
+    std::atomic<CemuMenuInputCallback> g_menuCallback{nullptr};
+    std::atomic<bool> g_menuCapture{false};
+    // Bits held when capture ended (or while it is on), still ignored by the game until let go. Under g_inputMutex.
+    uint32_t g_physicalSuppress = 0;
+    // Main thread only, in ios_update_physical: what was held at the last update, to find the new presses.
+    constexpr uint32_t kMenuUp = 1u << 0, kMenuDown = 1u << 1, kMenuConfirm = 1u << 2, kMenuBack = 1u << 3;
+    constexpr float kMenuStickThreshold = 0.6f;
+    uint32_t g_menuHeld = 0;
+    bool g_homeHeld = false;
 
     int ios_button_bit(CemuBridgeButton button)
     {
@@ -1859,18 +2224,62 @@ namespace {
         bit(pad.dpad.left.isPressed, kBitLeft);
         bit(pad.dpad.right.isPressed, kBitRight);
 
-        std::lock_guard lock(g_inputMutex);
-        g_physicalButtons = buttons;
-        g_physicalSticks[0] = GCBridgeVec2{pad.leftThumbstick.xAxis.value, pad.leftThumbstick.yAxis.value};
-        g_physicalSticks[1] = GCBridgeVec2{pad.rightThumbstick.xAxis.value, pad.rightThumbstick.yAxis.value};
-        g_physicalTriggers[0] = pad.leftTrigger.value;
-        g_physicalTriggers[1] = pad.rightTrigger.value;
+        // What the app's menus see. Tracked on every update, capture or not, so turning capture on while a button is
+        // held does not report that button as a fresh press.
+        const bool capture = g_menuCapture.load();
+        const float stickY = pad.leftThumbstick.yAxis.value;
+        uint32_t menuNow = 0;
+        if (pad.dpad.up.isPressed || stickY > kMenuStickThreshold) menuNow |= kMenuUp;
+        if (pad.dpad.down.isPressed || stickY < -kMenuStickThreshold) menuNow |= kMenuDown;
+        if (pad.buttonA.isPressed) menuNow |= kMenuConfirm;
+        if (pad.buttonB.isPressed) menuNow |= kMenuBack;
+        const uint32_t menuNew = menuNow & ~g_menuHeld;
+        g_menuHeld = menuNow;
+        const bool homeNow = pad.buttonHome ? pad.buttonHome.isPressed : NO;
+        const bool homeNew = homeNow && !g_homeHeld;
+        g_homeHeld = homeNow;
+
+        {
+            std::lock_guard lock(g_inputMutex);
+            if (capture)
+            {
+                g_physicalSuppress = buttons;
+                g_physicalButtons = 0;
+                g_physicalSticks[0] = g_physicalSticks[1] = GCBridgeVec2{};
+                g_physicalTriggers[0] = g_physicalTriggers[1] = 0.0f;
+            }
+            else
+            {
+                g_physicalSuppress &= buttons;
+                g_physicalButtons = buttons & ~g_physicalSuppress;
+                g_physicalSticks[0] = GCBridgeVec2{pad.leftThumbstick.xAxis.value, pad.leftThumbstick.yAxis.value};
+                g_physicalSticks[1] = GCBridgeVec2{pad.rightThumbstick.xAxis.value, pad.rightThumbstick.yAxis.value};
+                g_physicalTriggers[0] = (g_physicalSuppress & (1u << kBitZL)) ? 0.0f : pad.leftTrigger.value;
+                g_physicalTriggers[1] = (g_physicalSuppress & (1u << kBitZR)) ? 0.0f : pad.rightTrigger.value;
+            }
+        }
+
+        if (CemuMenuInputCallback callback = g_menuCallback.load())
+        {
+            if (homeNew)
+                callback(CEMU_BRIDGE_MENU_HOME);
+            if (capture)
+            {
+                if (menuNew & kMenuUp) callback(CEMU_BRIDGE_MENU_UP);
+                if (menuNew & kMenuDown) callback(CEMU_BRIDGE_MENU_DOWN);
+                if (menuNew & kMenuConfirm) callback(CEMU_BRIDGE_MENU_CONFIRM);
+                if (menuNew & kMenuBack) callback(CEMU_BRIDGE_MENU_BACK);
+            }
+        }
     }
 
     void ios_clear_physical()
     {
+        g_menuHeld = 0;
+        g_homeHeld = false;
         std::lock_guard lock(g_inputMutex);
         g_physicalButtons = 0;
+        g_physicalSuppress = 0;
         g_physicalSticks[0] = g_physicalSticks[1] = GCBridgeVec2{};
         g_physicalTriggers[0] = g_physicalTriggers[1] = 0.0f;
     }
@@ -1886,6 +2295,10 @@ namespace {
             if (!pad)
                 continue;
             g_boundController = controller;
+            // HOME is the app's while a game is up (it opens the in-game menu). Left alone, iOS keeps the button for
+            // itself and the app never hears it.
+            if (pad.buttonHome)
+                pad.buttonHome.preferredSystemGestureState = GCSystemGestureStateDisabled;
             pad.valueChangedHandler = ^(GCExtendedGamepad* gamepad, GCControllerElement* element) {
                 (void)element;
                 ios_update_physical(gamepad);
@@ -2003,8 +2416,14 @@ long long cemu_bridge_clear_shader_cache(unsigned long long titleId, bool includ
         return -1;
     }
     long long freed = IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/precompiled"), titleId, true);
+    // the Vulkan driver's own pipeline cache is compiled output too (VulkanRenderer::PipelineCacheSaveThread)
+    freed += IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/driver/vk"), titleId, true);
     if (includeLearned)
+    {
         freed += IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/transferable"), titleId, true);
+        // and the guard's backups of them (LatteShaderCache.cpp), or the next start would restore what was just cleared
+        freed += IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/backup"), titleId, true);
+    }
     cemuLog_log(LogType::Force, "Shader cache: cleared {} bytes ({})", freed, includeLearned ? "compiled and learned" : "compiled only");
     return freed;
 }
@@ -2013,8 +2432,179 @@ int cemu_bridge_shader_cache_stats(unsigned long long titleId, long long* outLea
     if (outLearnedBytes)
         *outLearnedBytes = IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/transferable"), titleId, false);
     if (outCompiledBytes)
-        *outCompiledBytes = IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/precompiled"), titleId, false);
+        *outCompiledBytes = IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/precompiled"), titleId, false)
+            + IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/driver/vk"), titleId, false);
     return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Importing learned-shader and pipeline cache files
+namespace {
+
+constexpr uint32_t kLegacyShaderCacheStamp = 2; // SHADER_CACHE_GENERIC_EXTRA_VERSION, used by caches before the title-derived stamp
+
+// A learned-shader entry starts with one byte holding the entry version (1) and the shader type (0 vertex,
+// 1 geometry, 2 pixel) in the high nibble, then the base hash and aux hash (see LatteShaderCache.cpp). Desktop
+// Cemu's pre-1.16 caches (keyed by the RPX hash) start with 0x08 instead.
+bool IOSCacheEntryIsShader(const std::vector<uint8>& data)
+{
+    return data.size() >= 17 && (data[0] & 0xF) == 1 && (data[0] >> 4) <= 2;
+}
+
+void IOSCacheInspect(unsigned long long titleId, const char* path, CemuCacheFileInfo* info)
+{
+    *info = CemuCacheFileInfo{};
+    info->status = CEMU_CACHE_STATUS_NOT_A_CACHE;
+    if (!path)
+        return;
+    // FileCache reads the V3 format and the older V2 header, and skips the checksum bit when an entry has none.
+    // Read-only: the file is the player's, so a damaged entry is not repaired or deleted and nothing is restored
+    // from MuffinEMU's backup even when the file carries the same name as the title's own cache.
+    FileCache* cache = FileCache::OpenReadOnly(std::filesystem::path(path));
+    if (!cache)
+        return;
+    info->stamp = cache->GetExtraVersion();
+    const uint32_t shaderStamp = LatteShaderCache_getShaderCacheExtraVersion(titleId);
+    const uint32_t pipelineStamp = LatteShaderCache_getPipelineCacheExtraVersion(titleId);
+    if (info->stamp == shaderStamp || info->stamp == kLegacyShaderCacheStamp)
+        info->kind = CEMU_CACHE_FILE_SHADERS;
+    else if (info->stamp == pipelineStamp)
+        info->kind = CEMU_CACHE_FILE_PIPELINE;
+    else
+    {
+        info->status = CEMU_CACHE_STATUS_OTHER_GAME;
+        delete cache;
+        return;
+    }
+    int legacyFormat = 0;
+    std::vector<uint8> data;
+    const int maxIndex = cache->GetMaximumFileIndex();
+    for (int i = 0; i < maxIndex; i++)
+    {
+        uint64 name1 = 0, name2 = 0;
+        if (!cache->GetFileByIndex(i, &name1, &name2, data))
+            continue;
+        info->entryCount++;
+        if (info->kind == CEMU_CACHE_FILE_PIPELINE)
+            info->usableCount++;
+        else if (IOSCacheEntryIsShader(data))
+            info->usableCount++;
+        else if (!data.empty() && data[0] == 0x08)
+            legacyFormat++;
+    }
+    // GetFileByIndex only hands back good entries; ones that failed their check are counted here
+    info->damagedCount = (int)cache->GetDamagedEntryCount();
+    if (info->usableCount > 0)
+        info->status = CEMU_CACHE_STATUS_OK;
+    else
+        info->status = legacyFormat > 0 ? CEMU_CACHE_STATUS_OLD_FORMAT : CEMU_CACHE_STATUS_NOTHING_USABLE;
+    delete cache;
+}
+
+} // namespace
+
+void cemu_bridge_cache_file_inspect(unsigned long long titleId, const char* path, CemuCacheFileInfo* outInfo) {
+    if (!outInfo)
+        return;
+    IOSCacheInspect(titleId, path, outInfo);
+}
+
+int cemu_bridge_cache_stamp_kind(unsigned long long titleId, unsigned int stamp) {
+    if (stamp == LatteShaderCache_getShaderCacheExtraVersion(titleId))
+        return CEMU_CACHE_FILE_SHADERS;
+    if (stamp == LatteShaderCache_getPipelineCacheExtraVersion(titleId))
+        return CEMU_CACHE_FILE_PIPELINE;
+    return CEMU_CACHE_FILE_UNKNOWN;
+}
+
+int cemu_bridge_cache_file_import(unsigned long long titleId, const char* path, int kind, int renderer, bool pipelineIsVulkan,
+                                  int* outAdded, int* outAlreadyThere, int* outSkipped) {
+    if (outAdded) *outAdded = 0;
+    if (outAlreadyThere) *outAlreadyThere = 0;
+    if (outSkipped) *outSkipped = 0;
+    // Both files are open in the running game and would be rewritten on close.
+    if (cemu_bridge_is_title_running()) {
+        cemuLog_log(LogType::Force, "Cache import: refusing while a title is running");
+        return CEMU_CACHE_STATUS_TITLE_RUNNING;
+    }
+    CemuCacheFileInfo info;
+    IOSCacheInspect(titleId, path, &info);
+    if (info.status != CEMU_CACHE_STATUS_OK)
+        return info.status;
+    if (info.kind != kind)
+        return CEMU_CACHE_STATUS_NOT_A_CACHE;
+
+    // where it goes
+    std::filesystem::path destPath;
+    uint32_t destStamp;
+    if (kind == CEMU_CACHE_FILE_SHADERS) {
+        destPath = renderer == 1 ? ActiveSettings::GetCachePath("shaderCache/transferable/{:016x}_shaders.bin", titleId)
+                                 : ActiveSettings::GetCachePath("shaderCache/transferable/{:016x}_mtlshaders.bin", titleId);
+        destStamp = LatteShaderCache_getShaderCacheExtraVersion(titleId);
+    } else {
+        destPath = pipelineIsVulkan ? ActiveSettings::GetCachePath("shaderCache/transferable/{:016x}_vkpipeline.bin", titleId)
+                                    : ActiveSettings::GetCachePath("shaderCache/transferable/{:016x}_mtlpipeline.bin", titleId);
+        destStamp = LatteShaderCache_getPipelineCacheExtraVersion(titleId);
+    }
+    std::error_code ec;
+    std::filesystem::create_directories(destPath.parent_path(), ec);
+
+    // The title's own file is opened as it is, or created when there is none; a file that exists but won't
+    // open is left alone (opening it with the create option would move it aside).
+    FileCache* dest = nullptr;
+    if (std::filesystem::exists(destPath, ec)) {
+        dest = FileCache::Open(destPath);
+        if (!dest) {
+            cemuLog_log(LogType::Force, "Cache import: \"{}\" can't be opened, leaving it as it is", destPath.filename().string());
+            return -1;
+        }
+        const uint32_t have = dest->GetExtraVersion();
+        const bool ok = have == destStamp || (kind == CEMU_CACHE_FILE_SHADERS && have == kLegacyShaderCacheStamp);
+        if (!ok) {
+            delete dest;
+            return -2;
+        }
+    } else {
+        dest = FileCache::Create(destPath, destStamp);
+        if (!dest)
+            return -1;
+    }
+    dest->UseCompression(false);
+
+    FileCache* source = FileCache::OpenReadOnly(std::filesystem::path(path)); // never modified, see IOSCacheInspect
+    if (!source) {
+        delete dest;
+        return CEMU_CACHE_STATUS_NOT_A_CACHE;
+    }
+    int added = 0, already = 0, skipped = 0;
+    std::vector<uint8> data;
+    const int maxIndex = source->GetMaximumFileIndex();
+    for (int i = 0; i < maxIndex; i++) {
+        uint64 name1 = 0, name2 = 0;
+        if (!source->GetFileByIndex(i, &name1, &name2, data))
+            continue;
+        if (kind == CEMU_CACHE_FILE_SHADERS && !IOSCacheEntryIsShader(data)) {
+            skipped++;
+            continue;
+        }
+        if (dest->HasFile({ name1, name2 })) {
+            already++; // the title's own entry wins
+            continue;
+        }
+        if (!dest->AddFile({ name1, name2 }, data.data(), (sint32)data.size())) {
+            skipped++; // not written (storage full); the title's file is unchanged by this entry
+            continue;
+        }
+        added++;
+    }
+    skipped += (int)source->GetDamagedEntryCount() + info.damagedCount;
+    delete source;
+    delete dest; // closes and flushes
+    cemuLog_log(LogType::Force, "Cache import: {} added, {} already there, {} skipped ({})", added, already, skipped, destPath.filename().string());
+    if (outAdded) *outAdded = added;
+    if (outAlreadyThere) *outAlreadyThere = already;
+    if (outSkipped) *outSkipped = skipped;
+    return CEMU_CACHE_STATUS_OK;
 }
 
 // ---------------------------------------------------------------------------
@@ -2110,6 +2700,14 @@ void cemu_bridge_set_framebuffer_fetch(bool enabled) {
 
 bool cemu_bridge_framebuffer_fetch(void) {
     return GetConfig().framebuffer_fetch.GetValue();
+}
+
+void cemu_bridge_set_emulate_missing_effects(bool enabled) {
+    GetConfig().emulate_missing_effects = enabled;
+}
+
+bool cemu_bridge_emulate_missing_effects(void) {
+    return GetConfig().emulate_missing_effects.GetValue();
 }
 
 // ---------------------------------------------------------------------------
@@ -2309,6 +2907,73 @@ bool cemu_bridge_notification_friends(void) {
     return GetConfig().notification.friends;
 }
 
+void cemu_bridge_set_native_overlay(bool enabled) {
+    g_overlayNativeOnIOS.store(enabled, std::memory_order_relaxed);
+}
+
+bool cemu_bridge_native_overlay(void) {
+    return g_overlayNativeOnIOS.load(std::memory_order_relaxed);
+}
+
+const char* cemu_bridge_native_overlay_text(void) {
+    static thread_local std::string text;
+    text.clear();
+    if (!g_overlayNativeOnIOS.load(std::memory_order_relaxed))
+        return text.c_str();
+
+    std::vector<std::string> stats;
+    std::vector<std::string> notifications;
+    LatteOverlay_CollectNativeText(stats, notifications);
+
+    for (size_t i = 0; i < stats.size(); ++i) {
+        if (i != 0)
+            text += '\n';
+        text += stats[i];
+    }
+    for (const std::string& notification : notifications) {
+        text += '\x1e';
+        text += notification;
+    }
+    return text.c_str();
+}
+
+int32_t cemu_bridge_cache_loading(uint32_t* loaded, uint32_t* total) {
+    uint32 loadedCount = 0;
+    uint32 totalCount = 0;
+    const uint32 phase = LatteShaderCache_GetNativeProgress(loadedCount, totalCount);
+    if (loaded)
+        *loaded = loadedCount;
+    if (total)
+        *total = totalCount;
+    return (int32_t)phase;
+}
+
+// Native dialogs (software keyboard, error viewer). See NativeDialogs.h.
+#include "gui/uikit/NativeDialogs.h"
+
+void cemu_bridge_set_native_dialogs(bool enabled) {
+    NativeDialogs::SetEnabled(enabled);
+}
+
+const char* cemu_bridge_native_dialog_request(void) {
+    static thread_local std::string request;
+    request = NativeDialogs::Describe();
+    return request.c_str();
+}
+
+void cemu_bridge_native_keyboard_answer(uint64_t id, const char* text, int answer) {
+    NativeDialogs::KeyboardAnswer kind = NativeDialogs::KeyboardAnswer::Update;
+    if (answer == 1)
+        kind = NativeDialogs::KeyboardAnswer::Accept;
+    else if (answer == 2)
+        kind = NativeDialogs::KeyboardAnswer::Cancel;
+    NativeDialogs::AnswerKeyboard(id, NativeDialogs::FromUtf8(text), kind);
+}
+
+void cemu_bridge_native_error_answer(uint64_t id, int button) {
+    NativeDialogs::AnswerError(id, button);
+}
+
 // MARK: - Audio
 //
 // tv_audio_enabled/pad_audio_enabled/tv_channels/pad_channels/tv_volume/pad_volume/
@@ -2327,6 +2992,10 @@ bool cemu_bridge_tv_audio_enabled(void) {
 
 void cemu_bridge_set_tv_volume(int volume) {
     GetConfig().tv_volume = std::clamp(volume, 0, 100);
+    // apply to a running title too; the device reads it on every render callback
+    std::shared_lock lock(g_audioMutex);
+    if (g_tvAudio)
+        g_tvAudio->SetVolume(GetConfig().tv_volume);
 }
 
 int cemu_bridge_tv_volume(void) {
@@ -2342,6 +3011,44 @@ int cemu_bridge_tv_channels(void) {
     return (int)GetConfig().tv_channels;
 }
 
+// "Record audio" (HOME menu). See audio/iOSAudioRecorder.mm.
+bool cemu_bridge_audio_record_start(const char* path) {
+    return IOSAudioRecorder::Start(path);
+}
+
+void cemu_bridge_audio_record_stop(void) {
+    IOSAudioRecorder::Stop();
+}
+
+bool cemu_bridge_audio_record_active(void) {
+    return IOSAudioRecorder::IsActive();
+}
+
+double cemu_bridge_audio_record_seconds(void) {
+    return IOSAudioRecorder::Seconds();
+}
+
+// "Record screen" (HOME menu). See IOSScreenRecorder.mm.
+bool cemu_bridge_screen_record_start(const char* path) {
+    return IOSScreenRecorder::Start(path);
+}
+
+bool cemu_bridge_screen_record_stop(void) {
+    return IOSScreenRecorder::Stop();
+}
+
+bool cemu_bridge_screen_record_active(void) {
+    return IOSScreenRecorder::g_active.load(std::memory_order_relaxed);
+}
+
+double cemu_bridge_screen_record_seconds(void) {
+    return IOSScreenRecorder::Seconds();
+}
+
+bool cemu_bridge_screen_record_failed(void) {
+    return IOSScreenRecorder::Failed();
+}
+
 void cemu_bridge_set_pad_audio_enabled(bool enabled) {
     GetConfig().pad_audio_enabled = enabled;
 }
@@ -2352,6 +3059,10 @@ bool cemu_bridge_pad_audio_enabled(void) {
 
 void cemu_bridge_set_pad_volume(int volume) {
     GetConfig().pad_volume = std::clamp(volume, 0, 100);
+    // apply to a running title too; the device reads it on every render callback
+    std::shared_lock lock(g_audioMutex);
+    if (g_padAudio)
+        g_padAudio->SetVolume(GetConfig().pad_volume);
 }
 
 int cemu_bridge_pad_volume(void) {
@@ -2423,6 +3134,26 @@ void cemu_bridge_set_favour_accuracy(bool enabled) {
 
 bool cemu_bridge_favour_accuracy(void) {
     return g_favourAccuracy.load();
+}
+
+void cemu_bridge_set_favour_performance(bool enabled) {
+    // Nothing to recompute now: everything it changes is applied by ios_apply_render_profile()
+    // when the next title starts.
+    g_favourPerformance.store(enabled);
+}
+
+bool cemu_bridge_favour_performance(void) {
+    return g_favourPerformance.load();
+}
+
+void cemu_bridge_set_full_speed_renders(bool enabled, int shaderMode) {
+    // Applied by ios_apply_render_profile() and Latte_Start() when the next title starts.
+    g_fullSpeedRenders.store(enabled);
+    g_fullSpeedShaderMode.store(shaderMode == 1 ? 1 : 0);
+}
+
+bool cemu_bridge_full_speed_renders(void) {
+    return g_fullSpeedRenders.load();
 }
 
 // Best-effort real device temperature, in degrees Celsius. NaN when unavailable.
@@ -2523,7 +3254,7 @@ void cemu_bridge_set_multicore_enabled(bool enabled) {
 }
 
 void cemu_bridge_set_cpu_core_mode(int mode) {
-    g_coreModeSetting.store(mode == 1 ? kCoreModeSingle : (mode == 2 ? kCoreModeMulti : kCoreModeAuto));
+    g_coreModeSetting.store(mode == 1 ? kCoreModeSingle : (mode == 2 ? kCoreModeMulti : (mode == 3 ? kCoreModeTwo : kCoreModeAuto)));
     if (g_initialized.load())
         ios_apply_cpu_mode();
 }
@@ -2620,6 +3351,25 @@ void cemu_bridge_initialize(const char* mlcPath) {
     setenv("MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS", "0", 1);
     setenv("MVK_CONFIG_DEBUG", "0", 1);
     setenv("MVK_CONFIG_MAX_ACTIVE_METAL_COMMAND_BUFFERS_PER_QUEUE", "128", 1);
+    // Test mitigations for the Vulkan GPU page fault (kIOGPUCommandBufferCallbackErrorPageFault). All ON by default; the core
+    // (VulkanAPI.cpp / VulkanRenderer.cpp) reads the MUFFIN_VK_* variables and logs what was active. overwrite=0, so a variable
+    // set in the environment wins over UserDefaults. Flip one with e.g.
+    //   defaults write <bundle id> muffin.vk.hostMapped -bool YES   (host-mapped buffers back ON)
+    //   defaults write <bundle id> muffin.vk.argumentBuffers -bool YES
+    //   defaults write <bundle id> muffin.vk.delayedFreeFrames -int 0   (0 = no extra delay, max 15)
+    {
+        NSUserDefaults* vkDefaults = [NSUserDefaults standardUserDefaults];
+        const bool hostMapped = [vkDefaults objectForKey:@"muffin.vk.hostMapped"] ? [vkDefaults boolForKey:@"muffin.vk.hostMapped"] : false;
+        const bool argBuffers = [vkDefaults objectForKey:@"muffin.vk.argumentBuffers"] ? [vkDefaults boolForKey:@"muffin.vk.argumentBuffers"] : false;
+        NSInteger delayFrames = [vkDefaults objectForKey:@"muffin.vk.delayedFreeFrames"] ? [vkDefaults integerForKey:@"muffin.vk.delayedFreeFrames"] : 3;
+        if (delayFrames < 0) delayFrames = 0;
+        if (delayFrames > 15) delayFrames = 15;
+        setenv("MUFFIN_VK_HOST_MAPPED", hostMapped ? "1" : "0", 0);
+        setenv("MUFFIN_VK_ARGUMENT_BUFFERS", argBuffers ? "1" : "0", 0);
+        setenv("MUFFIN_VK_DELAYED_FREE_FRAMES", std::to_string((int)delayFrames).c_str(), 0);
+        // MoltenVK reads this once at load; set it here too so it is in the environment before anything loads MoltenVK.
+        setenv("MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS", argBuffers ? "1" : "0", 0);
+    }
 
     // User data, config and mlc under Documents/mlc (writable, visible in Files); the
     // data path is the read-only CemuData directory the build copies into the bundle
@@ -2786,9 +3536,23 @@ void cemu_bridge_register_pad_render_surface(void* uiView, int width, int height
     CemuUIKit_SetPadView(view);
     ((CAMetalLayer*)view.layer).contentsScale = dpiScale;
     g_padRegistered.store(true);
-    // A running title gets its pad layer now; otherwise CemuRun() initializes it at boot.
-    if (g_titleRunning.load())
+    // Initialized now whenever a renderer exists (CemuUIKit_InitializeLayer does nothing before one does, and
+    // CemuPrepareRenderer() then picks the surface up). This used to wait for g_titleRunning, which is only set
+    // after CemuRun() returns: a surface registered between the renderer being built and that flag - an external
+    // display connecting while the title boots - was registered and sized but never got a layer, so nothing drew to it.
+    // Called from Swift: nothing may throw out of here (Vulkan's swapchain code throws on failure).
+    try
+    {
         CemuUIKit_InitializeLayer(false);
+    }
+    catch (const std::exception& ex)
+    {
+        cemuLog_log(LogType::Force, "iOS: GamePad surface could not be initialized: {}", ex.what());
+    }
+    catch (...)
+    {
+        cemuLog_log(LogType::Force, "iOS: GamePad surface could not be initialized (unknown error)");
+    }
     CemuUIKit_SetVisibleOutputs(true, true);
     cemuLog_log(LogType::Force, "iOS: GamePad (DRC) screen surface registered, {}x{} points at {}x scale", width, height, dpiScale);
 }
@@ -2810,6 +3574,24 @@ bool cemu_bridge_has_pad_render_surface(void) {
 
 void cemu_bridge_set_visible_outputs(bool tv, bool pad) {
     CemuUIKit_SetVisibleOutputs(tv, pad);
+}
+
+void cemu_bridge_set_output_sources(bool mainShowsGamePad, bool padShowsTV) {
+    CemuUIKit_SetOutputSources(mainShowsGamePad, padShowsTV);
+}
+
+bool cemu_bridge_pad_layer_active(void) {
+    return g_renderer && g_renderer->IsPadWindowActive();
+}
+
+void cemu_bridge_ensure_pad_layer(void) {
+    // Only for a surface that is registered but has no layer behind it; one that already has a layer is left alone.
+    if (g_padRegistered.load() && !cemu_bridge_pad_layer_active())
+        CemuUIKit_InitializeLayer(false);
+}
+
+uint32_t cemu_bridge_pad_present_count(void) {
+    return PerfTelemetry::Get().padPresents.load(std::memory_order_relaxed);
 }
 
 void cemu_bridge_set_pad_touch(double x, double y, bool down) {
@@ -3009,8 +3791,11 @@ static CemuBridgeStatus ios_boot_prepared_title(int prepared) {
     ios_report_renderer_fallback();
     // A new title: judge it from scratch, with the start-up grace period counted from now.
     ios_reset_video_stall_state();
+    // Save states are only valid inside the launch they were taken in.
+    IOSSaveState_BeginSession();
     g_titleRunning.store(true);
     ios_timebase_ladder_start();
+    ios_two_core_watch_start();
     setStatus("Title launched.");
     return CEMU_BRIDGE_OK;
 }
@@ -3066,9 +3851,7 @@ static std::atomic<uint32_t> g_decryptFilesWritten{0};
 static std::thread g_decryptThread;
 static std::mutex g_decryptThreadMutex;
 
-bool cemu_bridge_start_decrypt(const char* srcPath, const char* destPath, bool toWua) {
-    if (!srcPath || srcPath[0] == '\0' || !destPath || destPath[0] == '\0')
-        return false;
+static bool StartDecryptJob(const std::function<int(const std::function<void(uint64_t, uint32_t)>&)>& job) {
     if (g_decryptRunning.exchange(true))
         return false;
 
@@ -3080,18 +3863,14 @@ bool cemu_bridge_start_decrypt(const char* srcPath, const char* destPath, bool t
     g_decryptBytesWritten.store(0);
     g_decryptFilesWritten.store(0);
 
-    std::string src(srcPath);
-    std::string dest(destPath);
-    g_decryptThread = std::thread([src, dest, toWua]() {
+    g_decryptThread = std::thread([job]() {
         auto progress = [](uint64_t bytesWritten, uint32_t filesWritten) {
             g_decryptBytesWritten.store(bytesWritten);
             g_decryptFilesWritten.store(filesWritten);
         };
         int status = 5; // IOS_DECRYPT_INCOMPLETE: an exception means the output can't be trusted
         try {
-            status = toWua
-                ? IOSTitleDecrypt_ExtractToWua(src.c_str(), dest.c_str(), g_decryptCancelRequested, progress)
-                : IOSTitleDecrypt_ExtractToFolder(src.c_str(), dest.c_str(), g_decryptCancelRequested, progress);
+            status = job(progress);
         } catch (...) {
             std::string message = "decrypt: threw: " + cemu_describe_current_exception();
             cemu_bridge_log_checkpoint(message.c_str());
@@ -3101,6 +3880,54 @@ bool cemu_bridge_start_decrypt(const char* srcPath, const char* destPath, bool t
         g_decryptRunning.store(false);
     });
     return true;
+}
+
+bool cemu_bridge_start_decrypt(const char* srcPath, const char* destPath, bool toWua) {
+    if (!srcPath || srcPath[0] == '\0' || !destPath || destPath[0] == '\0')
+        return false;
+    std::string src(srcPath);
+    std::string dest(destPath);
+    return StartDecryptJob([src, dest, toWua](const std::function<void(uint64_t, uint32_t)>& progress) {
+        return toWua
+            ? IOSTitleDecrypt_ExtractToWua(src.c_str(), dest.c_str(), g_decryptCancelRequested, progress)
+            : IOSTitleDecrypt_ExtractToFolder(src.c_str(), dest.c_str(), g_decryptCancelRequested, progress);
+    });
+}
+
+bool cemu_bridge_start_wua_build(const char* sourcePathsNewlineSeparated, const char* destPath) {
+    if (!sourcePathsNewlineSeparated || !destPath || destPath[0] == '\0')
+        return false;
+    std::vector<std::string> sources;
+    std::string list(sourcePathsNewlineSeparated);
+    size_t start = 0;
+    while (start <= list.size()) {
+        size_t end = list.find('\n', start);
+        if (end == std::string::npos)
+            end = list.size();
+        if (end > start)
+            sources.push_back(list.substr(start, end - start));
+        start = end + 1;
+    }
+    if (sources.empty())
+        return false;
+    std::string dest(destPath);
+    return StartDecryptJob([sources, dest](const std::function<void(uint64_t, uint32_t)>& progress) {
+        return IOSWuaContent_Build(sources, dest.c_str(), g_decryptCancelRequested, progress);
+    });
+}
+
+int cemu_bridge_wua_list_titles(const char* wuaPath, char* outLines, size_t outSize) {
+    if (!wuaPath || !outLines || outSize == 0)
+        return -1;
+    std::string lines = IOSWuaContent_ListTitles(wuaPath);
+    int count = 0;
+    for (char c : lines)
+        if (c == '\n')
+            count++;
+    size_t length = std::min(lines.size(), outSize - 1);
+    memcpy(outLines, lines.data(), length);
+    outLines[length] = '\0';
+    return count;
 }
 
 void cemu_bridge_get_decrypt_progress(CemuBridgeDecryptProgress* out) {
@@ -3259,6 +4086,10 @@ void cemu_bridge_set_active_account_persistent_id(uint32_t persistentId) {
     IOSAccounts_SetActivePersistentId(persistentId);
 }
 
+int cemu_bridge_account_online_error(uint32_t persistentId) {
+    return IOSAccounts_OnlineError(persistentId);
+}
+
 bool cemu_bridge_account_is_online_valid(uint32_t persistentId) {
     return IOSAccounts_IsOnlineValid(persistentId);
 }
@@ -3279,6 +4110,26 @@ void cemu_bridge_set_network_service(uint32_t persistentId, CemuBridgeNetworkSer
 
 bool cemu_bridge_custom_network_service_available(void) {
     return IOSAccounts_CustomNetworkServiceAvailable();
+}
+
+bool cemu_bridge_reload_custom_network_service(void) {
+    return IOSAccounts_ReloadCustomNetworkService();
+}
+
+bool cemu_bridge_network_services_xml_is_valid(const char* path) {
+    return IOSAccounts_IsValidNetworkServicesXML(path);
+}
+
+void cemu_bridge_set_device_network(CemuBridgeDeviceNetwork kind) {
+    nn_ac::SetDeviceReachable(kind != CEMU_BRIDGE_DEVICE_NETWORK_OFFLINE);
+}
+
+bool cemu_bridge_console_appears_connected(void) {
+    return nn_ac::IsConsoleConnected();
+}
+
+bool cemu_bridge_online_play_enabled(void) {
+    return ActiveSettings::IsOnlineEnabled();
 }
 
 // ---------------------------------------------------------------------------
@@ -3353,6 +4204,34 @@ const char* cemu_bridge_usb_device_move_dimensions(int fromSlot, int toSlot) {
     static thread_local std::string g_usbDeviceMoveError;
     g_usbDeviceMoveError = IOSEmulatedDevices_MoveDimensions(fromSlot, toSlot);
     return g_usbDeviceMoveError.empty() ? nullptr : g_usbDeviceMoveError.c_str();
+}
+
+// ---------------------------------------------------------------------------
+// amiibo. Desktop Cemu's "Load amiibo / NFC file": nnNfp_touchNfcTagFromFile() (Cafe/OS/libs/
+// nn_nfp/nn_nfp.cpp) loads the NTAG215 dump as the tag on the reader and signals the title's
+// activate event; the core lifts it again after about 1.5 seconds, the way a real tap does.
+// The amiibo master keys are built into the core (amiiboInitMasterKeys), so no
+// key_retail.bin is read from anywhere.
+const char* cemu_bridge_touch_amiibo(const char* path) {
+    static thread_local std::string g_amiiboError;
+    if (!path || path[0] == '\0') {
+        g_amiiboError = "No amiibo file was chosen.";
+        return g_amiiboError.c_str();
+    }
+    if (!g_titleRunning.load() || !nnNfp_isInitialized()) {
+        g_amiiboError = "No game is waiting for an amiibo right now. Start a game that uses amiibo, get to the point where it asks you to tap one, then scan again.";
+        return g_amiiboError.c_str();
+    }
+    uint32_t nfcError = 0;
+    if (nnNfp_touchNfcTagFromFile(fs::path(path), &nfcError)) {
+        g_amiiboError.clear();
+        return nullptr;
+    }
+    // The core's codes: 1 = the file could not be read, 2 = it is not an amiibo dump.
+    g_amiiboError = (nfcError == 2)
+        ? "That file isn't a valid amiibo dump. MuffinEMU needs a full amiibo dump (a .bin or .nfc file of 532 bytes or more, usually 540 or 572)."
+        : "MuffinEMU couldn't read that amiibo file.";
+    return g_amiiboError.c_str();
 }
 
 // ---------------------------------------------------------------------------
@@ -3511,6 +4390,10 @@ static void ios_timebase_ladder_start() {
         "{}s the clock steps down one notch, to a floor of 1/64 real time.", kLadderStepSeconds);
 }
 
+uint32_t cemu_bridge_storage_read_fault_count(void) {
+    return fscShortReadCount();
+}
+
 bool cemu_bridge_is_title_running(void) {
     // A title that called coreinit exit() has finished even though CafeSystem still holds it,
     // and the UI should see that as the end of the game rather than a frozen one.
@@ -3586,6 +4469,40 @@ void IOSBridge_VulkanDeviceLost(const char* why) {
 // froze with no crash log. This writes a crash-style entry (exception type, what(), and the GPU thread's backtrace at the catch site,
 // since the throw site is already unwound) and raises the same fatal flag the core uses. That flag is only an atomic; the app polls
 // it on the main thread, shows the message and runs cemu_bridge_shutdown_title(), the clean-slate stop path.
+// Called by the Metal allocators when the device refuses a buffer (the first few times only). Writes where the address space and the
+// footprint stand into CemuCrashLog.txt, so the next log says whether the limit hit was physical memory or the address space.
+void IOSBridge_LogAllocationFailure(const char* what, uint64_t wantedBytes) {
+    cemu_crash_open_log();
+    cemu_vm_report(what, wantedBytes);
+}
+
+// Logged at title start: how much address space is still free below the highest mapping, and the largest single hole.
+// A buffer bigger than the largest hole cannot be created however much memory is free, so this is the number to watch.
+void IOSBridge_LogFreeAddressSpace(const char* when) {
+    uint64_t total = 0, largest = 0, largestAt = 0, atLeast256 = 0, prevEnd = 0, highestEnd = 0;
+    vm_address_t addr = 0;
+    natural_t depth = 0;
+    for (int guard = 0; guard < 200000; guard++) {
+        vm_size_t size = 0;
+        vm_region_submap_info_data_64_t info;
+        mach_msg_type_number_t count = VM_REGION_SUBMAP_INFO_COUNT_64;
+        if (vm_region_recurse_64(mach_task_self(), &addr, &size, &depth, (vm_region_recurse_info_t)&info, &count) != KERN_SUCCESS)
+            break;
+        if (info.is_submap) { depth++; continue; }
+        if (prevEnd != 0 && addr > prevEnd) {
+            const uint64_t gap = (uint64_t)addr - prevEnd;
+            total += gap;
+            if (gap >= (256ull << 20)) atLeast256++;
+            if (gap > largest) { largest = gap; largestAt = prevEnd; }
+        }
+        prevEnd = (uint64_t)addr + size;
+        highestEnd = prevEnd;
+        addr += size;
+    }
+    cemuLog_log(LogType::Force, "Address space ({}): largest free hole {} MB at {:#x}, {} hole(s) of 256 MB or more, {} MB free in total below the highest mapping at {:#x}",
+        when ? when : "?", largest >> 20, largestAt, atLeast256, total >> 20, highestEnd);
+}
+
 void IOSBridge_GPUThreadException(const char* type, const char* what) {
     cemu_crash_open_log();
     cemu_bridge_log_checkpoint("\n=== GPU THREAD EXCEPTION ===");
@@ -3597,7 +4514,7 @@ void IOSBridge_GPUThreadException(const char* type, const char* what) {
     if (g_crashLogFd >= 0)
         backtrace_symbols_fd(frames, count, g_crashLogFd);
     cemu_bridge_log_checkpoint("=== the title is being stopped ===");
-    IOSSystemImplementation_ReportFatal("The graphics engine hit an error and the game was stopped. The details are in CemuCrashLog.txt.");
+    IOSSystemImplementation_ReportFatal("The graphics engine hit an error and the game was stopped. Use Share diagnostics on the next screen if you report it.");
 }
 
 void cemu_bridge_pause(void) {
@@ -3620,9 +4537,22 @@ bool cemu_bridge_load_state(const char* path) {
     return IOSSaveState_Load(path);
 }
 
+const char* cemu_bridge_save_state_last_error(void) {
+    return IOSSaveState_LastErrorMessage();
+}
+
+int cemu_bridge_save_state_last_error_code(void) {
+    return IOSSaveState_LastErrorCode();
+}
+
+int cemu_bridge_save_state_inspect(const char* path) {
+    return IOSSaveState_InspectFile(path);
+}
+
 void cemu_bridge_shutdown_title(void) {
     cemu_bridge_memory_note("before title shutdown");
     ios_timebase_ladder_stop();
+    ios_two_core_watch_stop();
     // Suspended guest threads cannot be joined, so a paused title is resumed first.
     IOSTitlePause_Resume();
     IOSTitlePause_Forget();
@@ -3649,6 +4579,8 @@ void cemu_bridge_set_title_switch_callback(CemuTitleSwitchCallback callback) {
 }
 
 void IOSBridge_TitleSwitching(uint64_t titleId) {
+    // The Menu is gone and a different title is about to start: save states taken so far belong to the old one.
+    IOSSaveState_BeginSession();
     if (CemuTitleSwitchCallback callback = g_titleSwitchCallback.load())
         callback(titleId);
 }
@@ -3673,6 +4605,20 @@ void cemu_bridge_shutdown(void) {
     setStatus("Cemu core shut down.");
 }
 
+void cemu_bridge_set_menu_input_callback(CemuMenuInputCallback callback) {
+    g_menuCallback.store(callback);
+}
+
+void cemu_bridge_set_menu_capture(bool capture) {
+    g_menuCapture.store(capture);
+    // Applies at once rather than at the controller's next change: the game has to stop seeing what is held now, and on
+    // the way out it has to start ignoring it until it is let go.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (GCExtendedGamepad* pad = g_boundController.extendedGamepad)
+            ios_update_physical(pad);
+    });
+}
+
 void cemu_bridge_refresh_input_devices(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
         ios_bind_first_controller();
@@ -3686,7 +4632,7 @@ void cemu_bridge_set_button_state(CemuBridgeButton button, bool pressed) {
         if (button == CEMU_BRIDGE_BUTTON_HOME && !g_homeWarned)
         {
             g_homeWarned = true;
-            cemuLog_log(LogType::Force, "iOS input: HOME has no binding in the core's GamePad mapping, so it is ignored");
+            cemuLog_log(LogType::Force, "iOS input: HOME has no binding in the core's GamePad mapping, so it is ignored (the app opens its HOME menu from HOME and should not send it here)");
         }
         return;
     }
@@ -3830,13 +4776,67 @@ const char* cemu_bridge_status_text(void) {
     {
         char line[96];
         snprintf(line, sizeof(line), "The game closed itself (exit status %d).", exitStatus);
-        setStatus(line);
+        const std::string hint = IOSAccounts_OnlineHint();
+        setStatus((hint.empty() ? std::string(line) : std::string(line) + " If it closed after an online account prompt: " + hint).c_str());
     }
-    if (g_titleRunning.load() && IOSSystemImplementation_TitleSwitchFailed())
+    if (g_titleRunning.load() && IOSSystemImplementation_TitleSwitchFailed() && IOSSystemImplementation_SystemAppletRequested())
+        setStatus("The game tried to open the Wii U's account or system settings, which MuffinEMU can't run. A Pretendo ID can't be created or linked inside MuffinEMU: link it on a real Wii U, then import that console's account.dat, otp.bin and seeprom.bin in Settings > Network Service.");
+    else if (g_titleRunning.load() && IOSSystemImplementation_TitleSwitchFailed())
         setStatus("The Wii U Menu tried to open another title and it couldn't be started. Check that game is in your library and its keys are installed, then launch it from the library instead.");
     // Only fall back to a computed default when nothing specific has been set, so a boot
     // failure's reason is not overwritten by a generic line on the next read.
     if (statusIsEmpty())
         setStatus(cemu_bridge_is_title_running() ? "Title running." : "Core ready (no title running).");
     return getStatus();
+}
+
+void LatteRenderTarget_SetSkipHiddenOutputs(bool tv, bool pad);
+
+void cemu_bridge_set_skip_hidden_screen(bool tv, bool pad) {
+    LatteRenderTarget_SetSkipHiddenOutputs(tv, pad);
+}
+
+// Two-core guard. A two-core run cannot be turned into a one-core run while the title is up, so a
+// run that never reaches GX2Init is remembered and the next launch of that title uses one core.
+static constexpr int kTwoCoreGx2InitSeconds = 240;
+static std::atomic<bool> g_twoCoreWatchRunning{false};
+static std::thread g_twoCoreWatchThread;
+static std::mutex g_twoCoreWatchMutex;
+
+static void ios_two_core_watch_entry(uint64_t titleId) {
+    int waitedHalfSeconds = 0;
+    while (g_twoCoreWatchRunning.load()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        if (!g_twoCoreWatchRunning.load() || !CafeSystem::IsTitleRunning())
+            return;
+        if (IOSTitlePause_IsPaused())
+            continue;
+        if (LatteGPUState.gx2InitCalled > 0) {
+            ios_two_core_hang_set(titleId, false);
+            cemuLog_log(LogType::Force, "CPU cores: the two-core run reached GX2Init after {:.1f}s", waitedHalfSeconds / 2.0);
+            return;
+        }
+        if (++waitedHalfSeconds >= kTwoCoreGx2InitSeconds * 2) {
+            ios_two_core_hang_set(titleId, true);
+            cemuLog_log(LogType::Force, "CPU cores: the two-core run has not reached GX2Init after {}s. The next launch of this title uses one core.",
+                kTwoCoreGx2InitSeconds);
+            return;
+        }
+    }
+}
+
+static void ios_two_core_watch_stop() {
+    std::lock_guard lock{g_twoCoreWatchMutex};
+    g_twoCoreWatchRunning.store(false);
+    if (g_twoCoreWatchThread.joinable())
+        g_twoCoreWatchThread.join();
+}
+
+static void ios_two_core_watch_start() {
+    ios_two_core_watch_stop();
+    if (g_coresRunning.load() != 2)
+        return;
+    std::lock_guard lock{g_twoCoreWatchMutex};
+    g_twoCoreWatchRunning.store(true);
+    g_twoCoreWatchThread = std::thread(ios_two_core_watch_entry, (uint64_t)CafeSystem::GetForegroundTitleId());
 }

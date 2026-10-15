@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# MuffinEMU — code by the MuffinEMU Development Team.
+# Copyright (c) 2026 MuffinEMU Development Team.
+# SPDX-License-Identifier: MPL-2.0
+# This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 """validate_catalogue.py - checks the test catalogue (Catalogue/suite-*.json) against its JSON Schema and against
 the guest program it drives, so a typo in a catalogue file fails CI instead of producing a test that silently
 measures nothing.

@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import CoreGraphics
 
 public struct SchemeInfo: Equatable, Sendable {
@@ -32,11 +37,29 @@ public protocol TouchScheme: AnyObject {
     func tick(time: Double) -> [TouchID: Contribution]
 
     func render(pressed: Set<PadButton>, sticks: [PadStick: StickValue]) -> [RenderElement]
+
+    /// Input that belongs to no finger: a button held for the player (auto-accelerate) or a
+    /// stick driven by the device's motion. `PadEngine` re-reads it after every touch event
+    /// and feeds it to the mixer under one fixed identity, so it is released with everything
+    /// else and never outlives the pad.
+    func ambient() -> Contribution?
+
+    /// True while the scheme steers from the device's motion. The UI layer then runs the
+    /// motion sensor and calls `motion(angle:)`.
+    var wantsMotion: Bool { get }
+
+    /// A new wheel angle from the device's motion, in radians, positive clockwise as the
+    /// player sees the screen. Returns the contributions of fingers whose output changed
+    /// because of it.
+    func motion(angle: Double) -> [TouchID: Contribution]
 }
 
 public extension TouchScheme {
     var needsTicks: Bool { false }
     func tick(time: Double) -> [TouchID: Contribution] { [:] }
+    func ambient() -> Contribution? { nil }
+    var wantsMotion: Bool { false }
+    func motion(angle: Double) -> [TouchID: Contribution] { [:] }
 }
 
 /// What to draw. Kept platform-free so the same list feeds UIKit on device and the SVG
@@ -51,8 +74,19 @@ public struct RenderElement: Equatable, Sendable {
         case stickBase
         case stickKnob
         case zone          // a floating control's catchment, drawn faintly
+        case area          // a catchment that is always drawn, faintly (Racing's steering area)
+        case pedal         // a large held zone; drawn lighter than a button so it leaves the game visible
         case touchscreen   // outline of the passthrough area (debug)
+        case guide         // a line along `path`: Arc's arc band, sweep trace, fitted-arc preview, snap ticks
+        case handle        // a drag handle shown while a layout can be moved
     }
+
+    /// `.standard` is the flat look every scheme shares. `.refined` is Arc's: a hairline
+    /// outline, a soft shadow, a lit rim and a pressed state that sinks (see `RefinedLook`).
+    public enum Style: Equatable, Sendable { case standard, refined }
+
+    /// Accent for guides and handles.
+    public enum Tone: Equatable, Sendable { case neutral, accent, good, warn }
 
     public var shape: PadShape
     public var role: Role
@@ -60,12 +94,30 @@ public struct RenderElement: Equatable, Sendable {
     public var lit: Bool
     /// Drawn at reduced opacity: an idle floating stick's resting spot, zone hints.
     public var ghost: Bool
+    public var style: Style
+    public var tone: Tone
+    /// Multiplies the drawn opacity (1 = as is). Lets a scheme rest its controls dim.
+    public var fade: CGFloat
+    /// `.guide` only: the polyline, in view points.
+    public var path: [CGPoint]
+    /// `.guide` only: stroke width in points.
+    public var width: CGFloat
+    /// `.guide` only: dash length in points, 0 = solid.
+    public var dash: CGFloat
 
-    public init(shape: PadShape, role: Role, label: String = "", lit: Bool = false, ghost: Bool = false) {
+    public init(shape: PadShape, role: Role, label: String = "", lit: Bool = false, ghost: Bool = false,
+                style: Style = .standard, tone: Tone = .neutral, fade: CGFloat = 1,
+                path: [CGPoint] = [], width: CGFloat = 0, dash: CGFloat = 0) {
         self.shape = shape
         self.role = role
         self.label = label
         self.lit = lit
         self.ghost = ghost
+        self.style = style
+        self.tone = tone
+        self.fade = fade
+        self.path = path
+        self.width = width
+        self.dash = dash
     }
 }

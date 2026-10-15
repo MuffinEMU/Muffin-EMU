@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import SwiftUI
 import AVFoundation
 import UIKit
@@ -76,18 +81,10 @@ struct BlowButton: View {
                                  ? LegibleInk.ensure(MuffinTheme.pixelBlue, on: MuffinTheme.cream)
                                  : MuffinTheme.brownDark)
         }
-        .buttonStyle(MuffinSecondaryButtonStyle())
-        // The on state: a tint over the button's own fill, so it still follows the theme and
-        // the pressed/disabled treatment of the style underneath.
-        .overlay(
-            RoundedRectangle(cornerRadius: MuffinTheme.Radius.chip, style: .continuous)
-                .fill(MuffinTheme.pixelBlue.opacity(active ? 0.28 : 0))
-                .overlay(
-                    RoundedRectangle(cornerRadius: MuffinTheme.Radius.chip, style: .continuous)
-                        .strokeBorder(MuffinTheme.pixelBlue.opacity(active ? 0.9 : 0), lineWidth: 1.5)
-                )
-                .allowsHitTesting(false)
-        )
+        // The on state is a tint inside the style, over the button's own fill, so it still
+        // follows the theme and the pressed/disabled treatment, and stays the size of the
+        // button rather than the larger touch target around it.
+        .buttonStyle(MuffinBarButtonStyle(highlighted: active))
         .simultaneousGesture(
             DragGesture(minimumDistance: 0)
                 .updating($press) { value, state, _ in

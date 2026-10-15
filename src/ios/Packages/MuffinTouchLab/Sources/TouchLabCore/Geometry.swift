@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import CoreGraphics
 import Foundation
 
@@ -109,10 +114,27 @@ public struct LayoutContext: Equatable, Sendable {
     public var scale: CGFloat
     /// Stick feel.
     public var stick: StickTuning
+    /// The player's own reach and rest on each stick (see `StickCalibration`).
+    public var calibration: StickCalibrations
+    /// How far off a button a touch still counts. nil = each control's own reach.
+    public var tolerance: PadTolerance?
     /// Moves each stick sideways from where the layout puts it, in button widths: positive
     /// toward its screen edge, negative toward the middle. A hand-size setting. Layouts
     /// with fixed sticks honour as much of it as fits without overlapping anything.
     public var stickSpacing: CGFloat
+    /// Moves the whole shoulder cluster (L, R, ZL, ZR) down from where the layout puts it,
+    /// in button widths, keeping the four buttons' layout relative to each other. Zero is
+    /// the layout's own place; negative values are ignored, because the shoulders already
+    /// start against the top of the safe area. The layouts that place the shoulders
+    /// themselves honour as much of it as fits without leaving the safe area or touching
+    /// a stick, d-pad or face button. A hand-size setting, meant for iPad.
+    public var shoulderOffset: CGFloat
+    /// The polished "Showcase style" look (see `PadStyle`, and Arc's own refined look). Off draws the
+    /// flat look the schemes had before it. Drawing only: no layout or input depends on it.
+    public var showcaseStyle: Bool
+    /// What the player has moved and resized, for the schemes that offer editing (Zone). Empty
+    /// is the layout exactly as it comes.
+    public var edits: PadEdits
 
     public init(size: CGSize,
                 safeInsets: Insets = .zero,
@@ -120,14 +142,33 @@ public struct LayoutContext: Equatable, Sendable {
                 touchscreenRect: CGRect? = nil,
                 scale: CGFloat = 1,
                 stick: StickTuning = StickTuning(),
-                stickSpacing: CGFloat = 0) {
+                stickSpacing: CGFloat = 0,
+                shoulderOffset: CGFloat = 0,
+                calibration: StickCalibrations = StickCalibrations(),
+                tolerance: PadTolerance? = nil,
+                showcaseStyle: Bool = true,
+                edits: PadEdits = PadEdits()) {
+        self.showcaseStyle = showcaseStyle
+        self.edits = edits
         self.size = size
         self.safeInsets = safeInsets
         self.videoRects = videoRects
         self.touchscreenRect = touchscreenRect
         self.scale = scale
         self.stick = stick
+        self.calibration = calibration
+        self.tolerance = tolerance
         self.stickSpacing = stickSpacing
+        self.shoulderOffset = shoulderOffset
+    }
+
+    /// The context a pad with these settings is laid out in.
+    public init(size: CGSize, safeInsets: Insets = .zero, videoRects: [CGRect] = [],
+                touchscreenRect: CGRect? = nil, settings: PadSettings) {
+        self.init(size: size, safeInsets: safeInsets, videoRects: videoRects, touchscreenRect: touchscreenRect,
+                  scale: settings.scale, stick: settings.stick, stickSpacing: settings.stickSpacing,
+                  shoulderOffset: settings.shoulderOffset, calibration: settings.calibration,
+                  tolerance: settings.tolerance, showcaseStyle: settings.showcaseStyle, edits: settings.edits)
     }
 
     public var bounds: CGRect { CGRect(origin: .zero, size: size) }

@@ -102,8 +102,20 @@ private:
             if (m_stopFlag.load(std::memory_order_acquire))
                 return;
 
-            while (PPCRecompiler_drainQueue())
+            while (true)
             {
+                bool more = false;
+                try
+                {
+                    more = PPCRecompiler_drainQueue();
+                }
+                catch (...)
+                {
+                    // never let an exception end the worker (and the app): the function stays in the interpreter
+                    more = true;
+                }
+                if (!more)
+                    break;
                 if (m_stopFlag.load(std::memory_order_acquire))
                     return;
             }

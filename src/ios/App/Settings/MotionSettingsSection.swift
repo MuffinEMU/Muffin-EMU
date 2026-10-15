@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import SwiftUI
 
 /// Where the GamePad's motion (gyro and accelerometer) comes from, and how it is tuned.
@@ -23,7 +28,10 @@ enum MotionSettings {
     /// Match CemuBridgeMotionSource / CemuBridgeMotionStatus in IOSMotion.h.
     static let sourceDevice = 0
     static let sourceController = 1
-    static let defaultSource = sourceDevice
+    /// A controller with motion sensors wins when one is connected; with none, the device is used
+    /// anyway. Defaulting to the device would leave a DualShock 4 or Joy-Con unused unless the
+    /// player found the picker, which only shows in Advanced mode.
+    static let defaultSource = sourceController
     static let statusOff = 0
     static let statusDevice = 1
     static let statusController = 2
@@ -55,6 +63,10 @@ struct MotionSettingsSection: View {
     @AppStorage(MotionSettings.diagnosticKey)
     private var logValues = false
     @State private var recentred = false
+    @AppStorage(SettingsMode.storageKey)
+    private var settingsModeRaw = SettingsMode.defaultValue.rawValue
+
+    private var advanced: Bool { SettingsMode.isAdvanced(raw: settingsModeRaw) }
 
     private var statusText: String {
         switch Int(cemu_bridge_motion_status()) {
@@ -86,7 +98,11 @@ struct MotionSettingsSection: View {
             .onChange(of: motionEnabled) { _ in MotionSettings.applyToBridge() }
 
             if motionEnabled {
-                motionOptions
+                if advanced {
+                    motionOptions
+                } else {
+                    recentreButton
+                }
             }
         } header: {
             SettingsSectionHeader("Motion & Aiming", icon: "gyroscope", accent: .io)
@@ -140,6 +156,10 @@ struct MotionSettingsSection: View {
         }
         .font(.system(size: 13, weight: .semibold, design: .rounded))
 
+        recentreButton
+    }
+
+    private var recentreButton: some View {
         Button {
             cemu_bridge_motion_recenter()
             recentred = true

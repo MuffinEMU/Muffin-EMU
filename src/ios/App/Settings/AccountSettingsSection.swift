@@ -1,4 +1,21 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import SwiftUI
+import Combine
+
+/// Presents New Account from the root of Settings rather than from a Form section. A sheet
+/// attached to a section closes by itself when the Form rebuilds or scrolls that section out
+/// (the keyboard appearing is enough), which made New Account vanish after a second or two.
+final class AccountSheetRouter: ObservableObject {
+    static let shared = AccountSheetRouter()
+    @Published var showingCreateAccount = false
+    /// Bumped when the sheet closes so every account list on screen reloads.
+    @Published private(set) var revision = 0
+    func sheetClosed() { revision += 1 }
+}
 
 /// Wii U console accounts (Cafe/Account/Account.h): pick, create and delete accounts, the
 /// same account.dat files desktop Cemu uses. The Network Service picker is a separate
@@ -7,12 +24,30 @@ struct AccountSettingsSection: View {
     @State private var accounts: [Account] = []
     @State private var activePersistentId: UInt32 = 0
     @State private var locked = false
-    @State private var showingCreateAccount = false
+    @ObservedObject private var accountSheets = AccountSheetRouter.shared
     @State private var accountToDelete: Account?
     @State private var errorMessage: String?
 
     private var activeAccount: Account? {
         accounts.first { $0.persistentId == activePersistentId }
+    }
+
+    /// Says why the controls are dimmed while a game runs; otherwise flags an account that can't go online.
+    @ViewBuilder private var accountFooter: some View {
+        if locked {
+            InfoButton.footer("Accounts can't be changed while a game is running. Close the game first.")
+        } else if let note = OnlineReadiness.note(accountId: activePersistentId,
+                                                  service: NetworkService(cemu_bridge_network_service(activePersistentId))) {
+            InfoButton.footer(
+                note,
+                title: "Online play",
+                text: OnlineReadiness.howToFix + "\n\nImport from Wii U accepts account.dat, its 800000XX folder, otp.bin and seeprom.bin. MuffinEMU can't create a linked account itself.")
+        } else if let activeAccount, !activeAccount.isValidOnline {
+            InfoButton.footer(
+                "This account has no cached NNID/PNID login, so it can't play online yet.",
+                title: "Account",
+                text: "Online play needs an account with a saved NNID or PNID login. Sign in on a real console and copy its account.dat here; MuffinEMU can't create one.")
+        }
     }
 
     var body: some View {
@@ -33,29 +68,25 @@ struct AccountSettingsSection: View {
             .disabled(locked || accounts.isEmpty)
 
             HStack {
-                Button("Create") { showingCreateAccount = true }
+                Button("Create") { accountSheets.showingCreateAccount = true }
                     .disabled(locked || !cemu_bridge_accounts_has_free_slot())
                 Spacer()
                 Button("Delete", role: .destructive) { accountToDelete = activeAccount }
                     .disabled(locked || accounts.count <= 1 || activeAccount == nil)
             }
             .buttonStyle(.borderless)
+
+            AccountImportButton(locked: locked, onChange: reload)
+                .buttonStyle(.borderless)
         } header: {
             SettingsSectionHeader("Account", icon: "person.crop.circle", accent: .content)
         } footer: {
-            if let activeAccount, !activeAccount.isValidOnline {
-                InfoButton.footer(
-                    "This account has no cached NNID/PNID login, so it can't play online yet.",
-                    title: "Account",
-                    text: "Online play needs an account with a saved NNID or PNID login. Sign in on a real console and copy its account.dat here; MuffinEMU can't create one.")
-            }
+            accountFooter
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         .onAppear(perform: reload)
         .refreshable { reload() }
-        .sheet(isPresented: $showingCreateAccount, onDismiss: reload) {
-            CreateAccountView()
-        }
+        .onReceive(accountSheets.$revision.dropFirst()) { _ in reload() }
         .confirmationDialog(
             "Delete account?",
             isPresented: Binding(
@@ -103,9 +134,33 @@ struct NetworkServiceSettingsSection: View {
     @State private var selectedService: NetworkService = .offline
     @State private var locked = false
     @State private var customAvailable = false
+    @State private var accounts: [Account] = []
+    @State private var hasOTP = false
+    @State private var hasSeeprom = false
+
+    /// The one-line status at the top of the section.
+    private var readinessLine: String {
+        let missing = OnlineReadiness.missingItems(accountId: activePersistentId)
+        if selectedService == .offline { return "Online play is off. Pick a Network Service to use it." }
+        if selectedService == .custom { return customAvailable ? "Ready for online play (custom server)" : "Not ready for online play. Missing: a valid network_services.xml." }
+        return missing.isEmpty ? "Ready for online play" : "Not ready for online play. Missing: " + missing.joined(separator: ", ") + "."
+    }
 
     var body: some View {
         Section {
+            Text(readinessLine)
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+
+            DeviceConnectionStatusRow()
+
+            NavigationLink {
+                Form { CustomServersSettingsSection() }
+                    .navigationTitle("Custom servers")
+            } label: {
+                Label("Custom servers", systemImage: "server.rack")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+            }
+
             ForEach(NetworkService.allCases) { service in
                 Button {
                     cemu_bridge_set_network_service(activePersistentId, service.bridgeValue)
@@ -120,7 +175,7 @@ struct NetworkServiceSettingsSection: View {
                     }
                 }
                 .disabled(locked || activeAccountName == nil
-                          || (service == .custom && !customAvailable)
+                          || (service == .custom && !customAvailable) // add a server under Custom servers above
                           // Nintendo's servers are shut down; only keep it selectable if it's already chosen.
                           || (service == .nintendo && selectedService != .nintendo))
             }
@@ -129,21 +184,26 @@ struct NetworkServiceSettingsSection: View {
                                   icon: "network", accent: .content)
         } footer: {
             InfoButton.footer(
-                selectedService.accountHelp,
+                locked ? "The Network Service can't be changed while a game is running. Close the game first." : selectedService.accountHelp,
                 title: "Network Service",
-                text: "Pretendo is a community-run replacement for Nintendo's Wii U online services. Its server addresses are built in, so there's nothing to configure.\n\nNintendo's own servers have been shut down, so that option can't be selected.\n\nCustom is only available if you've put a network_services.xml (the same file desktop Cemu reads) in the mlc folder.")
+                text: "Pretendo is a community-run replacement for Nintendo's Wii U online services. Its server addresses are built in, so there's nothing to configure.\n\nNintendo's own servers have been shut down, so that option can't be selected.\n\nCustom works with a network_services.xml file. Add one under Custom servers above. It needs no linked account or otp.bin and seeprom.bin.\n\n" + OnlineReadiness.howToFix)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         .onAppear(perform: reload)
+        .onReceive(NotificationCenter.default.publisher(for: .customServerChanged)) { _ in reload() }
         .refreshable { reload() }
     }
 
     private func reload() {
         activePersistentId = cemu_bridge_active_account_persistent_id()
-        let accounts = Account.loadAll()
-        activeAccountName = accounts.first { $0.persistentId == activePersistentId }?.displayName
+        let loaded = Account.loadAll()
+        accounts = loaded
+        activeAccountName = loaded.first { $0.persistentId == activePersistentId }?.displayName
         selectedService = NetworkService(cemu_bridge_network_service(activePersistentId))
         locked = cemu_bridge_accounts_locked()
         customAvailable = cemu_bridge_custom_network_service_available()
+        let root = WiiUMenu.mlcRootURL
+        hasOTP = root.map { FileManager.default.fileExists(atPath: $0.appendingPathComponent("otp.bin").path) } ?? false
+        hasSeeprom = root.map { FileManager.default.fileExists(atPath: $0.appendingPathComponent("seeprom.bin").path) } ?? false
     }
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
 #include "Cafe/HW/Latte/Renderer/Vulkan/RendererShaderVk.h"
@@ -155,6 +156,7 @@ public:
 		VkFormat vkImageFormat;
 		VkImageAspectFlags vkImageAspect;
 		bool isCompressed;
+		bool isAlternateFormat; // true if the host pixel format doesn't 1:1 match the emulated format
 
 		// texture decoder info
 		TextureDecoder* decoder;
@@ -189,7 +191,17 @@ public:
 	// this latches a flag, tells the platform layer to stop the title (on iOS: the bridge, which also remembers that Vulkan
 	// failed), and from then on every wait and submit in this renderer completes immediately instead of touching the dead device.
 	void HandleDeviceLost(const char* what);
+	// Last operations recorded before a device loss, so the log names what the GPU was asked to do (see DumpOpTrace).
+	enum class OpKind : uint8 { Draw, DrawSkipped, RenderPass, TextureUpload, Readback, Submit };
+	void TraceOp(OpKind kind, uint32 a = 0, uint32 b = 0, uint32 c = 0, uint32 d = 0);
+	void DumpOpTrace();
 	uint64 GetTextureBudgetBytes() const { return m_textureBudgetBytes; } // 0 = no cap
+private:
+	struct OpTraceEntry { uint64 seq; uint32 frame; uint8 kind; uint32 a, b, c, d; };
+	static constexpr uint32 kOpTraceSize = 48;
+	OpTraceEntry m_opTrace[kOpTraceSize]{};
+	std::atomic<uint64> m_opTraceSeq{0};
+public:
 	bool IsDeviceLost() const { return m_deviceLost.load(std::memory_order_acquire); }
 
 	void GetDeviceFeatures();
@@ -202,6 +214,7 @@ public:
 
 	void StopUsingPadAndWait();
 	bool IsPadWindowActive() override;
+	bool GetVRAMInfo(int& usageInMB, int& totalInMB) const override;
 
 	void HandleScreenshotRequest(LatteTextureView* texView, bool padView) override;
 
@@ -264,8 +277,20 @@ public:
 	void ReleaseDestructibleObject(VKRDestructibleObject* destructibleObject);
 	void ProcessDestructionQueue();
 
+	// Delayed frees (iOS page-fault mitigation): a destructible object or a released staging/index/vertex allocation is kept
+	// for at least m_delayedFreeFrames presented frames after the command buffer using it finished. 0 = no extra delay.
+	uint64 GetFramesPresented() const { return m_framesPresented.load(std::memory_order_acquire); }
+	bool HasFrameDelayElapsed(uint64 objectFrame) const;
+	uint64 ApplyDelayedFreeToCleanupId(uint64 finishedCommandBufferId) const;
+	void OnFramePresented();
+
 	FSpinlock m_spinlockDestructionQueue;
 	std::vector<VKRDestructibleObject*> m_destructionQueue;
+
+	uint32 m_delayedFreeFrames{}; // 0..15
+	bool m_drainDestructionQueue{}; // shutdown: ignore the frame delay
+	std::atomic<uint64> m_framesPresented{};
+	std::atomic<uint64> m_frameEndCmdBufferId[16]{}; // command buffer id current when frame N (index N % 16) was presented
 
 	void PipelineCacheSaveThread(size_t cache_size);
 
@@ -295,6 +320,7 @@ public:
 
 	// texture functions
 	void* texture_acquireTextureUploadBuffer(uint32 size) override;
+	void texture_uploadBufferUnavailable(LatteTexture* texture) override;
 	void texture_releaseTextureUploadBuffer(uint8* mem) override;
 
 	TextureDecoder* texture_chooseDecodedFormat(Latte::E_GX2SURFFMT format, bool isDepth, Latte::E_DIM dim, uint32 width, uint32 height) override;
@@ -382,8 +408,8 @@ private:
 		VkDescriptorSetInfo* activePixelDS{ nullptr };
 		VkDescriptorSetInfo* activeGeometryDS{ nullptr };
 		bool descriptorSetsChanged{ false };
-		bool hasRenderSelfDependency{ false }; // set if current drawcall samples textures which are also output as a rendertarget
-
+		CachedFBOVk::RendertargetSelfDependencyMask m_curRenderpassSelfDependencyInfo{};
+		VkImageAspectFlags feedbackLoopImageAspect{0xFFFFFFFF};
 		// viewport and scissor box
 		VkViewport currentViewport{};
 		VkRect2D currentScissorRect{};
@@ -417,6 +443,7 @@ private:
 			activeIndexType = Renderer::INDEX_TYPE::NONE;
 			activeIndexBufferIndex = std::numeric_limits<uint32>::max();
 			activeIndexBufferOffset = std::numeric_limits<uint32>::max();
+			feedbackLoopImageAspect = 0xFFFFFFFF;
 		}
 
 		// invalidation / flushing
@@ -429,6 +456,18 @@ private:
 
 	std::unique_ptr<SwapchainInfoVk> m_mainSwapchainInfo{}, m_padSwapchainInfo{};
 	std::atomic_flag m_destroyPadSwapchainNextAcquire{};
+	// GamePad surface (re)registered by the UI thread while the GPU thread may be using the old chain: the UI thread only
+	// records the size here, and the GPU thread swaps the chain in ApplyPendingPadSurface()
+	std::atomic_bool m_padSurfaceChanged{false};
+	std::atomic<sint32> m_padSurfaceWidth{0}, m_padSurfaceHeight{0};
+	// backoff for chains that failed to (re)build, [0] = TV, [1] = GamePad. GPU thread only
+	struct SwapchainRetryState
+	{
+		std::chrono::steady_clock::time_point notBefore{};
+		uint32 delayMs = 0;
+	};
+	std::array<SwapchainRetryState, 2> m_swapchainRetry{};
+	bool m_imguiBackendInitialized = false; // ImGui_ImplVulkan_Init() ran and has not been shut down again
 	std::array<std::atomic_bool, 2> m_swapchainPresentPending{};
 	bool IsSwapchainInfoValid(bool mainWindow) const;
 
@@ -472,6 +511,8 @@ private:
 			bool memory_budget = false; // VK_EXT_memory_budget
 			bool sampler_mirror_clamp_to_edge = false; // VK_KHR_sampler_mirror_clamp_to_edge
 			bool portability_subset = false; // VK_KHR_portability_subset (MoltenVK). The spec requires enabling it whenever the device lists it
+			bool attachment_feedback_loop_layout = false; // VK_EXT_attachment_feedback_loop_layout
+			bool attachment_feedback_loop_dynamic_state = false; // VK_EXT_attachment_feedback_loop_dynamic_state (this is forced to false if VK_EXT_attachment_feedback_loop_layout is not supported)
 		}deviceExtensions;
 
 		bool geometryShader = false; // the core geometryShader feature was enabled on the device (never on MoltenVK). Without it GS stages can't be used
@@ -562,7 +603,7 @@ private:
 	void draw_handleSpecialState5();
 
 	// draw synchronization helper
-	void sync_inputTexturesChanged();
+	void sync_inputTexturesChanged(bool withinFeedbackLoopRenderPass = false);
 	void sync_RenderPassLoadTextures(CachedFBOVk* fboVk);
 	void sync_RenderPassStoreTextures(CachedFBOVk* fboVk);
 
@@ -579,6 +620,9 @@ private:
 	VkPipeline backbufferBlit_createGraphicsPipeline(VkDescriptorSetLayout descriptorLayout, bool padView, RendererOutputShader* shader);
 	bool AcquireNextSwapchainImage(bool mainWindow);
 	void RecreateSwapchain(bool mainWindow, bool skipCreate = false);
+	void ApplyPendingPadSurface();
+	void NoteSwapchainFailure(bool mainWindow, const char* what);
+	void RetryDeadSwapchain(bool mainWindow);
 
 	// streamout
 	void streamout_setupXfbBuffer(uint32 bufferIndex, sint32 ringBufferOffset, uint32 rangeAddr, uint32 rangeSize) override;
@@ -959,6 +1003,7 @@ public:
 	bool HasSPRIVRoundingModeRTE32() const { return m_featureControl.shaderFloatControls.shaderRoundingModeRTEFloat32; }
 	bool IsDebugMarkersEnabled() const { return m_featureControl.usingDebugMarkerTool; }
 	bool IsTracingToolEnabled() const { return m_featureControl.usingTracingTool; }
+	bool UseAttachmentFeedbackLoop() const { return m_featureControl.deviceExtensions.attachment_feedback_loop_dynamic_state; }
 
 private:
 

@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import Foundation
 import SwiftUI
 
@@ -50,6 +55,17 @@ enum WiiUMenuRegion: CaseIterable {
         }) else { return nil }
         self = match
     }
+}
+
+/// How the installed Menu shows up in the library. Both default to off, which is the original
+/// look: a bar pinned above the grid. Keys live under "muffin." so Reset settings covers them.
+enum WiiUMenuSettings {
+    /// Show the Menu as a card in the game grid instead of the bar at the top.
+    static let showAsCardKey = "muffin.wiiuMenu.showAsCard"
+    static let defaultShowAsCard = false
+    /// Leave the Menu out of the library. It stays installed.
+    static let hideKey = "muffin.wiiuMenu.hidden"
+    static let defaultHidden = false
 }
 
 /// What is present, what launching needs and lacks.
@@ -205,6 +221,36 @@ enum WiiUMenu {
             titleId: region.titleID,
             displayTitle: "Wii U Menu"
         )
+    }
+
+    // MARK: Uninstall
+
+    /// What uninstalling removes: the Menu title folder for every region, and nothing else.
+    /// Shared data (0005001b), system apps, cafeLibs, otp.bin and seeprom.bin stay: games use
+    /// them too. Saves (mlc01/usr), other titles and import backups are never touched.
+    static func uninstallableMenuFolders() -> [URL] {
+        let fm = FileManager.default
+        return WiiUMenuRegion.allCases.compactMap { region in
+            guard let folder = menuFolder(region), fm.fileExists(atPath: folder.path) else { return nil }
+            return folder
+        }
+    }
+
+    /// Deletes the Menu title folder(s). Blocking: call off the main thread. Returns how many
+    /// folders were removed; throws on the first one that could not be.
+    @discardableResult
+    static func uninstallMenu() throws -> Int {
+        let fm = FileManager.default
+        var removed = 0
+        for folder in uninstallableMenuFolders() {
+            do {
+                try fm.removeItem(at: folder)
+                removed += 1
+            } catch {
+                throw ImportError.failed("Couldn't remove \(folder.lastPathComponent): \(error.localizedDescription)")
+            }
+        }
+        return removed
     }
 
     // MARK: Import errors and reports
@@ -480,7 +526,7 @@ enum WiiUMenu {
         return report
     }
 
-    private static func timestamp() -> String {
+    static func timestamp() -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyyMMdd-HHmmss"

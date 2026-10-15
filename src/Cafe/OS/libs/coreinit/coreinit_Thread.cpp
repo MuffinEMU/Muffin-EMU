@@ -34,23 +34,20 @@
 #endif
 #endif
 
-namespace {
-
-void enableFlushDenormalsToZero()
+static void ConfigureHostFloatingPointEnvironment()
 {
 #if defined(ARCH_X86_64)
 	_mm_setcsr(_mm_getcsr() | 0x8000);
 #elif defined(__arm64__)
+	// enable flush-to-zero and preserve NaN signs and payloads (FZ=1, DN=0)
 #if defined(__clang__)
-	__arm_wsr64("fpcr", __arm_rsr64("fpcr") | (1 << 24));
+	__arm_wsr64("fpcr", (__arm_rsr64("fpcr") | (1 << 24)) & ~(1 << 25));
 #elif defined(__GNUC__)
-	__builtin_aarch64_set_fpcr(__builtin_aarch64_get_fpcr() | (1 << 24));
+	__builtin_aarch64_set_fpcr((__builtin_aarch64_get_fpcr() | (1 << 24)) & ~(1 << 25));
 #elif defined(_MSC_VER)
-	_WriteStatusReg(ARM64_FPCR, _ReadStatusReg(ARM64_FPCR) | (1 << 24));
+	_WriteStatusReg(ARM64_FPCR, (_ReadStatusReg(ARM64_FPCR) | (1 << 24)) & ~(1 << 25));
 #endif
 #endif
-}
-
 }
 
 SlimRWLock srwlock_activeThreadList;
@@ -104,7 +101,8 @@ namespace coreinit
 		g_idleWakeCv.notify_all();
 	}
 
-	bool g_isMulticoreMode;
+	bool g_isMulticoreMode; // one host thread per emulated core
+	bool g_isTwoThreadMode; // host thread 1 runs core 1, host thread 0 alternates cores 0 and 2
 
 	// see the declaration in coreinit_Thread.h for why this exists
 	std::atomic<bool> g_coreIsBusy[Espresso::CORE_COUNT]{};
@@ -1308,7 +1306,8 @@ namespace coreinit
 	// this is necessary since we can't block in __OSThreadSwitchToNext() (__OSStoreThread + thread switch must happen inside same scheduler lock)
 	void __OSThreadCoreIdle(void* unusedParam)
 	{
-		bool isMainCore = g_isMulticoreMode == false || t_assignedCoreIndex == 1;
+		const bool perCoreHost = g_isMulticoreMode || g_isTwoThreadMode;
+		bool isMainCore = perCoreHost == false || t_assignedCoreIndex == 1;
 		sint32 coreIndex = t_assignedCoreIndex;
 		__OSUnlockScheduler();
 		// Main core only. Used to be a bare spin (about 6 million passes a second, one performance
@@ -1334,7 +1333,18 @@ namespace coreinit
 				{
 					cemu_assert_debug(nextThread->state == OSThread_t::THREAD_STATE::STATE_RUNNING);
 					PerfTelemetry::Get().ppcIdleNs.fetch_add(PerfTelemetry::NowNs() - idleSegmentStart, std::memory_order_relaxed);
+					// see __OSAllCoresIdle() in coreinit_Thread.h. This host thread is "busy" from here until
+					// control comes back to this idle fiber. A guest fiber that blocks inside an HLE call
+					// (PPCCore_switchToScheduler) is parked in the middle of attemptEnterThread() and is NOT
+					// running, so busy cannot be tracked around attemptEnterThread() itself: that left the flag
+					// set for as long as such a fiber stayed parked. Indexed by host thread (t_assignedCoreIndex),
+					// not by the emulated core a fiber was last given (that rotates in single-core mode).
+					// The slot is captured once: set and clear must hit the same flag even if the core index is
+					// reassigned while the guest fiber runs.
+					const uint32 busySlot = t_assignedCoreIndex < std::size(g_coreIsBusy) ? t_assignedCoreIndex : 0;
+					g_coreIsBusy[busySlot].store(true, std::memory_order_release);
 					__OSSwitchToThreadFiber(nextThread, coreIndex);
+					g_coreIsBusy[busySlot].store(false, std::memory_order_release);
 					idleSegmentStart = PerfTelemetry::NowNs();
 					ranGuestThread = true;
 				}
@@ -1342,7 +1352,7 @@ namespace coreinit
 			}
 			if (ranGuestThread)
 				emptyRunQueueSpins = 0; // not the run-queue counters: OSSchedulerEnd() bumps those without queueing anything
-			else if (isMainCore && ++emptyRunQueueSpins > kIdleSpinBudget)
+			else if ((isMainCore || g_isTwoThreadMode) && ++emptyRunQueueSpins > kIdleSpinBudget)
 			{
 				bool signalled;
 				{
@@ -1363,8 +1373,15 @@ namespace coreinit
 				if (!sSchedulerActive.load(std::memory_order::relaxed))
 					Fiber::Switch(*t_schedulerFiber); // switch back to original thread to exit
 				__OSCheckSystemEvents();
-				if(g_isMulticoreMode == false)
+				if(perCoreHost == false)
 					coreIndex = (coreIndex + 1) % 3;
+			}
+			else if (g_isTwoThreadMode)
+			{
+				// shares cores 0 and 2; a thread queued for either one wakes the wait above
+				if (!sSchedulerActive.load(std::memory_order::relaxed))
+					Fiber::Switch(*t_schedulerFiber);
+				coreIndex = coreIndex == 0 ? 2 : 0;
 			}
 			else
 			{
@@ -1399,8 +1416,19 @@ namespace coreinit
 		static uint32 _coreCounter = 0;
 
 		sint32 coreIndex;
+		static thread_local uint32 s_twoThreadSharedCore = 0;
 		if (g_isMulticoreMode)
 			coreIndex = t_assignedCoreIndex;
+		else if (g_isTwoThreadMode)
+		{
+			if (t_assignedCoreIndex == 1)
+				coreIndex = 1;
+			else
+			{
+				coreIndex = s_twoThreadSharedCore;
+				s_twoThreadSharedCore = s_twoThreadSharedCore == 0 ? 2 : 0;
+			}
+		}
 		else
 		{
 			coreIndex = _coreCounter;
@@ -1408,7 +1436,7 @@ namespace coreinit
 		}
 
 		// if main thread then dont forget to do update checks
-		bool isMainThread = g_isMulticoreMode == false || t_assignedCoreIndex == 1;
+		bool isMainThread = (g_isMulticoreMode == false && g_isTwoThreadMode == false) || t_assignedCoreIndex == 1;
 
 		// find next thread to run
 		// for main thread we force switching to the idle loop since it calls __OSCheckSystemEvents()
@@ -1442,7 +1470,7 @@ namespace coreinit
 #endif
 		OSHostThread* hostThread = (OSHostThread*)_thread;
 
-		enableFlushDenormalsToZero();
+		ConfigureHostFloatingPointEnvironment();
 
 		PPCInterpreter_t* hCPU = &hostThread->ppcInstance;
 		__OSLoadThread(hostThread->m_thread, hCPU, hostThread->selectedCore);
@@ -1451,14 +1479,7 @@ namespace coreinit
 		while (true)
 		{
             if (hCPU->remainingCycles > 0)
-            {
-                // see __OSAllCoresIdle() in coreinit_Thread.h: this core is genuinely
-                // executing PPC instructions (and may be touching guest memory) only
-                // between these two stores, not merely "not suspended"
-                g_coreIsBusy[hostThread->selectedCore].store(true, std::memory_order_release);
                 attemptEnterThread(hCPU);
-                g_coreIsBusy[hostThread->selectedCore].store(false, std::memory_order_release);
-            }
 
 			// reset reservation
 			hCPU->reservedMemAddr = 0;
@@ -1495,7 +1516,7 @@ namespace coreinit
 		SetThreadName(fmt::format("OSSched[core={}]", (uintptr_t)_assignedCoreIndex).c_str());
 		t_assignedCoreIndex = (sint32)(uintptr_t)_assignedCoreIndex;
 
-		enableFlushDenormalsToZero();
+		ConfigureHostFloatingPointEnvironment();
 
 #if BOOST_OS_LINUX
 		if (g_gdbstub)
@@ -1536,11 +1557,19 @@ namespace coreinit
 		std::unique_lock _lock(sSchedulerStateMtx);
 		if (sSchedulerActive.exchange(true))
 			return;
-		cemu_assert_debug(numCPUEmulationThreads == 1 || numCPUEmulationThreads == 3);
-		g_isMulticoreMode = numCPUEmulationThreads > 1;
+		cemu_assert_debug(numCPUEmulationThreads == 1 || numCPUEmulationThreads == 2 || numCPUEmulationThreads == 3);
+		g_isMulticoreMode = numCPUEmulationThreads == 3;
+		g_isTwoThreadMode = numCPUEmulationThreads == 2;
+		for (auto& busy : g_coreIsBusy)
+			busy.store(false, std::memory_order_release);
 		PerfTelemetry::Get().ppcHostThreads.store((uint32)numCPUEmulationThreads, std::memory_order_relaxed);
 		if (numCPUEmulationThreads == 1)
 			sSchedulerThreads.emplace_back(OSSchedulerCoreEmulationThread, (void*)0);
+		else if (numCPUEmulationThreads == 2)
+		{
+			sSchedulerThreads.emplace_back(OSSchedulerCoreEmulationThread, (void*)1);
+			sSchedulerThreads.emplace_back(OSSchedulerCoreEmulationThread, (void*)0);
+		}
 		else if (numCPUEmulationThreads == 3)
 		{
 			for (size_t i = 0; i < 3; i++)

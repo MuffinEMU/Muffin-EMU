@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 //
 //  CoreDriver.swift
 //  The app's one door into the MuffinEMU core: the regular bridge (CemuBridge.h) for boot, settings and
@@ -78,6 +83,8 @@ final class CoreDriver {
         // one emulated CPU core, real-time clock.
         cemu_bridge_set_timebase_auto_enabled(false)
         cemu_bridge_set_favour_accuracy(false)
+        cemu_bridge_set_favour_performance(false)
+        cemu_bridge_set_full_speed_renders(false, 0)
         cemu_bridge_initialize(mlc.path)
         // -1 means the engine never initialized (the bridge answers "cannot answer" then).
         guard cemu_bridge_reload_and_count_keys() >= 0 else { throw CoreError.message("the core did not initialize") }

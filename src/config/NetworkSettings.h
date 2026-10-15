@@ -42,7 +42,13 @@ struct NetworkConfig
     void Load(XMLConfigParser& parser);
     void Save(XMLConfigParser& parser);
     
+    // True when network_services.xml exists in the config folder and is a usable Custom Network Service:
+    // it parses, has a <content> element, and lists at least one http(s) address under <urls>.
     static bool XMLExists();
+    // Reads network_services.xml again (after it was replaced or removed) and drops the cached XMLExists() answer.
+    static void Reload();
+    // Whether the file at path is a usable network_services.xml; the same check XMLExists() makes.
+    static bool IsValidFile(const fs::path& path);
 };
 
 struct NintendoURLs {

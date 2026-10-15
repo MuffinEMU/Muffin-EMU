@@ -1,4 +1,14 @@
 #!/bin/bash
+# MuffinEMU — code by the MuffinEMU Development Team.
+# Copyright (c) 2026 MuffinEMU Development Team.
+# SPDX-License-Identifier: MPL-2.0
+# This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
+# MuffinEMU — code by the MuffinEMU Development Team.
+# Copyright (c) 2026 MuffinEMU Development Team.
+# SPDX-License-Identifier: MPL-2.0
+# This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 # Publishes an experimental build: one "Experimental: ..." pre-release per build, and the rolling
 # `experimental` release that always points at the newest of them. Neither is ever referenced by the
 # Stable or Nightly install sources; the Experimental source (docs/experimental*.json) lists only the
@@ -29,6 +39,8 @@ BASE7=$(printf '%s' "$BASE" | cut -c1-7)
 BASE_VER=$(git describe --tags --match 'v[0-9]*' --abbrev=0 "$BASE" 2>/dev/null || echo "no numbered release")
 AHEAD=$(git rev-list --count "$BASE..$SHA")
 SHA7=$(printf '%s' "$SHA" | cut -c1-7)
+# The version stamped into the app, which the Experimental source has to list exactly.
+APP_VERSION=$(ipa_version MuffinEMU.ipa)
 
 BODY=$(mktemp)
 {
@@ -36,6 +48,7 @@ BODY=$(mktemp)
   echo
   echo "- **Experiment:** $SHORT_NAME"
   echo "- **Branch:** \`$REF_NAME\` at \`$SHA7\`"
+  echo "- **App version:** $APP_VERSION"
   echo "- **Based on:** main \`$BASE7\` ($BASE_VER), plus $AHEAD commit(s) on the branch"
   echo "- **Installing it replaces** an installed MuffinEMU: it has the same bundle identifier, so your games, saves and settings carry over."
   echo "- **Where it is listed:** only in the Experimental install source, for testers. It is in neither the Stable nor the Nightly source."

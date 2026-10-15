@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import Foundation
 #if os(iOS)
 import UIKit
@@ -8,7 +13,7 @@ import UIKit
 /// dependent default in the app reads it from here instead of carrying a number that was
 /// measured on one device.
 ///
-/// The standard tier (4.5 to 7 GiB of RAM: the 6 GB A12Z iPad Pro, iPhone 14 to 16) gets the
+/// The standard tier (4.5 to 7 GiB of RAM: 6 GB iPads and iPhone 14 to 16) gets the
 /// values the app shipped with, so nothing that works on those devices changes. Devices with
 /// less memory get conservative defaults; devices with more, and the newest chips, get more.
 struct DeviceCapabilities {
@@ -37,10 +42,13 @@ struct DeviceCapabilities {
     var isHighEndSoC: Bool { raw.isHighEndSoc }
     /// Whether three host threads for the emulated cores are worth offering at all.
     var multicoreViable: Bool { raw.multicoreViable }
+    /// Most host threads the emulated cores may use here, 1 to 3. A CPU cores option is listed only up to this.
+    var maxHostThreads: Int { Int(raw.maxHostThreads) }
+    var performanceCores: Int { Int(raw.perfCores) }
     var meshShaders: Bool { raw.meshShaders }
-    /// What Settings says when `multicoreViable` is false. The engine refuses three cores on such a
-    /// device whatever the CPU cores setting says, including Auto (ios_decide_core_count in CemuBridge.mm).
-    static let oneCoreOnlyText = "One core only: this device has too little memory or too few cores to run three at once."
+    /// What Settings says when `multicoreViable` is false. Auto stays on one core there, and
+    /// Basic offers nothing else; Advanced can still force a mode (ios_decide_core_count in CemuBridge.mm).
+    static let oneCoreOnlyText = "One core only: this device has too little memory or too few performance cores to run more than one at once."
 
     /// A17 Pro or later, or any M-series chip, with 7 GiB or more: the GPU and thermal room to start
     /// Resolution at High. `RenderScale.deviceDefault` is the one place the default is decided, and

@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import CoreGraphics
 
 /// Scheme 4 - Frame Pad.
@@ -31,7 +36,13 @@ public final class FramePad: ControlScheme {
     public var minimumUnit: CGFloat = 40
     public private(set) var mode: Mode = .overlay
 
-    public init() { super.init(info: Self.schemeInfo) }
+    /// A's size as a multiple of its usual one (1...1.8).
+    public let aScale: CGFloat
+
+    public init(aScale: CGFloat = 1) {
+        self.aScale = aScale
+        super.init(info: Self.schemeInfo)
+    }
 
     override public func makeControls(_ ctx: LayoutContext) -> [PadControl] {
         let s = ctx.safeBounds
@@ -40,7 +51,7 @@ public final class FramePad: ControlScheme {
 
         guard !video.isNull else {
             mode = .overlay
-            return GamePadArrangement.build(ctx)
+            return GamePadArrangement.build(ctx, aScale: aScale)
         }
 
         let leftCol = CGRect(x: s.minX, y: s.minY, width: max(video.minX - s.minX, 0), height: s.height)
@@ -69,7 +80,7 @@ public final class FramePad: ControlScheme {
                 + [home(CGPoint(x: band.midX, y: band.maxY - 0.55 * bandU), u: bandU, bottomLimit: s.maxY)]
         }
         mode = .overlay
-        return GamePadArrangement.build(ctx)
+        return GamePadArrangement.build(ctx, aScale: aScale)
     }
 
     private enum Side { case left, right }
@@ -95,8 +106,10 @@ public final class FramePad: ControlScheme {
 
         // Catchment out to the column walls: generous, and the video is never in reach
         // because the column stops where it starts.
-        let wall = (col.width / 2 - PadParts.clusterRadius * u) / u
-        let reach = max(0.3, min(wall, 0.8))
+        let a = PadParts.clampedAScale(aScale), nb = PadParts.neighbourScale(forA: a)
+        let wall = (col.width / 2 - (PadParts.crossX + 0.25 * (a + nb)) * u) / u
+        let reach = max(0.3 / a, min(wall / a, 0.8))
+        let faceAt = diamond - CGPoint(x: 0.25 * (a - nb) * u, y: 0)
         var out: [PadControl]
         if side == .left {
             out = [
@@ -115,7 +128,7 @@ public final class FramePad: ControlScheme {
                 // on the hardware.
                 PadParts.system(.plus, at: systemCentre + CGPoint(x: -0.6 * u, y: 0), u: u),
                 PadParts.system(.home, at: systemCentre + CGPoint(x: 0.6 * u, y: 0), u: u),
-            ] + PadParts.faceDiamond(diamond, u: u, reach: reach, rDot: false)
+            ] + PadParts.faceDiamond(faceAt, u: u, reach: reach, rDot: false, aScale: a)
         }
         return out
     }
@@ -152,7 +165,7 @@ public final class FramePad: ControlScheme {
                 PadParts.shoulder(.r, zInner, u: u, group: PadParts.Group.rightShoulders),
                 PadParts.system(.plus, at: sysCentre, u: u),
                 PadParts.stick(.right, at: innerCentre, u: u, click: .stickR),
-            ] + PadParts.faceDiamond(outerCentre, u: u, rDot: false)
+            ] + PadParts.faceDiamond(outerCentre - CGPoint(x: 0.5 * (PadParts.clampedAScale(aScale) - 1) * u, y: 0), u: u, rDot: false, aScale: aScale)
         }
     }
 

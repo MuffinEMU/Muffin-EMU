@@ -22,7 +22,7 @@ class FileStream
 	bool SetEndOfFile();
 	void extract(std::vector<uint8>& data);
 
-	void Flush();
+	bool Flush(); // false if the stream is in an error state (e.g. disk full)
 
 	// reading
 	uint32 readData(void* data, uint32 length);

@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -40,7 +45,7 @@ enum PreviewLayoutPreset: String, CaseIterable, Identifiable {
         case .native:
             return nil
         case .iPadPro2020:
-            // iPad Pro 12.9" (2020, A12Z): 1366x1024 pt container, 132 ppi, no notch.
+            // iPad Pro 12.9" (2020): 1366x1024 pt container, 132 ppi, no notch.
             return (CGSize(width: 1366, height: 1024), CGRect(x: 0, y: 0, width: 1366, height: 1004), 132, 1.0)
         case .compact:
             // Captured on the same reference device at 70% scale, so "Compact" means
@@ -96,6 +101,7 @@ final class PreviewPadStore: ObservableObject {
     static let defaultEnabled = false
     static let layoutPresetKey = "muffin.preview.layoutPreset"
     static let colourPresetKey = "muffin.preview.colourPreset"
+    static let customColoursKey = "muffin.preview.customColours"
     static let displayModeKey = "muffin.preview.displayMode"
     static let adjustmentsKey = "muffin.preview.groupAdjustments"
 
@@ -103,8 +109,18 @@ final class PreviewPadStore: ObservableObject {
         didSet { defaults.set(layoutPreset.rawValue, forKey: Self.layoutPresetKey) }
     }
     @Published var colourPreset: PreviewColourPreset {
-        didSet { defaults.set(colourPreset.rawValue, forKey: Self.colourPresetKey) }
+        // Picking a preset, even the one already picked, drops an imported colour file.
+        didSet {
+            defaults.set(colourPreset.rawValue, forKey: Self.colourPresetKey)
+            customColours = nil
+        }
     }
+    /// A .muffinclr the person imported. Wins over `colourPreset` until they pick a preset again.
+    @Published private(set) var customColours: MuffinColourFile? {
+        didSet { persistCustomColours() }
+    }
+    /// The colours actually in effect: the imported file if there is one, else the picked preset.
+    var colourFile: MuffinColourFile { customColours ?? colourPreset.file }
     @Published var displayMode: PadLayout.DisplayMode {
         didSet { defaults.set(displayMode.rawValue, forKey: Self.displayModeKey) }
     }
@@ -120,9 +136,27 @@ final class PreviewPadStore: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        layoutPreset = PreviewLayoutPreset(rawValue: defaults.string(forKey: Self.layoutPresetKey) ?? "") ?? .iPadPro2020
+        layoutPreset = PreviewLayoutPreset(rawValue: defaults.string(forKey: Self.layoutPresetKey) ?? "") ?? .native
         colourPreset = PreviewColourPreset(rawValue: defaults.string(forKey: Self.colourPresetKey) ?? "") ?? .wiiUWhite
         displayMode = PadLayout.DisplayMode(rawValue: defaults.string(forKey: Self.displayModeKey) ?? "") ?? .fit
+        customColours = Self.loadCustomColours(defaults)
+        if let data = defaults.data(forKey: Self.adjustmentsKey),
+           let decoded = try? JSONDecoder().decode([String: GroupPlacement].self, from: data) {
+            adjustments = decoded
+        } else {
+            adjustments = [:]
+        }
+    }
+
+    /// Re-reads everything from UserDefaults, for after the keys were removed behind this
+    /// store's back (Settings > Reset settings to defaults).
+    func reloadFromDefaults() {
+        // Read first: setting colourPreset below clears the imported colours.
+        let custom = Self.loadCustomColours(defaults)
+        layoutPreset = PreviewLayoutPreset(rawValue: defaults.string(forKey: Self.layoutPresetKey) ?? "") ?? .native
+        colourPreset = PreviewColourPreset(rawValue: defaults.string(forKey: Self.colourPresetKey) ?? "") ?? .wiiUWhite
+        displayMode = PadLayout.DisplayMode(rawValue: defaults.string(forKey: Self.displayModeKey) ?? "") ?? .fit
+        customColours = custom
         if let data = defaults.data(forKey: Self.adjustmentsKey),
            let decoded = try? JSONDecoder().decode([String: GroupPlacement].self, from: data) {
             adjustments = decoded
@@ -151,6 +185,12 @@ final class PreviewPadStore: ObservableObject {
         adjustments = file.groups
     }
 
+    /// Importing a .muffinclr means "use exactly these colours" - the file is kept whole, so
+    /// exporting it again gives back the same file.
+    func applyImportedColours(_ file: MuffinColourFile) {
+        customColours = file
+    }
+
     /// The arrangement actually in effect right now - the active preset's own groups
     /// with the live drag/resize adjustments already folded in - so exporting captures
     /// what is genuinely on screen, not just the preset or just the deltas.
@@ -174,6 +214,19 @@ final class PreviewPadStore: ObservableObject {
         return merged
     }
 
+    private static func loadCustomColours(_ defaults: UserDefaults) -> MuffinColourFile? {
+        guard let data = defaults.data(forKey: customColoursKey) else { return nil }
+        return try? MuffinColourFile.decode(data)
+    }
+
+    private func persistCustomColours() {
+        if let customColours, let data = try? customColours.encoded() {
+            defaults.set(data, forKey: Self.customColoursKey)
+        } else {
+            defaults.removeObject(forKey: Self.customColoursKey)
+        }
+    }
+
     private func persistAdjustments() {
         guard let data = try? JSONEncoder().encode(adjustments) else { return }
         defaults.set(data, forKey: Self.adjustmentsKey)
@@ -181,10 +234,19 @@ final class PreviewPadStore: ObservableObject {
 
     // MARK: Resolving the actual layout for a container
 
+    /// The display mode in force for a container. An iPhone held upright is always Native: Fit
+    /// would leave the picture mid-screen with the controls floating over it, and upright the
+    /// picture belongs along the top with the controls below (Native's portrait layout).
+    func effectiveDisplayMode(container: CGSize) -> PadLayout.DisplayMode {
+        if UIDevice.current.userInterfaceIdiom == .phone, container.height > container.width { return .native }
+        return displayMode
+    }
+
     /// The current preset, fitted (or resolved fresh, for `.native`) onto this container,
     /// with the live per-group drag/resize adjustments layered on top. This is the one
     /// call site EmulatorViewOptimized and PreviewControllerPad both need.
     func resolve(container: CGSize, safeArea: CGRect, pointsPerInch: CGFloat) -> PreviewResolved {
+        let displayMode = effectiveDisplayMode(container: container)
         if let file = layoutPreset.layoutFile(displayMode: displayMode) {
             var adjustedFile = file
             for g in PadGroup.allCases {

@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team.
+// SPDX-License-Identifier: MPL-2.0
+// This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 //
 //  CemuDeviceCaps.h
 //  The device capability snapshot, for Swift. Plain C, like CemuBridge.h.
@@ -38,6 +43,7 @@ typedef struct CemuDeviceCaps {
     uint64_t minBootHeadroomBytes;
     uint32_t jitArenaStartMB;
     uint32_t logicalCores;
+    uint32_t maxHostThreads;          // most host threads the emulated cores may use on this device (1 to 3)
     uint32_t perfCores;
     uint32_t effCores;
     int32_t  screenClass;             // 0 unknown, 1 phone-compact, 2 phone, 3 pad, 4 pad-large

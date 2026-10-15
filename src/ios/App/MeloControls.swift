@@ -1,5 +1,12 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import SwiftUI
+#if canImport(Melo_Controller)
 import Melo_Controller
+#endif
 
 /// Melo-Controller (github.com/stossy11/Melo-Controller) as an alternative on-screen pad,
 /// behind Settings > On-screen Controls > "Use melo-controls".
@@ -9,9 +16,22 @@ import Melo_Controller
 /// ContentView keeps them from ever colliding with MuffinEMU's own. Everything else sees
 /// only MeloControlsOverlay and MeloControlsSetting.
 ///
-/// Melo-Controller is GPL-3.0, and it is linked into every build whether or not the switch
-/// is on - see the licence note in README.md.
+/// The package is optional: it is linked only when src/ios/project.yml lists it (it is commented
+/// out there today). Without it, `isAvailable` is false, the switch is hidden, and
+/// MeloControlsOverlay draws nothing, so the rest of the app needs no #if of its own.
 enum MeloControlsSetting {
+    #if canImport(Melo_Controller)
+    static let isAvailable = true
+    #else
+    static let isAvailable = false
+    #endif
+
+    /// Run once at launch: a player who had Melo-Controller on in a build that included it
+    /// would otherwise be left with the setting on and no pad to show for it.
+    static func clearIfUnavailable() {
+        if !isAvailable { UserDefaults.standard.set(false, forKey: storageKey) }
+    }
+
     static let storageKey = "muffin.pad.useMeloControls"
     static let defaultValue = false
 
@@ -24,6 +44,24 @@ enum MeloControlsSetting {
 
     /// Bumped by "Reset to default" so a live pad rebuilds from the cleared layout.
     static let layoutResetKey = "muffin.melo.layoutResetCount"
+
+    /// Copies a game's saved button positions to its title-ID name, unless that one already exists, then renames the old file
+    /// to `.migrated`. Copied first, so nothing is lost if the copy fails; renamed after, because the scan runs this on every
+    /// library load and the old file would otherwise bring back a layout the player had reset.
+    static func adoptLayout(from oldID: String, to newID: String) {
+        guard let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let folder = documents.appendingPathComponent("controller_layouts")
+        let old = folder.appendingPathComponent("\(oldID).json"), new = folder.appendingPathComponent("\(newID).json")
+        guard FileManager.default.fileExists(atPath: old.path), !FileManager.default.fileExists(atPath: new.path) else { return }
+        do {
+            try FileManager.default.copyItem(at: old, to: new)
+        } catch {
+            return
+        }
+        let archived = folder.appendingPathComponent("\(oldID).json.migrated")
+        try? FileManager.default.removeItem(at: archived)
+        try? FileManager.default.moveItem(at: old, to: archived)
+    }
 
     /// Puts this game's button positions back to how Melo-Controller ships them, and the
     /// size with them. The package keeps positions in Documents/controller_layouts/<game
@@ -41,6 +79,7 @@ enum MeloControlsSetting {
     }
 }
 
+#if canImport(Melo_Controller)
 /// Melo-Controller's pad, drawn over the game in place of MuffinEMU's own.
 struct MeloControlsOverlay: View {
     let gameID: String?
@@ -88,12 +127,17 @@ final class MeloControllerBridge: Melo_Controller.Controller {
     }
 
     private func send(_ button: VirtualControllerButton, pressed: Bool) {
+        // The gear button is HOME: it opens the HOME menu (HomeMenu.swift) instead of reaching the bridge.
+        if button.id == "guide" {
+            HomeMenuRouter.shared.padHome(pressed: pressed)
+            return
+        }
         guard let mapped = Self.bridgeButtons[button.id] else { return }
         cemu_bridge_set_button_state(mapped, pressed)
     }
 
     // Melo-Controller's button ids, from its VirtualControllerButton, onto the Wii U
-    // GamePad. "guide" is the gear button, which MuffinEMU treats as HOME.
+    // GamePad. "guide" is the gear button, which MuffinEMU treats as HOME (send() above routes it to the HOME menu).
     private static let bridgeButtons: [String: CemuBridgeButton] = [
         "A": CEMU_BRIDGE_BUTTON_A,
         "B": CEMU_BRIDGE_BUTTON_B,
@@ -114,3 +158,13 @@ final class MeloControllerBridge: Melo_Controller.Controller {
         "dPadRight": CEMU_BRIDGE_BUTTON_RIGHT,
     ]
 }
+#else
+/// Stand-in while Melo-Controller isn't linked. Never shown in practice: `isAvailable` is false,
+/// so nothing picks the Melo pad.
+struct MeloControlsOverlay: View {
+    let gameID: String?
+    let isEditing: Bool
+
+    var body: some View { EmptyView() }
+}
+#endif

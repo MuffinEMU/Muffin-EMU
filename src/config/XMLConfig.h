@@ -355,32 +355,43 @@ public:
 
 	bool Load(const std::wstring& filename)
 	{
-		FileStream* fs = FileStream::openFile(filename.c_str());
-		if (!fs)
+		const std::wstring backupName = filename + L".bak";
+		const std::wstring corruptName = filename + L".corrupt";
+		bool existed = false;
+		const auto tryLoad = [&](const std::wstring& name, bool& present) -> bool
 		{
+			FileStream* fs = FileStream::openFile(name.c_str());
+			if (!fs)
+				return false;
+			present = true;
+			std::vector<uint8> xmlData;
+			xmlData.resize(fs->GetSize());
+			fs->readData(xmlData.data(), xmlData.size());
+			delete fs;
+
+			tinyxml2::XMLDocument doc;
+			if (doc.Parse((const char*)xmlData.data(), xmlData.size()) != tinyxml2::XML_SUCCESS)
+				return false;
+
+			auto parser = XMLConfigParser(&doc);
+			auto parentParser = m_instance.Load(parser);
+
+			for (auto [save, load] : m_childConfigParsers)
+				load(parentParser);
+			return true;
+		};
+
+		if (tryLoad(filename, existed))
+			return true;
+		if (!existed)
 			return false;
-		}
-		std::vector<uint8> xmlData;
-		xmlData.resize(fs->GetSize());
-		fs->readData(xmlData.data(), xmlData.size());
-		delete fs;
 
-		tinyxml2::XMLDocument doc;		
-		const tinyxml2::XMLError error = doc.Parse((const char*)xmlData.data(), xmlData.size());
-		const bool success = error == tinyxml2::XML_SUCCESS;
-
-		if (!success)
-		{
-			return false;
-		}
-
-		auto parser = XMLConfigParser(&doc);
-		auto parentParser = m_instance.Load(parser);
-
-		for (auto [save, load] : m_childConfigParsers)
-			load(parentParser);
-
-		return true;
+		// The file is there but unreadable (empty or cut short). Keep it aside rather than letting the next
+		// Save() overwrite it, and fall back to the last good copy so settings aren't reset to defaults.
+		std::error_code ec;
+		fs::copy_file(fs::path(filename), fs::path(corruptName), fs::copy_options::overwrite_existing, ec);
+		bool backupPresent = false;
+		return tryLoad(backupName, backupPresent);
 	}
 
 	bool Save()
@@ -393,6 +404,9 @@ public:
 
 	bool Save(const std::wstring& filename)
 	{
+		// Saves come from the UI thread and the bridge; one at a time so temp files and .bak never interleave.
+		static std::mutex s_saveMutex;
+		std::lock_guard<std::mutex> saveGuard(s_saveMutex);
 		std::wstring tmp_name = fmt::format(L"{}_{}.tmp", filename,rand() % 1000);
 		const fs::path parentPath = fs::path(filename).parent_path();
 
@@ -455,6 +469,13 @@ public:
 			std::error_code cleanupError;
 			fs::remove(tmp_name, cleanupError);
 			return false;
+		}
+
+		// Keep the previous good file as .bak so a bad file at the next launch can fall back to it.
+		{
+			std::error_code backupError;
+			if (fs::exists(fs::path(filename), backupError))
+				fs::copy_file(fs::path(filename), fs::path(filename + L".bak"), fs::copy_options::overwrite_existing, backupError);
 		}
 
 		fs::rename(tmp_name, filename, err);

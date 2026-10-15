@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import SwiftUI
 import Dispatch
 
@@ -19,6 +24,14 @@ struct OptimizedControlPanel: View {
     /// True while the title is paused or the app is inactive. The pad stops taking
     /// touches, which cancels and releases anything held.
     var isPaused: Bool = false
+    /// Where the top bar (Back, pause, move controls) ends, in window coordinates. The
+    /// pad is drawn over that bar, so without this a cluster could be dragged on top of it
+    /// and take the buttons that get the player out of edit mode.
+    var topInset: CGFloat = 0
+    /// Held upright on an iPhone, in the area under the picture: see PortraitPad.swift. Fixed for
+    /// the life of the view, because the offsets below are stored under different keys; a turn
+    /// builds a new pad (EmulatorViewOptimized.belowPicture is a different branch in each).
+    var portrait: Bool = false
 
     @AppStorage(ControllerLayoutSettings.scaleKey)
     private var userScale = ControllerLayoutSettings.defaultScale
@@ -34,6 +47,9 @@ struct OptimizedControlPanel: View {
     @AppStorage(ControllerLayoutSettings.leftStickOffsetYKey) private var leftStickOffsetY = 0.0
     @AppStorage(ControllerLayoutSettings.stickSpacingKey)
     private var stickSpacing = ControllerLayoutSettings.defaultStickSpacing
+    // Landscape and upright are stored apart (the room to move the shoulders in is nothing like
+    // the same), and an iPhone has its own copies; see ShoulderOffsetStorage.
+    private var shoulderStore = ShoulderOffsetStorage()
     // The default must match SettingsView's declaration of the same key.
     @AppStorage(ControllerLayoutSettings.comfortControlsKey)
     private var comfortControls = ControllerLayoutSettings.defaultComfortControls
@@ -42,32 +58,87 @@ struct OptimizedControlPanel: View {
     @AppStorage(ControllerLayoutSettings.individualEditModeKey)
     private var individualEditMode = ControllerLayoutSettings.defaultIndividualEditMode
 
+    /// A half's controls as they are laid out in this orientation.
+    private func layoutControls(_ controls: [ControllerGeometry.Control]) -> [ControllerGeometry.Control] {
+        portrait ? ControllerGeometry.Portrait.cluster(controls) : controls
+    }
+
+    init(skin: WiiUControllerSkin,
+         onInput: @escaping (String, Bool) -> Void,
+         onStick: @escaping (Int, CGPoint) -> Void,
+         isEditingLayout: Binding<Bool>,
+         isPaused: Bool = false,
+         topInset: CGFloat = 0,
+         portrait: Bool = false) {
+        self.skin = skin
+        self.onInput = onInput
+        self.onStick = onStick
+        self._isEditingLayout = isEditingLayout
+        self.isPaused = isPaused
+        self.topInset = topInset
+        self.portrait = portrait
+        // Where each half was dragged to is kept per orientation.
+        func key(_ key: String) -> String { portrait ? ControllerLayoutSettings.portraitKey(key) : key }
+        _leftOffsetX = AppStorage(wrappedValue: 0.0, key(ControllerLayoutSettings.leftOffsetXKey))
+        _leftOffsetY = AppStorage(wrappedValue: 0.0, key(ControllerLayoutSettings.leftOffsetYKey))
+        _rightOffsetX = AppStorage(wrappedValue: 0.0, key(ControllerLayoutSettings.rightOffsetXKey))
+        _rightOffsetY = AppStorage(wrappedValue: 0.0, key(ControllerLayoutSettings.rightOffsetYKey))
+        _rightStickOffsetX = AppStorage(wrappedValue: 0.0, key(ControllerLayoutSettings.rightStickOffsetXKey))
+        _rightStickOffsetY = AppStorage(wrappedValue: 0.0, key(ControllerLayoutSettings.rightStickOffsetYKey))
+        _leftStickOffsetX = AppStorage(wrappedValue: 0.0, key(ControllerLayoutSettings.leftStickOffsetXKey))
+        _leftStickOffsetY = AppStorage(wrappedValue: 0.0, key(ControllerLayoutSettings.leftStickOffsetYKey))
+    }
+
     var body: some View {
         // Re-runs on every size change (rotation, resized scene, external display), so the
         // unit, anchors and drag clamps always follow the size on screen.
         GeometryReader { proxy in
-            let unit = ControllerGeometry.automaticDiameter(in: proxy.size) * CGFloat(userScale)
+            // Upright, the size is whatever lets both halves fit across, and the slider can only
+            // shrink it (see PortraitPad.swift).
+            let unit = portrait
+                ? ControllerGeometry.Portrait.diameter(in: proxy.size, joystick: joystickMode) * CGFloat(min(userScale, 1))
+                : ControllerGeometry.automaticDiameter(in: proxy.size) * CGFloat(userScale)
 
             // Comfort controls move the shoulder buttons onto the sticks, so it only
-            // applies while joystick mode is on.
-            let comfortActive = comfortControls && joystickMode
+            // applies while joystick mode is on. Not upright: there is no room beside the stick.
+            let comfortActive = comfortControls && joystickMode && !portrait
             let leftStickControls = comfortActive ? ControllerGeometry.leftStickClusterComfort : ControllerGeometry.leftStickCluster
             let rightStickControls = comfortActive ? ControllerGeometry.rightStickClusterComfort : ControllerGeometry.rightStickCluster
             // The stick-spacing setting, applied to both sticks' starting places (before any
             // drag), so a reset of the drags keeps it and the two sticks always move together.
-            let stickShift = ControllerGeometry.stickShift(
+            let stickShift = portrait ? 0 : ControllerGeometry.stickShift(
                 spacing: stickSpacing, containerWidth: proxy.size.width, unit: unit,
                 left: leftStickControls, right: rightStickControls)
+            // Per-button moves and sizes are measured in the landscape layout, so they are not
+            // applied upright.
+            let individualEdit = individualEditMode && !portrait
+            let leftStickAnchor = portrait ? ControllerGeometry.Portrait.stickAnchorOffset : CGPoint(
+                x: ControllerGeometry.leftStickAnchorOffset.x - stickShift,
+                y: ControllerGeometry.leftStickAnchorOffset.y)
+            let rightStickAnchor = portrait ? ControllerGeometry.Portrait.stickAnchorOffset : CGPoint(
+                x: ControllerGeometry.rightStickAnchorOffset.x + stickShift,
+                y: ControllerGeometry.rightStickAnchorOffset.y)
+
+            // Never narrower than the clamp the pad has always applied, so a saved value draws
+            // where it always did; the physical limits inside shoulderShift still stop the buttons.
+            let shoulderDrop = shoulderStore.value(in: proxy.size, touchLab: false)
+            let shoulderLimit = ControllerLayoutSettings.shoulderRange(in: proxy.size)
+            // How much of this view's top the bar covers, in this view's own coordinates.
+            let topReserve = max(0, topInset - proxy.frame(in: .global).minY)
 
             ZStack(alignment: .topLeading) {
                 ControlCluster(
-                    controls: comfortActive ? ControllerGeometry.leftClusterComfort : ControllerGeometry.leftCluster,
+                    controls: layoutControls(comfortActive ? ControllerGeometry.leftClusterComfort : ControllerGeometry.leftCluster),
                     edge: .leading,
+                    portrait: portrait,
                     skin: skin,
                     unit: unit,
+                    shoulderOffset: shoulderDrop,
+                    shoulderRange: shoulderLimit,
+                    topReserve: topReserve,
                     container: proxy.size,
                     isEditingLayout: isEditingLayout,
-                    individualEditMode: individualEditMode,
+                    individualEditMode: individualEdit,
                     offsetX: $leftOffsetX,
                     offsetY: $leftOffsetY,
                     onInput: onInput,
@@ -81,13 +152,16 @@ struct OptimizedControlPanel: View {
                     ControlCluster(
                         controls: leftStickControls,
                         edge: .leading,
-                        anchorOffset: CGPoint(x: ControllerGeometry.leftStickAnchorOffset.x - stickShift,
-                                              y: ControllerGeometry.leftStickAnchorOffset.y),
+                        portrait: portrait,
+                        anchorOffset: leftStickAnchor,
                         skin: skin,
                         unit: unit,
+                        shoulderOffset: shoulderDrop,
+                    shoulderRange: shoulderLimit,
+                        topReserve: topReserve,
                         container: proxy.size,
                         isEditingLayout: isEditingLayout,
-                        individualEditMode: individualEditMode,
+                        individualEditMode: individualEdit,
                         offsetX: $leftStickOffsetX,
                         offsetY: $leftStickOffsetY,
                         onInput: onInput,
@@ -96,13 +170,17 @@ struct OptimizedControlPanel: View {
                 }
 
                 ControlCluster(
-                    controls: comfortActive ? ControllerGeometry.rightClusterComfort : ControllerGeometry.rightCluster,
+                    controls: layoutControls(comfortActive ? ControllerGeometry.rightClusterComfort : ControllerGeometry.rightCluster),
                     edge: .trailing,
+                    portrait: portrait,
                     skin: skin,
                     unit: unit,
+                    shoulderOffset: shoulderDrop,
+                    shoulderRange: shoulderLimit,
+                    topReserve: topReserve,
                     container: proxy.size,
                     isEditingLayout: isEditingLayout,
-                    individualEditMode: individualEditMode,
+                    individualEditMode: individualEdit,
                     offsetX: $rightOffsetX,
                     offsetY: $rightOffsetY,
                     onInput: onInput,
@@ -115,13 +193,16 @@ struct OptimizedControlPanel: View {
                     ControlCluster(
                         controls: rightStickControls,
                         edge: .trailing,
-                        anchorOffset: CGPoint(x: ControllerGeometry.rightStickAnchorOffset.x + stickShift,
-                                              y: ControllerGeometry.rightStickAnchorOffset.y),
+                        portrait: portrait,
+                        anchorOffset: rightStickAnchor,
                         skin: skin,
                         unit: unit,
+                        shoulderOffset: shoulderDrop,
+                    shoulderRange: shoulderLimit,
+                        topReserve: topReserve,
                         container: proxy.size,
                         isEditingLayout: isEditingLayout,
-                        individualEditMode: individualEditMode,
+                        individualEditMode: individualEdit,
                         offsetX: $rightStickOffsetX,
                         offsetY: $rightStickOffsetY,
                         onInput: onInput,
@@ -132,11 +213,15 @@ struct OptimizedControlPanel: View {
             // Full opacity while editing, regardless of the opacity setting.
             .opacity(isEditingLayout ? 1.0 : max(padOpacity, 0.15))
         }
+        .reportsPadSize()
         // Release is reported from the pad, not per control, so a re-render cannot drop
         // a press: when the whole pad goes away, release everything.
         .onDisappear { cemu_bridge_release_all_buttons() }
-        // Cancels any touch in progress while paused or inactive, which releases it.
-        .allowsHitTesting(!isPaused)
+        // Cancels any touch in progress while paused or inactive, which releases it. Not while the
+        // layout is being edited: moving the controls pauses the game by default, and the drags
+        // that move them have to reach the pad. No input reaches the game then, because every
+        // control is non-interactive while editing.
+        .allowsHitTesting(!isPaused || isEditingLayout)
         // These move controls between clusters, so a held button is rebuilt elsewhere and
         // can't report its release. Release everything.
         .onChange(of: joystickMode) { _ in cemu_bridge_release_all_buttons() }
@@ -148,6 +233,9 @@ struct OptimizedControlPanel: View {
 private struct ControlCluster: View {
     let controls: [ControllerGeometry.Control]
     let edge: HorizontalEdge
+    /// The pad is held upright (PortraitPad.swift): the half is pinned to the bottom corner
+    /// at the portrait distances, and the per-button overrides are not applied.
+    var portrait: Bool = false
     /// Shifts this cluster's unmoved position, in units, away from the standard anchor -
     /// for a cluster the measured layout has no anchor for. Applied before the user's
     /// drag and before the clamp, so it is genuinely a different starting point rather
@@ -155,6 +243,14 @@ private struct ControlCluster: View {
     var anchorOffset: CGPoint = .zero
     let skin: WiiUControllerSkin
     let unit: CGFloat
+    /// How far this cluster's shoulder buttons (if it has any) move down from their
+    /// measured place, in units; already zero on iPhone. See ControllerGeometry.shoulderShift.
+    let shoulderOffset: Double
+    /// The most that setting may ask for in this container's orientation.
+    var shoulderRange: ClosedRange<Double> = ControllerLayoutSettings.minShoulderOffset...ControllerLayoutSettings.maxShoulderOffset
+    /// Height at the top of `container` that the top bar covers, in points. Nothing is
+    /// placed above it.
+    var topReserve: CGFloat = 0
     let container: CGSize
     let isEditingLayout: Bool
     /// See ControllerLayoutSettings.individualEditModeKey. When true, this cluster's
@@ -180,10 +276,11 @@ private struct ControlCluster: View {
     /// The unmoved position from the measured layout: a fixed number of button-widths in
     /// from the near edge and up from the bottom.
     private var anchor: CGPoint {
-        let inset = ControllerGeometry.centreFromNearEdge * unit
+        let inset = (portrait ? ControllerGeometry.Portrait.centreFromNearEdge : ControllerGeometry.centreFromNearEdge) * unit
+        let fromBottom = portrait ? ControllerGeometry.Portrait.centreFromBottom : ControllerGeometry.centreFromBottom
         return CGPoint(
             x: (edge == .leading ? inset : container.width - inset) + anchorOffset.x * unit,
-            y: container.height - ControllerGeometry.centreFromBottom * unit + anchorOffset.y * unit
+            y: container.height - fromBottom * unit + anchorOffset.y * unit
         )
     }
 
@@ -194,10 +291,20 @@ private struct ControlCluster: View {
         clamped(CGPoint(x: anchor.x + CGFloat(offsetX), y: anchor.y + CGFloat(offsetY)))
     }
 
+    /// The shoulders' vertical shift in points, from the setting and the room this
+    /// cluster has. Added to where each shoulder is positioned, so its hit area moves too.
+    private var shoulderShift: CGFloat {
+        ControllerGeometry.shoulderShift(
+            offset: shoulderOffset, centreY: centre.y, containerHeight: container.height,
+            unit: unit, controls: controls, topInset: topReserve,
+            range: shoulderRange) * unit
+    }
+
     private func clamped(_ point: CGPoint) -> CGPoint {
         let minX = -box.minX * unit
         let maxX = container.width - box.maxX * unit
-        let minY = -box.minY * unit
+        // The top bar's height comes off the top, so a cluster cannot sit under Back / pause.
+        let minY = topReserve - box.minY * unit
         let maxY = container.height - box.maxY * unit
         // A cluster wider or taller than the container has no valid range at all; centre
         // it rather than letting min > max produce a nonsense clamp.
@@ -219,6 +326,7 @@ private struct ControlCluster: View {
             if isEditingLayout && !individualEditMode {
                 dragHandle
             }
+            let shoulderDrop = shoulderShift
             ForEach(controls) { control in
                 EditableControl(
                     control: control,
@@ -227,9 +335,13 @@ private struct ControlCluster: View {
                     base: CGPoint(
                         x: centre.x + control.offset.x * unit,
                         y: centre.y + control.offset.y * unit
+                            + (control.style == .shoulder ? shoulderDrop : 0)
                     ),
+                    container: container,
+                    topReserve: topReserve,
                     isEditingLayout: isEditingLayout,
                     individualEditMode: individualEditMode,
+                    portrait: portrait,
                     onStick: onStick,
                     onInput: onInput
                 )
@@ -288,10 +400,17 @@ private struct EditableControl: View {
     let unit: CGFloat
     /// Where this control sits with no customisation - the measured default.
     let base: CGPoint
+    /// The pad's own size, and the height at its top that the top bar covers. A moved
+    /// control is held inside what is left, so it cannot be dragged off the screen or
+    /// under the bar and lost.
+    let container: CGSize
+    let topReserve: CGFloat
     let isEditingLayout: Bool
     /// See ControllerLayoutSettings.individualEditModeKey. editGesture is only attached
     /// when the cluster's own drag handle is not.
     let individualEditMode: Bool
+    /// Upright: the per-button moves and sizes are landscape measurements, so they are not applied.
+    var portrait: Bool = false
     let onStick: (CGPoint) -> Void
     let onInput: (String, Bool) -> Void
 
@@ -299,7 +418,26 @@ private struct EditableControl: View {
     @State private var dragOrigin: ControlOverride?
     @State private var scaleOrigin: Double?
 
-    private var settings: ControlOverride { custom.override(for: control.id) }
+    private var settings: ControlOverride { portrait ? .identity : custom.override(for: control.id) }
+
+    /// Where the control is drawn and hit: the default place plus the player's move, kept
+    /// inside the screen. Held at draw time as well as on drag, so a rotation, a bigger
+    /// size or a move saved before this limit existed still lands somewhere reachable.
+    private var placed: CGPoint {
+        held(CGPoint(x: base.x + CGFloat(settings.dx), y: base.y + CGFloat(settings.dy)))
+    }
+
+    private func held(_ point: CGPoint) -> CGPoint {
+        let size = ControllerGeometry.size(of: control)
+        let halfWidth = size.width * unit * CGFloat(settings.scale) / 2
+        let halfHeight = size.height * unit * CGFloat(settings.scale) / 2
+        let minX = halfWidth, maxX = container.width - halfWidth
+        let minY = topReserve + halfHeight, maxY = container.height - halfHeight
+        return CGPoint(
+            x: minX <= maxX ? min(max(point.x, minX), maxX) : (minX + maxX) / 2,
+            y: minY <= maxY ? min(max(point.y, minY), maxY) : (minY + maxY) / 2
+        )
+    }
 
     var body: some View {
         Group {
@@ -321,7 +459,7 @@ private struct EditableControl: View {
                 )
             }
         }
-        .position(x: base.x + CGFloat(settings.dx), y: base.y + CGFloat(settings.dy))
+        .position(placed)
         // A dashed ring shows which controls can be moved individually.
         .overlay(
             Group {
@@ -329,7 +467,7 @@ private struct EditableControl: View {
                     Circle()
                         .strokeBorder(Color.white.opacity(0.5), style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
                         .frame(width: unit * CGFloat(settings.scale) * 1.25, height: unit * CGFloat(settings.scale) * 1.25)
-                        .position(x: base.x + CGFloat(settings.dx), y: base.y + CGFloat(settings.dy))
+                        .position(placed)
                         .allowsHitTesting(false)
                 }
             }
@@ -342,7 +480,15 @@ private struct EditableControl: View {
             .onChanged { value in
                 let origin = dragOrigin ?? settings
                 if dragOrigin == nil { dragOrigin = origin }
-                custom.move(control.id, to: value.translation, from: origin)
+                // Stored as the drag is limited to, not as the finger asked: a finger that
+                // goes past the edge would otherwise leave slack the next drag has to undo.
+                let wanted = CGPoint(x: base.x + CGFloat(origin.dx) + value.translation.width,
+                                     y: base.y + CGFloat(origin.dy) + value.translation.height)
+                let limited = held(wanted)
+                custom.move(control.id,
+                            to: CGSize(width: limited.x - base.x - CGFloat(origin.dx),
+                                       height: limited.y - base.y - CGFloat(origin.dy)),
+                            from: origin)
             }
             .onEnded { _ in
                 dragOrigin = nil
@@ -438,7 +584,9 @@ private struct ControlButton: View {
     private var labelColor: Color {
         switch control.style {
         case .dpad, .face:
-            return .white
+            // Skins put one glyph colour on every button colour, from navy to lemon, so keep it
+            // readable on whichever the skin gave this button.
+            return LegibleInk.ensure(.white, on: fillColor, minimum: LegibleInk.glyph)
         case .shoulder, .system, .stick, .joystick:
             return Self.neutralLabel
         }
@@ -489,12 +637,17 @@ struct HeldControl<Content: View>: View {
     /// True once the gesture ended normally, to tell a lift from a cancel in diagnostics.
     @State private var endedNormally = false
     @State private var pressBegan = Date()
+    /// The pressed look is kept on screen for at least `minimumLook` after a press, so a tap
+    /// whose down and up were both handled before the next render (a busy main thread) is still
+    /// seen pressed once. Drawing only: the press and release reach the game as they happen.
+    @State private var glowing = false
+    private static var minimumLook: TimeInterval { 0.09 }
 
     @AppStorage(ControllerLayoutSettings.hapticsKey)
     private var hapticsEnabled = ControllerLayoutSettings.defaultHaptics
 
     var body: some View {
-        content(isPressed || downSent)
+        content(isPressed || downSent || glowing)
             .contentShape(hitShape)
             .accessibilityAddTraits(.isButton)
             .gesture(
@@ -534,7 +687,7 @@ struct HeldControl<Content: View>: View {
     // change and the report.
     private func report(_ pressed: Bool) {
         let began = pressBegan
-        if pressed { pressBegan = Date(); endedNormally = false }
+        if pressed { pressBegan = Date(); endedNormally = false; glowing = true }
         onPressChange(pressed)
         if pressed {
             PadDiagnostics.shared.recordPressBegan()
@@ -545,6 +698,14 @@ struct HeldControl<Content: View>: View {
             PadDiagnostics.shared.recordRelease(reason, heldSince: began)
         }
         if pressed, hapticsEnabled { PadHaptics.shared.fire() }
+        if !pressed {
+            let remaining = Self.minimumLook - Date().timeIntervalSince(pressBegan)
+            if remaining > 0 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + remaining) { glowing = false }
+            } else {
+                glowing = false
+            }
+        }
     }
 }
 
@@ -608,7 +769,7 @@ final class PadHaptics {
 /// and one on each diagonal - the eight directions `StickGate.radiusFraction` returns 1
 /// for. Drawing it any other way round would show flats where the full-travel directions
 /// are, which is exactly backwards.
-private struct StickGateShape: InsettableShape {
+struct StickGateShape: InsettableShape {
     let gate: ControllerGeometry.StickGate
     var inset: CGFloat = 0
 
@@ -655,13 +816,14 @@ private struct JoystickControl: View {
     /// Console convention: +x right, +y UP, magnitude at most 1.
     let onStick: (CGPoint) -> Void
 
-    // Same keys SettingsView writes; read here so the defaults live in one place.
-    @AppStorage(ControllerLayoutSettings.deadzoneKey)
-    private var deadzoneSetting = ControllerLayoutSettings.defaultDeadzone
-    @AppStorage(ControllerLayoutSettings.stickCurveKey)
-    private var curveSetting = ControllerLayoutSettings.defaultStickCurve
+    // Same keys SettingsView writes; read here so the defaults live in one place. The deadzone,
+    // curve and the rest of the fine-tuning are per stick and read at each touch (SharedStick.feel).
     @AppStorage(ControllerLayoutSettings.stickGateKey)
     private var gateSetting = ControllerLayoutSettings.defaultStickGateRaw
+    @AppStorage(ControllerLayoutSettings.stickCalibrationLeftKey)
+    private var calibrationLeft = ""
+    @AppStorage(ControllerLayoutSettings.stickCalibrationRightKey)
+    private var calibrationRight = ""
 
     /// Where the knob is drawn, in points from the ring's centre, clamped to the gate.
     @State private var knobOffset: CGSize = .zero
@@ -671,15 +833,6 @@ private struct JoystickControl: View {
     /// Whether the stick has been pushed past the click threshold; lights the cap.
     @State private var pushed = false
 
-    /// The settings, clamped to their declared ranges (a stored value can be out of range).
-    private var deadzone: CGFloat {
-        CGFloat(min(max(deadzoneSetting, ControllerLayoutSettings.minDeadzone),
-                    ControllerLayoutSettings.maxDeadzone))
-    }
-    private var curve: CGFloat {
-        CGFloat(min(max(curveSetting, ControllerLayoutSettings.minStickCurve),
-                    ControllerLayoutSettings.maxStickCurve))
-    }
     /// Falls back to the default if the stored string names no gate.
     private var gate: ControllerGeometry.StickGate {
         ControllerGeometry.StickGate(rawValue: gateSetting) ?? ControllerLayoutSettings.defaultStickGate
@@ -745,7 +898,7 @@ private struct JoystickControl: View {
                     if deflection > ControllerGeometry.stickClickThreshold {
                         pushed = true
                     }
-                    report(deflection: deflection, dx: dx, dy: dy, distance: distance)
+                    report(dx: dx, dy: dy)
                 }
                 // Recentre on the lift itself, not only when `touching` is next seen false
                 // at a render: a flick handled entirely between two renders never shows
@@ -767,39 +920,16 @@ private struct JoystickControl: View {
         .onDisappear { recentre() }
     }
 
-    private func report(deflection: CGFloat, dx: CGFloat, dy: CGFloat, distance: CGFloat) {
-        let dead = deadzone
-        // `distance > 0` is not the same test as the deadzone one and does not fold into
-        // it: it is what makes the division below safe, and at a deadzone of zero a
-        // finger exactly on the centre pixel would otherwise reach it.
-        guard deflection > dead, distance > 0 else {
-            onStick(.zero)
-            return
-        }
-
-        // Rescaled across the full range rather than passed through: without this the
-        // deadzone would cost the stick its top end as well as its bottom, and a title
-        // that expects 1.0 at the rim would never see it. `dead < 1` is guaranteed by the
-        // clamp on the setting, so the divisor cannot be zero.
-        var magnitude = (deflection - dead) / (1 - dead)
-
-        // The response curve, applied to the magnitude alone and never to the direction.
-        // Shaping x and y separately would bend the diagonals - a stick pushed exactly
-        // north-east would come back out pointing somewhere else - so the angle the thumb
-        // is holding survives untouched and only how hard it is holding it changes.
-        // pow() is skipped rather than called with 1.0 because linear is the default and
-        // this runs on every touch-move; it is also the exactness the setting promises,
-        // and 0.5 raised to the power of exactly 1 is not guaranteed to be 0.5 back.
-        if curve != 1 {
-            // Through Double rather than relying on a CGFloat overload of pow(). CGFloat
-            // is a different width on a 32-bit slice, and this file otherwise only ever
-            // uses maths the standard library defines on the protocol.
-            magnitude = CGFloat(pow(Double(magnitude), Double(curve)))
-        }
-
-        // y is negated exactly here, once. The screen counts downwards and the console
-        // counts upwards, and the bridge's contract is the console's.
-        onStick(CGPoint(x: dx / distance * magnitude, y: -dy / distance * magnitude))
+    /// Through the same function every control scheme uses (SharedStick.output), so the deadzone
+    /// (rescaled across the full range, so a title that expects 1.0 at the rim still sees it),
+    /// the response curve (on the magnitude alone, never the direction), the gate and the
+    /// player's stick calibration mean the same thing here as in every TouchLab style. y is
+    /// negated inside it, once: the screen counts downwards and the bridge's contract is the console's.
+    private func report(dx: CGFloat, dy: CGFloat) {
+        let isLeft = control.id == "stickL"
+        onStick(SharedStick.output(dx: dx, dy: dy, travel: travel, feel: SharedStick.feel(left: isLeft),
+                                   gateRaw: gateSetting,
+                                   calibrationRaw: isLeft ? calibrationLeft : calibrationRight))
     }
 
     private func recentre() {

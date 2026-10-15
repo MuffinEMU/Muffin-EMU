@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team.
+// SPDX-License-Identifier: MPL-2.0
+// This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 // Wii U console accounts and each one's Network Service for iOS. Account
 // (Cafe/Account/Account.h) and per-account Network Service selection
 // (CemuConfig::GetAccountNetworkService/SetAccountSelectedService, config/NetworkSettings.h)
@@ -9,6 +14,7 @@
 #include "Cafe/Account/Account.h"
 #include "Cafe/CafeSystem.h"
 #include "Cemu/ncrypto/ncrypto.h"
+#include "config/ActiveSettings.h"
 #include "config/CemuConfig.h"
 #include "config/NetworkSettings.h"
 
@@ -217,12 +223,35 @@ uint32_t IOSAccounts_ActivePersistentId()
 void IOSAccounts_SetActivePersistentId(uint32_t persistentId)
 {
 	GetConfig().account.m_persistent_id = persistentId;
+	// Written now: nothing on iOS saves config.xml when the app closes, so a value left in memory is lost at the next launch.
+	// Save() is a no-op until the engine (or the graphic pack screens) has set the config file's path.
+	GetConfigHandle().Save();
 }
 
 bool IOSAccounts_IsOnlineValid(uint32_t persistentId)
 {
 	const Account* account = FindAccount(persistentId);
 	return account && account->IsValidOnlineAccount();
+}
+
+std::string IOSAccounts_OnlineHint()
+{
+	const uint32_t persistentId = GetConfig().account.m_persistent_id.GetValue();
+	const NetworkService service = (NetworkService)GetConfig().GetAccountNetworkService(persistentId);
+	if (service != NetworkService::Pretendo && service != NetworkService::Nintendo)
+		return {};
+	const Account* account = FindAccount(persistentId);
+	if (account && account->IsValidOnlineAccount() && ActiveSettings::HasRequiredOnlineFiles())
+		return {};
+	return "A Pretendo ID can't be created or linked inside MuffinEMU. Link it on a real Wii U, then import that console's account.dat, otp.bin and seeprom.bin in Settings > Network Service.";
+}
+
+int IOSAccounts_OnlineError(uint32_t persistentId)
+{
+	const Account* account = FindAccount(persistentId);
+	if (!account)
+		return -1;
+	return (int)account->GetOnlineAccountError();
 }
 
 std::string IOSAccounts_CountriesList()
@@ -252,9 +281,22 @@ void IOSAccounts_SetNetworkService(uint32_t persistentId, int service)
 	if (service < (int)NetworkService::Offline || service > (int)NetworkService::Custom)
 		return;
 	GetConfig().SetAccountSelectedService(persistentId, (NetworkService)service);
+	// Same reason as the active account above: config.xml is the only place this choice lives.
+	GetConfigHandle().Save();
 }
 
 bool IOSAccounts_CustomNetworkServiceAvailable()
 {
 	return NetworkConfig::XMLExists();
+}
+
+bool IOSAccounts_ReloadCustomNetworkService()
+{
+	NetworkConfig::Reload();
+	return NetworkConfig::XMLExists();
+}
+
+bool IOSAccounts_IsValidNetworkServicesXML(const char* path)
+{
+	return path && NetworkConfig::IsValidFile(fs::path(path));
 }

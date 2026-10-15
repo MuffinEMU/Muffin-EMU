@@ -129,6 +129,11 @@ namespace coreinit
 			pageProtect = MemMapper::PAGE_PERMISSION::P_RW;
 		else
 			cemu_assert_unimplemented();
+		if (!memory_ensureHostRange(virtualAddress, size))
+		{
+			cemuLog_log(LogType::Force, "OSMapMemory: no host address space left for {:#x}+{:#x}", virtualAddress, size);
+			return 0;
+		}
 		void* allocationResult = MemMapper::AllocateMemory(virtualPtr, size, pageProtect, true);
 		if (!allocationResult)
 		{

@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import SwiftUI
 import PhotosUI
 import UniformTypeIdentifiers
@@ -65,8 +70,8 @@ struct CoverArtPickerView: View {
                 // Already a decoded UIImage (UIImagePickerController's own
                 // .originalImage) - straight to applyImageData, no need to route
                 // through handlePickedImageData's decode-from-raw-bytes step.
-                guard let picked, let jpegData = picked.jpegData(compressionQuality: 0.92) else { return }
-                applyImageData(jpegData, ext: "jpg")
+                guard let picked, let jpegData = picked.jpegData(compressionQuality: 0.95) else { return }
+                handlePickedImageData(jpegData)
             }
         }
         #endif
@@ -120,11 +125,8 @@ struct CoverArtPickerView: View {
         ZStack {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(MuffinTheme.muffinTopGradient)
-            if let coverPath = game.coverPath, let uiImage = UIImage(contentsOfFile: coverPath) {
-                Image(uiImage: uiImage)
-                    .resizable()
-                    .scaledToFit()
-                    .padding(4)
+            if let coverPath = game.coverPath {
+                CoverImage(path: coverPath, padding: 4)
             } else {
                 Image(systemName: "gamecontroller.fill")
                     .foregroundColor(MuffinTheme.onMuffinTop)
@@ -233,14 +235,15 @@ struct CoverArtPickerView: View {
 
     // MARK: - Photos / Files (both funnel here)
 
-    /// Shared by the Photos and Files pickers. Re-encodes as JPEG so the saved file always has
-    /// an extension findCover() checks.
+    /// Shared by the Photos and Files pickers. Stores JPEG/PNG as-is up to 4K, converts other formats to
+    /// high-quality JPEG, so the saved file always has an extension findCover() checks.
     private func handlePickedImageData(_ data: Data) {
-        guard let uiImage = UIImage(data: data), let jpegData = uiImage.jpegData(compressionQuality: 0.92) else {
+        // Original resolution kept up to 4K (3840 px long side); see CoverImageLoader.
+        guard let prepared = CoverImageLoader.prepareCustomCover(from: data) else {
             errorMessage = "That doesn't look like a valid image."
             return
         }
-        applyImageData(jpegData, ext: "jpg")
+        applyImageData(prepared.data, ext: prepared.ext)
     }
 
     // MARK: - Files

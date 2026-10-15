@@ -131,7 +131,15 @@ namespace NAPI
 	ACTOauthToken ACT_GetOauthToken_WithCache(AuthInfo& authInfo, uint64 titleId, uint16 titleVersion)
 	{
 		ACTOauthToken result{};
-		
+
+		// No linked account or console identity (no otp.bin/seeprom.bin): there is nothing to sign in with.
+		// Don't send a request with empty identity fields; a Custom server can still be used without a login.
+		if (authInfo.accountId.empty() || authInfo.deviceCertBase64.empty())
+		{
+			result.apiError = NAPI_RESULT::FAILED;
+			return result;
+		}
+
 		// check cache first
 		NetworkService service = authInfo.GetService();
 		g_oauthTokenCacheMtx.lock();
@@ -240,6 +248,8 @@ namespace NAPI
 
 	bool ACT_GetProfile(AuthInfo& authInfo, ACTGetProfileResult& result)
 	{
+		if (authInfo.accountId.empty() || authInfo.deviceCertBase64.empty())
+			return false;
 		CurlRequestHelper req;
 
 		req.initate(authInfo.GetService(), fmt::format("{}/v1/api/people/@me/profile", _getACTUrl(authInfo.GetService())), CurlRequestHelper::SERVER_SSL_CONTEXT::ACT);

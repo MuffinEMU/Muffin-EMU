@@ -28,6 +28,7 @@
 #include "Cafe/TitleList/GameInfo.h"
 
 #include "Cafe/HW/Latte/Core/LatteTiming.h" // vsync control
+#include "Cafe/HW/Latte/Core/PerfTelemetry.h"
 #include "Cafe/HW/Latte/Core/LatteWaitInfo.h" // GPU-thread breadcrumbs read by the iOS stall watchdog
 
 #include <cstdint>
@@ -61,7 +62,9 @@ const  std::vector<const char*> kOptionalDeviceExtensions =
 	VK_KHR_PRESENT_WAIT_EXTENSION_NAME,
 	VK_KHR_PRESENT_ID_EXTENSION_NAME,
 	VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME,
-	VK_EXT_PIPELINE_ROBUSTNESS_EXTENSION_NAME
+	VK_EXT_PIPELINE_ROBUSTNESS_EXTENSION_NAME,
+	VK_EXT_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_EXTENSION_NAME,
+	VK_EXT_ATTACHMENT_FEEDBACK_LOOP_DYNAMIC_STATE_EXTENSION_NAME
 };
 
 const std::vector<const char*> kRequiredDeviceExtensions =
@@ -306,6 +309,22 @@ void VulkanRenderer::GetDeviceFeatures()
 		prevStruct = &pprf;
 	}
 
+	VkPhysicalDeviceAttachmentFeedbackLoopDynamicStateFeaturesEXT attachmentFeedbackLoopDynamicStateFeature{};
+	if (m_featureControl.deviceExtensions.attachment_feedback_loop_dynamic_state)
+	{
+		attachmentFeedbackLoopDynamicStateFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ATTACHMENT_FEEDBACK_LOOP_DYNAMIC_STATE_FEATURES_EXT;
+		attachmentFeedbackLoopDynamicStateFeature.pNext = prevStruct;
+		prevStruct = &attachmentFeedbackLoopDynamicStateFeature;
+	}
+
+	VkPhysicalDeviceAttachmentFeedbackLoopLayoutFeaturesEXT attachmentFeedbackLoopLayoutFeature{};
+	if (m_featureControl.deviceExtensions.attachment_feedback_loop_layout)
+	{
+		attachmentFeedbackLoopLayoutFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_FEATURES_EXT;
+		attachmentFeedbackLoopLayoutFeature.pNext = prevStruct;
+		prevStruct = &attachmentFeedbackLoopLayoutFeature;
+	}
+
 	VkPhysicalDeviceFeatures2 physicalDeviceFeatures2{};
 	physicalDeviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
 	physicalDeviceFeatures2.pNext = prevStruct;
@@ -345,7 +364,11 @@ void VulkanRenderer::GetDeviceFeatures()
 		cemuLog_log(LogType::Force, "VK_EXT_pipeline_creation_cache_control not supported. Cannot use asynchronous shader and pipeline compilation");
 		// if async shader compilation is enabled show warning message
 		if (GetConfig().async_compile)
+#if BOOST_OS_IOS
+			LatteOverlay_pushNotification(_tr("Background shader building isn't available on this device's Vulkan driver.\nMuffinEMU will build shaders as it goes, which can cause extra stutter."), 10000);
+#else
 			LatteOverlay_pushNotification(_tr("Async shader compile is enabled but not supported by the graphics driver\nCemu will use synchronous compilation which can cause additional stutter"), 10000);
+#endif
 	}
 	if (!m_featureControl.deviceExtensions.custom_border_color_without_format)
 	{
@@ -367,6 +390,14 @@ void VulkanRenderer::GetDeviceFeatures()
 		if ( pprf.pipelineRobustness != VK_TRUE )
 			m_featureControl.deviceExtensions.pipeline_robustness = false;
 	}
+	if (m_featureControl.deviceExtensions.attachment_feedback_loop_layout)
+		m_featureControl.deviceExtensions.attachment_feedback_loop_layout = attachmentFeedbackLoopLayoutFeature.attachmentFeedbackLoopLayout == VK_TRUE;
+	if (m_featureControl.deviceExtensions.attachment_feedback_loop_dynamic_state && m_featureControl.deviceExtensions.attachment_feedback_loop_layout)
+		m_featureControl.deviceExtensions.attachment_feedback_loop_dynamic_state = attachmentFeedbackLoopDynamicStateFeature.attachmentFeedbackLoopDynamicState == VK_TRUE;
+	else
+		m_featureControl.deviceExtensions.attachment_feedback_loop_dynamic_state = false; // requires the layout extension
+	if (!UseAttachmentFeedbackLoop())
+		cemuLog_log(LogType::Force, "VK_EXT_attachment_feedback_loop_layout(_dynamic_state) not supported");
 	// get limits
 	m_featureControl.limits.minUniformBufferOffsetAlignment = std::max(prop2.properties.limits.minUniformBufferOffsetAlignment, (VkDeviceSize)4);
 	m_featureControl.limits.nonCoherentAtomSize = std::max(prop2.properties.limits.nonCoherentAtomSize, (VkDeviceSize)4);
@@ -561,6 +592,23 @@ void VulkanRenderer::LogVulkanStartupDiagnostics(const VkPhysicalDeviceFeatures&
 	const char* mvkArgBuf = getenv("MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS");
 	cemuLog_log(LogType::Force, "Vulkan diagnostic: MVK_CONFIG_FULL_IMAGE_VIEW_SWIZZLE={} MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS={} MUFFIN_MOLTENVK_PATH={}", mvkSwizzle ? mvkSwizzle : "(unset)", mvkArgBuf ? mvkArgBuf : "(unset)",
 		getenv("MUFFIN_MOLTENVK_PATH") ? getenv("MUFFIN_MOLTENVK_PATH") : "(unset)");
+#endif
+#if BOOST_OS_IOS
+	{
+		// Test mitigations for the GPU page fault (kIOGPUCommandBufferCallbackErrorPageFault). Each has a switch, set from UserDefaults by the bridge.
+		const char* hostMappedSwitch = getenv("MUFFIN_VK_HOST_MAPPED");
+		const bool hostMappedOn = hostMappedSwitch && hostMappedSwitch[0] != '\0' && hostMappedSwitch[0] != '0';
+		const char* argBufValue = getenv("MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS");
+		const bool argBufOn = argBufValue && argBufValue[0] != '\0' && argBufValue[0] != '0';
+		uint32 delayFrames = 3;
+		if (const char* delaySwitch = getenv("MUFFIN_VK_DELAYED_FREE_FRAMES"))
+			if (delaySwitch[0] != '\0')
+				delayFrames = (uint32)std::min<long>(15, std::max<long>(0, strtol(delaySwitch, nullptr, 10)));
+		m_delayedFreeFrames = delayFrames;
+		cemuLog_log(LogType::Force, "Vulkan mitigation: host-mapped buffers {}", hostMappedOn ? "ON" : "OFF");
+		cemuLog_log(LogType::Force, "Vulkan mitigation: argument buffers {}", argBufOn ? "ON" : "OFF");
+		cemuLog_log(LogType::Force, "Vulkan mitigation: delayed frees {} frames", m_delayedFreeFrames);
+	}
 #endif
 
 	// device extensions
@@ -821,7 +869,9 @@ VulkanRenderer::VulkanRenderer()
 	}
 #endif
 
-	deviceFeatures.vertexPipelineStoresAndAtomics = true;
+	deviceFeatures.vertexPipelineStoresAndAtomics = deviceFeatures2.features.vertexPipelineStoresAndAtomics;
+	if (!deviceFeatures.vertexPipelineStoresAndAtomics)
+		cemuLog_log(LogType::Force, "vertexPipelineStoresAndAtomics not supported by the driver. Games which use the streamout feature will not render correctly");
 
 	// Only ask vkCreateDevice for what the device reports. Requesting an unsupported core feature fails with
 	// VK_ERROR_FEATURE_NOT_PRESENT (-8), which is what MoltenVK 1.2.8 returned on the iPad Pro 2020 (A12Z). Cemu doesn't hard-require
@@ -888,6 +938,21 @@ VulkanRenderer::VulkanRenderer()
 		pipelineRobustnessFeature.pNext = deviceExtensionFeatures;
 		deviceExtensionFeatures = &pipelineRobustnessFeature;
 		pipelineRobustnessFeature.pipelineRobustness = VK_TRUE;
+	}
+	// enable attachment feedback loop layout + dynamic state if both are supported
+	VkPhysicalDeviceAttachmentFeedbackLoopLayoutFeaturesEXT attachmentFeedbackLoopLayoutFeature{};
+	VkPhysicalDeviceAttachmentFeedbackLoopDynamicStateFeaturesEXT attachmentFeedbackLoopDynamicStateFeature{};
+	if (UseAttachmentFeedbackLoop())
+	{
+		attachmentFeedbackLoopLayoutFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_FEATURES_EXT;
+		attachmentFeedbackLoopLayoutFeature.pNext = deviceExtensionFeatures;
+		deviceExtensionFeatures = &attachmentFeedbackLoopLayoutFeature;
+		attachmentFeedbackLoopLayoutFeature.attachmentFeedbackLoopLayout = VK_TRUE;
+
+		attachmentFeedbackLoopDynamicStateFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ATTACHMENT_FEEDBACK_LOOP_DYNAMIC_STATE_FEATURES_EXT;
+		attachmentFeedbackLoopDynamicStateFeature.pNext = deviceExtensionFeatures;
+		deviceExtensionFeatures = &attachmentFeedbackLoopDynamicStateFeature;
+		attachmentFeedbackLoopDynamicStateFeature.attachmentFeedbackLoopDynamicState = VK_TRUE;
 	}
 
 	// enable the Vulkan 1.2 core mirror-clamp feature when the extension is not what provides it
@@ -1123,7 +1188,9 @@ VulkanRenderer::~VulkanRenderer()
 	vkDestroyDescriptorSetLayout(m_logicalDevice, m_swapchainDescriptorSetLayout, nullptr);
 
 	// shut down imgui
-	ImGui_ImplVulkan_Shutdown();
+	if (m_imguiBackendInitialized)
+		ImGui_ImplVulkan_Shutdown();
+	m_imguiBackendInitialized = false;
 
 	// delete null objects
 	DeleteNullObjects();
@@ -1177,6 +1244,7 @@ VulkanRenderer::~VulkanRenderer()
 		vkDestroyDebugUtilsMessengerEXT(m_instance, m_debugCallback, nullptr);
 	}
 
+	m_drainDestructionQueue = true; // shutdown: the frame delay no longer applies
 	while(!m_destructionQueue.empty())
 		ProcessDestructionQueue();
 
@@ -1214,11 +1282,19 @@ void VulkanRenderer::InitializeSurface(const Vector2i& size, bool mainWindow)
 		m_mainSwapchainInfo = std::make_unique<SwapchainInfoVk>(mainWindow, size);
 		m_mainSwapchainInfo->Create();
 	}
+	else if (!m_initializeCalled.load())
+	{
+		// Boot: the GPU thread isn't running yet, so nothing can be using a pad chain. Throwing here still lets the launch fall back to Metal.
+		m_padSwapchainInfo = std::make_unique<SwapchainInfoVk>(mainWindow, size);
+		m_padSwapchainInfo->Create();
+	}
 	else
 	{
-		m_padSwapchainInfo = std::make_unique<SwapchainInfoVk>(mainWindow, size);
-		// todo: figure out a way to exclusively create swapchain on main LatteThread
-		m_padSwapchainInfo->Create();
+		// A running title (the GamePad display was plugged in or re-registered): the GPU thread may be presenting on the old chain right now,
+		// so it makes the swap itself, after a device idle (ApplyPendingPadSurface)
+		m_padSurfaceWidth.store(size.x, std::memory_order_relaxed);
+		m_padSurfaceHeight.store(size.y, std::memory_order_relaxed);
+		m_padSurfaceChanged.store(true, std::memory_order_release);
 	}
 }
 
@@ -1241,6 +1317,31 @@ void VulkanRenderer::StopUsingPadAndWait()
 bool VulkanRenderer::IsPadWindowActive()
 {
 	return IsSwapchainInfoValid(false);
+}
+
+// Called by the overlay's update thread. Unified memory on Apple: the device-local heaps are the working set the OS grants this process.
+bool VulkanRenderer::GetVRAMInfo(int& usageInMB, int& totalInMB) const
+{
+	usageInMB = totalInMB = -1;
+	if (!m_featureControl.deviceExtensions.memory_budget || !vkGetPhysicalDeviceMemoryProperties2)
+		return false;
+	VkPhysicalDeviceMemoryBudgetPropertiesEXT budget{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT };
+	VkPhysicalDeviceMemoryProperties2 props2{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2 };
+	props2.pNext = &budget;
+	vkGetPhysicalDeviceMemoryProperties2(m_physicalDevice, &props2);
+	uint64 usage = 0, total = 0;
+	for (uint32 i = 0; i < props2.memoryProperties.memoryHeapCount; i++)
+	{
+		if (!(props2.memoryProperties.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT))
+			continue;
+		usage += budget.heapUsage[i];
+		total += budget.heapBudget[i];
+	}
+	if (total == 0)
+		return false;
+	usageInMB = (int)(usage / (1024 * 1024));
+	totalInMB = (int)(total / (1024 * 1024));
+	return true;
 }
 
 void VulkanRenderer::HandleScreenshotRequest(LatteTextureView* texView, bool padView)
@@ -1403,7 +1504,7 @@ void VulkanRenderer::HandleScreenshotRequest(LatteTextureView* texView, bool pad
 			range.mipLevel = 0;
 			range.baseArrayLayer = texViewVk->firstSlice;
 			range.layerCount = 1;
-			barrier_image<TRANSFER_READ, TRANSFER_WRITE | IMAGE_WRITE>(baseImageTex, range, VK_IMAGE_LAYOUT_GENERAL);
+			barrier_image<TRANSFER_READ, TRANSFER_WRITE | IMAGE_WRITE>(baseImageTex, range, baseImageTex->GetDefaultLayout());
 		}
 
 		format = VK_FORMAT_R8G8B8A8_UNORM;
@@ -1459,6 +1560,10 @@ void VulkanRenderer::HandleScreenshotRequest(LatteTextureView* texView, bool pad
 	}
 
 	vkCmdCopyImageToBuffer(m_state.currentCommandBuffer, dumpImage, VK_IMAGE_LAYOUT_GENERAL, buffer, 1, &region);
+	if (dumpImage == baseImage)
+	{
+		barrier_image<TRANSFER_READ, TRANSFER_WRITE | IMAGE_WRITE>(baseImageTex, region.imageSubresource, baseImageTex->GetDefaultLayout());
+	}
 
 	SubmitCommandBuffer();
 	WaitCommandBufferFinished(GetCurrentCommandBufferId());
@@ -1571,6 +1676,11 @@ VkDeviceCreateInfo VulkanRenderer::CreateDeviceCreateInfo(const std::vector<VkDe
 	}
 	if (m_featureControl.deviceExtensions.pipeline_robustness)
 		used_extensions.emplace_back(VK_EXT_PIPELINE_ROBUSTNESS_EXTENSION_NAME);
+	if (UseAttachmentFeedbackLoop())
+	{
+		used_extensions.emplace_back(VK_EXT_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_EXTENSION_NAME);
+		used_extensions.emplace_back(VK_EXT_ATTACHMENT_FEEDBACK_LOOP_DYNAMIC_STATE_EXTENSION_NAME);
+	}
 
 	VkDeviceCreateInfo createInfo{};
 	createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -1693,6 +1803,8 @@ bool VulkanRenderer::CheckDeviceExtensionSupport(const VkPhysicalDevice device, 
 	info.deviceExtensions.dynamic_rendering = false; // isExtensionAvailable(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
 	info.deviceExtensions.depth_clip_enable = isExtensionAvailable(VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME);
 	info.deviceExtensions.pipeline_robustness = isExtensionAvailable(VK_EXT_PIPELINE_ROBUSTNESS_EXTENSION_NAME);
+	info.deviceExtensions.attachment_feedback_loop_layout = isExtensionAvailable(VK_EXT_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_EXTENSION_NAME);
+	info.deviceExtensions.attachment_feedback_loop_dynamic_state = isExtensionAvailable(VK_EXT_ATTACHMENT_FEEDBACK_LOOP_DYNAMIC_STATE_EXTENSION_NAME);
 	// dynamic rendering doesn't provide any benefits for us right now. Driver implementations are very unoptimized as of Feb 2022
 	info.deviceExtensions.present_wait = isExtensionAvailable(VK_KHR_PRESENT_WAIT_EXTENSION_NAME) && isExtensionAvailable(VK_KHR_PRESENT_ID_EXTENSION_NAME);
 
@@ -2152,6 +2264,7 @@ void VulkanRenderer::ImguiInit()
 	info.ImageCount = info.MinImageCount;
 
 	ImGui_ImplVulkan_Init(&info, m_imguiRenderPass);
+	m_imguiBackendInitialized = true;
 
 	if (prevRenderPass != VK_NULL_HANDLE)
 		vkDestroyRenderPass(GetLogicalDevice(), prevRenderPass, nullptr);
@@ -2193,6 +2306,37 @@ void VulkanRenderer::Shutdown()
 void IOSBridge_VulkanDeviceLost(const char* why);
 #endif
 
+void VulkanRenderer::TraceOp(OpKind kind, uint32 a, uint32 b, uint32 c, uint32 d)
+{
+	const uint64 seq = m_opTraceSeq.fetch_add(1, std::memory_order_relaxed);
+	m_opTrace[seq % kOpTraceSize] = {seq + 1, (uint32)LatteGPUState.frameCounter, (uint8)kind, a, b, c, d};
+}
+
+void VulkanRenderer::DumpOpTrace()
+{
+	static const char* names[] = {"draw", "draw skipped (no pipeline)", "render pass", "texture upload", "readback", "submit"};
+	const uint64 total = m_opTraceSeq.load();
+	const uint64 first = total > kOpTraceSize ? total - kOpTraceSize : 0;
+	cemuLog_log(LogType::Force, "Vulkan: the last {} recorded operations before the device was lost (oldest first):", total - first);
+	for (uint64 i = first; i < total; i++)
+	{
+		const OpTraceEntry e = m_opTrace[i % kOpTraceSize];
+		if (e.seq != i + 1)
+			continue;
+		switch ((OpKind)e.kind)
+		{
+		case OpKind::Draw: case OpKind::DrawSkipped:
+			cemuLog_log(LogType::Force, "  #{} frame {} {}: {} vertices x {} instances, flags {:#x}", e.seq, e.frame, names[e.kind], e.a, e.b, e.c); break;
+		case OpKind::RenderPass:
+			cemuLog_log(LogType::Force, "  #{} frame {} render pass: {} colour target(s), first {}x{} fmt {:04x}, depth fmt {:04x}{}", e.seq, e.frame, e.a, e.b >> 16, e.b & 0xFFFF, e.c, e.d & 0xFFFF, (e.d >> 31) ? " + stencil" : ""); break;
+		case OpKind::TextureUpload:
+			cemuLog_log(LogType::Force, "  #{} frame {} texture upload: {}x{} mip {} fmt {:04x}, {} bytes", e.seq, e.frame, e.a >> 16, e.a & 0xFFFF, e.b, e.c, e.d); break;
+		default:
+			cemuLog_log(LogType::Force, "  #{} frame {} {} {} {} {} {}", e.seq, e.frame, names[e.kind], e.a, e.b, e.c, e.d); break;
+		}
+	}
+}
+
 void VulkanRenderer::HandleDeviceLost(const char* what)
 {
 	if (m_deviceLost.exchange(true))
@@ -2202,6 +2346,7 @@ void VulkanRenderer::HandleDeviceLost(const char* what)
 	w.gpuError.store(true);
 	w.gpuErrorCode.store((int32_t)VK_ERROR_DEVICE_LOST);
 	w.gpuPresumedLost.store(true);
+	DumpOpTrace();
 #if BOOST_OS_IOS
 	IOSBridge_VulkanDeviceLost(what);
 #endif
@@ -2473,6 +2618,10 @@ void VulkanRenderer::ImguiEnd()
 	ImGui::Render();
 	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), m_state.currentCommandBuffer);
 	vkCmdEndRenderPass(m_state.currentCommandBuffer);
+
+	// restore viewport and scissor box
+	vkCmdSetViewport(m_state.currentCommandBuffer, 0, 1, &m_state.currentViewport);
+	vkCmdSetScissor(m_state.currentCommandBuffer, 0, 1, &m_state.currentScissorRect);
 }
 
 ImTextureID VulkanRenderer::GenerateTexture(const std::vector<uint8>& data, const Vector2i& size)
@@ -2570,7 +2719,7 @@ void VulkanRenderer::ProcessFinishedCommandBuffers()
 			ProcessDestructionQueue();
 			m_uniformVarBufferReadIndex = m_cmdBufferUniformRingbufIndices[m_commandBufferSyncIndex];
 			m_commandBufferSyncIndex = (m_commandBufferSyncIndex + 1) % m_commandBuffers.size();
-			memoryManager->cleanupBuffers(m_countCommandBufferFinished);
+			memoryManager->cleanupBuffers(ApplyDelayedFreeToCleanupId(m_countCommandBufferFinished));
 			m_countCommandBufferFinished++;
 			finishedCmdBuffers = true;
 			continue;
@@ -2631,6 +2780,7 @@ void VulkanRenderer::SubmitCommandBuffer(VkSemaphore signalSemaphore, VkSemaphor
 {
 	draw_endRenderPass();
 
+	TraceOp(OpKind::Submit, m_recordedDrawcalls);
 	occlusionQuery_notifyEndCommandBuffer();
 
 	vkEndCommandBuffer(m_state.currentCommandBuffer);
@@ -2759,6 +2909,13 @@ void VulkanRenderer::WaitCommandBufferFinished(uint64 commandBufferId)
 	}
 }
 
+// The driver's cache blob only means something to the driver that wrote it. MoltenVK 1.2.8 and 1.4.3 are both embedded and one is chosen per launch, so
+// the file carries the driver version: switching builds then keeps both caches instead of each launch throwing the other's away.
+static fs::path GetDriverPipelineCacheFilename(const fs::path& dir, uint32 driverVersion)
+{
+	return dir / fmt::format(L"{:016x}_{:08x}.bin", CafeSystem::GetForegroundTitleId(), driverVersion);
+}
+
 void VulkanRenderer::PipelineCacheSaveThread(size_t cache_size)
 {
 	SetThreadName("vkDriverPlCache");
@@ -2776,7 +2933,9 @@ void VulkanRenderer::PipelineCacheSaveThread(size_t cache_size)
 		}
 	}
 
-	const auto filename = dir / fmt::format(L"{:016x}.bin", CafeSystem::GetForegroundTitleId());
+	VkPhysicalDeviceProperties deviceProps{};
+	vkGetPhysicalDeviceProperties(m_physicalDevice, &deviceProps);
+	const auto filename = GetDriverPipelineCacheFilename(dir, deviceProps.driverVersion);
 
 	while (true)
 	{
@@ -2809,17 +2968,32 @@ void VulkanRenderer::PipelineCacheSaveThread(size_t cache_size)
 			if (res == VK_SUCCESS)
 			{
 
-				auto file = std::ofstream(fs::resolvePathCI(filename), std::ios::out | std::ios::binary);
-				if (file.is_open())
+				// Written beside the real file and renamed over it: a kill or a full disk mid-write must not leave a truncated blob behind
+				const auto finalPath = fs::resolvePathCI(filename);
+				auto tempPath = finalPath;
+				tempPath += L".tmp";
+				bool written = false;
 				{
-					file.write((char*)cacheData.data(), cacheData.size());
-					file.close();
-
+					auto file = std::ofstream(tempPath, std::ios::out | std::ios::binary | std::ios::trunc);
+					if (file.is_open())
+					{
+						file.write((char*)cacheData.data(), cacheData.size());
+						file.close();
+						written = !file.fail();
+					}
+				}
+				std::error_code renameEc;
+				if (written)
+					fs::rename(tempPath, finalPath, renameEc);
+				if (written && !renameEc)
+				{
 					cache_size = size;
 					cemuLog_logDebug(LogType::Force, "pipeline cache saved");
 				}
 				else
 				{
+					std::error_code removeEc;
+					fs::remove(tempPath, removeEc);
 					cemuLog_log(LogType::Force, "can't write pipeline cache to disk");
 				}
 			}
@@ -2842,7 +3016,9 @@ void VulkanRenderer::CreatePipelineCache()
 	const auto dir = ActiveSettings::GetCachePath("shaderCache/driver/vk");
 	if (fs::exists(dir))
 	{
-		const auto filename = dir / fmt::format("{:016x}.bin", CafeSystem::GetForegroundTitleId());
+		VkPhysicalDeviceProperties deviceProps{};
+		vkGetPhysicalDeviceProperties(m_physicalDevice, &deviceProps);
+		const auto filename = GetDriverPipelineCacheFilename(dir, deviceProps.driverVersion);
 		auto file = std::ifstream(fs::resolvePathCI(filename), std::ios::in | std::ios::binary | std::ios::ate);
 		if (file.is_open())
 		{
@@ -2908,6 +3084,7 @@ void VulkanRenderer::GetTextureFormatInfoVK(Latte::E_GX2SURFFMT format, bool isD
 	formatInfoOut->texelCountX = width;
 	formatInfoOut->texelCountY = height;
 	formatInfoOut->isCompressed = false;
+	formatInfoOut->isAlternateFormat = false;
 	if (isDepth)
 	{
 		switch (format)
@@ -2918,6 +3095,7 @@ void VulkanRenderer::GetTextureFormatInfoVK(Latte::E_GX2SURFFMT format, bool isD
 				formatInfoOut->vkImageFormat = VK_FORMAT_D32_SFLOAT_S8_UINT;
 				formatInfoOut->vkImageAspect = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
 				formatInfoOut->decoder = TextureDecoder_NullData64::getInstance();
+				formatInfoOut->isAlternateFormat = true;
 			}
 			else
 			{
@@ -2931,6 +3109,7 @@ void VulkanRenderer::GetTextureFormatInfoVK(Latte::E_GX2SURFFMT format, bool isD
 			formatInfoOut->vkImageFormat = VK_FORMAT_D32_SFLOAT_S8_UINT;
 			formatInfoOut->vkImageAspect = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
 			formatInfoOut->decoder = TextureDecoder_NullData64::getInstance();
+			formatInfoOut->isAlternateFormat = true;
 			break;
 		case Latte::E_GX2SURFFMT::D32_FLOAT:
 			formatInfoOut->vkImageFormat = VK_FORMAT_D32_SFLOAT;
@@ -2953,6 +3132,7 @@ void VulkanRenderer::GetTextureFormatInfoVK(Latte::E_GX2SURFFMT format, bool isD
 			formatInfoOut->vkImageFormat = VK_FORMAT_D16_UNORM;
 			formatInfoOut->vkImageAspect = VK_IMAGE_ASPECT_DEPTH_BIT;
 			formatInfoOut->decoder = nullptr;
+			formatInfoOut->isAlternateFormat = true;
 			break;
 		}
 	}
@@ -3036,19 +3216,24 @@ void VulkanRenderer::GetTextureFormatInfoVK(Latte::E_GX2SURFFMT format, bool isD
 		case Latte::E_GX2SURFFMT::R4_G4_UNORM:
 			if (m_supportedFormatInfo.fmt_r4g4_unorm_pack == false)
 			{
-				if (m_supportedFormatInfo.fmt_r4g4b4a4_unorm_pack == false) {
+				if (m_supportedFormatInfo.fmt_r4g4b4a4_unorm_pack == false)
+				{
 					formatInfoOut->vkImageFormat = VK_FORMAT_R8G8B8A8_UNORM;
 					formatInfoOut->decoder = TextureDecoder_R4G4_UNORM_To_RGBA8::getInstance();
+					formatInfoOut->isAlternateFormat = true;
 				}
-				else {
+				else
+				{
 					formatInfoOut->vkImageFormat = VK_FORMAT_R4G4B4A4_UNORM_PACK16;
 					formatInfoOut->decoder = TextureDecoder_R4_G4_UNORM_To_ABGR4::getInstance();
+					formatInfoOut->isAlternateFormat = true;
 				}
 			}
 			else
 			{
 				formatInfoOut->vkImageFormat = VK_FORMAT_R4G4_UNORM_PACK8;
 				formatInfoOut->decoder = TextureDecoder_R4_G4::getInstance();
+				formatInfoOut->isAlternateFormat = true; // R and G swapped?
 			}
 			break;
 			// R formats
@@ -3090,37 +3275,49 @@ void VulkanRenderer::GetTextureFormatInfoVK(Latte::E_GX2SURFFMT format, bool isD
 			break;
 			// special formats
 		case Latte::E_GX2SURFFMT::R5_G6_B5_UNORM:
-			if (m_supportedFormatInfo.fmt_r5g6b5_unorm_pack == false) {
+			if (m_supportedFormatInfo.fmt_r5g6b5_unorm_pack == false)
+			{
 				formatInfoOut->vkImageFormat = VK_FORMAT_R8G8B8A8_UNORM;
 				formatInfoOut->decoder = TextureDecoder_R5G6B5_UNORM_To_RGBA8::getInstance();
+				formatInfoOut->isAlternateFormat = true;
 			}
-			else {
+			else
+			{
 				// Vulkan has R in MSB, GPU7 has it in LSB
 				formatInfoOut->vkImageFormat = VK_FORMAT_R5G6B5_UNORM_PACK16;
 				formatInfoOut->decoder = TextureDecoder_R5_G6_B5_swappedRB::getInstance();
+				formatInfoOut->isAlternateFormat = true;
 			}
 			break;
 		case Latte::E_GX2SURFFMT::R5_G5_B5_A1_UNORM:
-			if (m_supportedFormatInfo.fmt_a1r5g5b5_unorm_pack == false) {
+			if (m_supportedFormatInfo.fmt_a1r5g5b5_unorm_pack == false)
+			{
 				formatInfoOut->vkImageFormat = VK_FORMAT_R8G8B8A8_UNORM;
 				formatInfoOut->decoder = TextureDecoder_R5_G5_B5_A1_UNORM_swappedRB_To_RGBA8::getInstance();
+				formatInfoOut->isAlternateFormat = true;
 			}
-			else {
+			else
+			{
 				// used in Super Mario 3D World for the hidden Luigi sprites
 				// since order of channels is reversed in Vulkan compared to GX2 the format we need is A1B5G5R5
 				formatInfoOut->vkImageFormat = VK_FORMAT_A1R5G5B5_UNORM_PACK16;
 				formatInfoOut->decoder = TextureDecoder_R5_G5_B5_A1_UNORM_swappedRB::getInstance();
+				formatInfoOut->isAlternateFormat = true;
 			}
 			break;
 		case Latte::E_GX2SURFFMT::A1_B5_G5_R5_UNORM:
-			if (m_supportedFormatInfo.fmt_a1r5g5b5_unorm_pack == false) {
+			if (m_supportedFormatInfo.fmt_a1r5g5b5_unorm_pack == false)
+			{
 				formatInfoOut->vkImageFormat = VK_FORMAT_R8G8B8A8_UNORM;
 				formatInfoOut->decoder = TextureDecoder_A1_B5_G5_R5_UNORM_vulkan_To_RGBA8::getInstance();
+				formatInfoOut->isAlternateFormat = true;
 			}
-			else {
+			else
+			{
 				// used by VC64 (e.g. Ocarina of Time)
 				formatInfoOut->vkImageFormat = VK_FORMAT_A1R5G5B5_UNORM_PACK16; // A 15 R 10..14, G 5..9 B 0..4
 				formatInfoOut->decoder = TextureDecoder_A1_B5_G5_R5_UNORM_vulkan::getInstance();
+				formatInfoOut->isAlternateFormat = true;
 			}
 			break;
 		case Latte::E_GX2SURFFMT::R11_G11_B10_FLOAT:
@@ -3128,13 +3325,17 @@ void VulkanRenderer::GetTextureFormatInfoVK(Latte::E_GX2SURFFMT format, bool isD
 			formatInfoOut->decoder = TextureDecoder_R11_G11_B10_FLOAT::getInstance();
 			break;
 		case Latte::E_GX2SURFFMT::R4_G4_B4_A4_UNORM:
-			if (m_supportedFormatInfo.fmt_r4g4b4a4_unorm_pack == false) {
+			if (m_supportedFormatInfo.fmt_r4g4b4a4_unorm_pack == false)
+			{
 				formatInfoOut->vkImageFormat = VK_FORMAT_R8G8B8A8_UNORM;
 				formatInfoOut->decoder = TextureDecoder_R4G4B4A4_UNORM_To_RGBA8::getInstance();
+				formatInfoOut->isAlternateFormat = true;
 			}
-			else {
+			else
+			{
 				formatInfoOut->vkImageFormat = VK_FORMAT_R4G4B4A4_UNORM_PACK16;
  				formatInfoOut->decoder = TextureDecoder_R4_G4_B4_A4_UNORM::getInstance();
+				formatInfoOut->isAlternateFormat = true; // channel order is different?
 			}
 			break;
 			// special formats - R10G10B10_A2
@@ -3145,6 +3346,7 @@ void VulkanRenderer::GetTextureFormatInfoVK(Latte::E_GX2SURFFMT format, bool isD
 		case Latte::E_GX2SURFFMT::R10_G10_B10_A2_SNORM:
 			formatInfoOut->vkImageFormat = VK_FORMAT_R16G16B16A16_SNORM; // Vulkan has VK_FORMAT_A2R10G10B10_SNORM_PACK32 but it doesnt work?
 			formatInfoOut->decoder = TextureDecoder_R10_G10_B10_A2_SNORM_To_RGBA16::getInstance();
+			formatInfoOut->isAlternateFormat = true;
 			break;
 		case Latte::E_GX2SURFFMT::R10_G10_B10_A2_SRGB:
 			//formatInfoOut->vkImageFormat = VK_FORMAT_R16G16B16A16_SNORM; // Vulkan has no uncompressed SRGB format with more than 8 bits per channel
@@ -3152,6 +3354,7 @@ void VulkanRenderer::GetTextureFormatInfoVK(Latte::E_GX2SURFFMT format, bool isD
 			//break;
 			formatInfoOut->vkImageFormat = VK_FORMAT_A2B10G10R10_UNORM_PACK32; // todo - verify
 			formatInfoOut->decoder = TextureDecoder_R10_G10_B10_A2_UNORM::getInstance();
+			formatInfoOut->isAlternateFormat = true;
 			break;
 			// compressed formats
 		case Latte::E_GX2SURFFMT::BC1_SRGB:
@@ -3327,15 +3530,19 @@ void VulkanRenderer::GetTextureFormatInfoVK(Latte::E_GX2SURFFMT format, bool isD
 		case Latte::E_GX2SURFFMT::R24_X8_UNORM:
 			formatInfoOut->vkImageFormat = VK_FORMAT_R32_SFLOAT;
 			formatInfoOut->decoder = TextureDecoder_R24_X8::getInstance();
+			formatInfoOut->isAlternateFormat = true;
 			break;
 		case Latte::E_GX2SURFFMT::X24_G8_UINT:
 			// used by Color Splash and Resident Evil
 			formatInfoOut->vkImageFormat = VK_FORMAT_R8G8B8A8_UINT; // todo - should we use ABGR format?
 			formatInfoOut->decoder = TextureDecoder_X24_G8_UINT::getInstance(); // todo - verify
+			formatInfoOut->isAlternateFormat = true;
+			break;
 		case Latte::E_GX2SURFFMT::R32_X8_FLOAT:
 			// seen in Disney Infinity 3.0
 			formatInfoOut->vkImageFormat = VK_FORMAT_R32_SFLOAT;
 			formatInfoOut->decoder = TextureDecoder_NullData64::getInstance();
+			formatInfoOut->isAlternateFormat = true;
 			break;
 		default:
 			cemuLog_log(LogType::Force, "Unsupported color texture format {:04x}", (uint32)format);
@@ -3481,6 +3688,7 @@ bool VulkanRenderer::AcquireNextSwapchainImage(bool mainWindow)
 	if(!mainWindow && m_destroyPadSwapchainNextAcquire.test())
 	{
 		RecreateSwapchain(mainWindow, true);
+		m_padSwapchainInfo.reset(); // gone for good: RetryDeadSwapchain() must not revive a chain that was taken down on purpose
 		m_destroyPadSwapchainNextAcquire.clear();
 		m_destroyPadSwapchainNextAcquire.notify_all();
 		return false;
@@ -3523,7 +3731,12 @@ void VulkanRenderer::RecreateSwapchain(bool mainWindow, bool skipCreate)
 	Vector2i size;
 	if (mainWindow)
 	{
-		ImGui_ImplVulkan_Shutdown();
+		// not initialized if the previous rebuild failed half way
+		if (m_imguiBackendInitialized)
+		{
+			ImGui_ImplVulkan_Shutdown();
+			m_imguiBackendInitialized = false;
+		}
 		WindowSystem::GetWindowPhysSize(size.x, size.y);
 	}
 	else
@@ -3532,7 +3745,8 @@ void VulkanRenderer::RecreateSwapchain(bool mainWindow, bool skipCreate)
 	}
 
 	chainInfo.swapchainImageIndex = -1;
-	chainInfo.Cleanup();
+	// the old VkSwapchainKHR stays until Create() has made its replacement, so a failed rebuild doesn't take it down with it
+	chainInfo.Cleanup(!skipCreate);
 	chainInfo.m_desiredExtent = size;
 	if(!skipCreate)
 	{
@@ -3541,6 +3755,70 @@ void VulkanRenderer::RecreateSwapchain(bool mainWindow, bool skipCreate)
 
 	if (mainWindow)
 		ImguiInit();
+}
+
+void VulkanRenderer::NoteSwapchainFailure(bool mainWindow, const char* what)
+{
+	auto& retry = m_swapchainRetry[mainWindow ? 0 : 1];
+	retry.delayMs = retry.delayMs == 0 ? 100 : std::min<uint32>(retry.delayMs * 2, 2000);
+	retry.notBefore = std::chrono::steady_clock::now() + std::chrono::milliseconds(retry.delayMs);
+	cemuLog_log(LogType::Force, "Vulkan: {} swapchain: {}. Trying again in {} ms", mainWindow ? "TV" : "GamePad", what, retry.delayMs);
+}
+
+// A chain object that exists but isn't valid is one whose rebuild failed (a lost surface, an allocation failure). Without this nothing would
+// ever try again and the screen stays black while the game keeps running. GPU thread only.
+void VulkanRenderer::RetryDeadSwapchain(bool mainWindow)
+{
+	auto& chain = GetChainInfoPtr(mainWindow);
+	if (!chain || chain->IsValid())
+		return;
+	auto& retry = m_swapchainRetry[mainWindow ? 0 : 1];
+	if (std::chrono::steady_clock::now() < retry.notBefore)
+		return;
+	try
+	{
+		RecreateSwapchain(mainWindow);
+		chain->m_shouldRecreate = false;
+		chain->m_vsyncState = (SwapchainInfoVk::VSync)GetConfig().vsync.GetValue();
+		retry.delayMs = 0;
+		cemuLog_log(LogType::Force, "Vulkan: {} swapchain recovered", mainWindow ? "TV" : "GamePad");
+	}
+	catch (const std::exception& ex)
+	{
+		NoteSwapchainFailure(mainWindow, ex.what());
+	}
+}
+
+// The UI thread hands the GamePad surface over by recording its size (InitializeSurface); the chain itself is replaced here, on the GPU thread,
+// once nothing in flight can still use the old one.
+void VulkanRenderer::ApplyPendingPadSurface()
+{
+	if (!m_padSurfaceChanged.load(std::memory_order_acquire))
+		return;
+	auto& retry = m_swapchainRetry[1];
+	if (std::chrono::steady_clock::now() < retry.notBefore)
+		return;
+	// cleared before the work so that a registration arriving meanwhile sets it again
+	m_padSurfaceChanged.store(false, std::memory_order_relaxed);
+	const Vector2i size{m_padSurfaceWidth.load(std::memory_order_relaxed), m_padSurfaceHeight.load(std::memory_order_relaxed)};
+	try
+	{
+		SubmitCommandBuffer();
+		WaitDeviceIdle(); // also drains the render worker, whose present job holds a reference to the old chain
+		// the old chain goes first: a second chain on the same CAMetalLayer would fight it for the layer
+		m_padSwapchainInfo.reset();
+		m_swapchainPresentPending[1].store(false, std::memory_order_release);
+		auto chain = std::make_unique<SwapchainInfoVk>(false, size);
+		chain->Create();
+		m_padSwapchainInfo = std::move(chain);
+		retry.delayMs = 0;
+	}
+	catch (const std::exception& ex)
+	{
+		// no pad output until a later attempt works; the TV is unaffected
+		m_padSurfaceChanged.store(true, std::memory_order_release);
+		NoteSwapchainFailure(false, ex.what());
+	}
 }
 
 bool VulkanRenderer::UpdateSwapchainProperties(bool mainWindow)
@@ -3593,9 +3871,10 @@ bool VulkanRenderer::UpdateSwapchainProperties(bool mainWindow)
 		{
 			RecreateSwapchain(mainWindow);
 		}
-		catch (std::exception&)
+		catch (const std::exception& ex)
 		{
-			cemu_assert_debug(false);
+			// the chain stays invalid and RetryDeadSwapchain() picks it up again
+			NoteSwapchainFailure(mainWindow, ex.what());
 			return false;
 		}
 	}
@@ -3678,6 +3957,9 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
             chainInfo.m_queueDepth++;
             chainInfo.m_presentId++;
             LatteWait::Get().presentedFrames.fetch_add(1, std::memory_order_relaxed);
+            OnFramePresented();
+            // the overlay's "host fps" counts these; the Metal renderer bumps the same counters at its present
+            (chainInfo.mainWindow ? PerfTelemetry::Get().tvPresents : PerfTelemetry::Get().padPresents).fetch_add(1, std::memory_order_relaxed);
         }
         
         chainInfo.hasDefinedSwapchainImage = false;
@@ -3725,6 +4007,10 @@ void VulkanRenderer::SwapBuffers(bool swapTV, bool swapDRC)
 	try
 	{
 		SubmitCommandBuffer();
+
+		ApplyPendingPadSurface();
+		RetryDeadSwapchain(true);
+		RetryDeadSwapchain(false);
 
 		if (swapTV && IsSwapchainInfoValid(true))
 			SwapBuffer(true);
@@ -3941,7 +4227,7 @@ VkDescriptorSet VulkanRenderer::backbufferBlit_createDescriptorSet(VkDescriptorS
 	performanceMonitor.vk.numDescriptorSets.increment();
 
 	VkDescriptorImageInfo imageInfo = {};
-	imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+	imageInfo.imageLayout = static_cast<LatteTextureVk*>(texViewVk->baseTexture)->GetDefaultLayout();
 	imageInfo.imageView = texViewVk->GetViewRGBA()->m_textureImageView;
 	imageInfo.sampler = texViewVk->GetDefaultTextureSampler(useLinearTexFilter);
 
@@ -4031,6 +4317,30 @@ void* VulkanRenderer::texture_acquireTextureUploadBuffer(uint32 size)
 	return memoryManager->TextureUploadBufferAcquire(size);
 }
 
+// The loader found no upload buffer for this texture. The texture cache considers the data current once the load returns, so flag the
+// texture to be loaded again by inverting its data hash (the next change check sees a difference), as the Metal renderer does. A texture
+// whose uploads keep failing is flagged a bounded number of times, so it doesn't reload every frame.
+void VulkanRenderer::texture_uploadBufferUnavailable(LatteTexture* texture)
+{
+	constexpr uint32 kMaxFlags = 8;
+	constexpr uint32 kQuietFrames = 600;
+	if (!texture)
+		return;
+	auto* vkTexture = static_cast<LatteTextureVk*>(texture);
+	const uint32 frame = (uint32)LatteGPUState.frameCounter;
+	if (vkTexture->m_uploadRetryCount != 0 && (uint32)(frame - vkTexture->m_uploadRetryFrame) > kQuietFrames)
+		vkTexture->m_uploadRetryCount = 0;
+	if (vkTexture->m_uploadRetryInverted && vkTexture->texDataHash2 == vkTexture->m_uploadRetryHash)
+		return; // already flagged and nothing restamped it since
+	if (vkTexture->m_uploadRetryCount >= kMaxFlags)
+		return;
+	vkTexture->m_uploadRetryCount++;
+	vkTexture->m_uploadRetryFrame = frame;
+	vkTexture->texDataHash2 = ~vkTexture->texDataHash2;
+	vkTexture->m_uploadRetryHash = vkTexture->texDataHash2;
+	vkTexture->m_uploadRetryInverted = true;
+}
+
 void VulkanRenderer::texture_releaseTextureUploadBuffer(uint8* mem)
 {
 	memoryManager->TextureUploadBufferRelease(mem);
@@ -4055,6 +4365,33 @@ void VulkanRenderer::ReleaseDestructibleObject(VKRDestructibleObject* destructib
 	m_spinlockDestructionQueue.lock();
 	m_destructionQueue.emplace_back(destructibleObject);
 	m_spinlockDestructionQueue.unlock();
+}
+
+bool VulkanRenderer::HasFrameDelayElapsed(uint64 objectFrame) const
+{
+	if (m_delayedFreeFrames == 0 || m_drainDestructionQueue)
+		return true;
+	return m_framesPresented.load(std::memory_order_acquire) >= objectFrame + m_delayedFreeFrames;
+}
+
+// Limits the "latest finished command buffer" used to release staging/index/vertex allocations to the command buffer that was
+// current m_delayedFreeFrames presents ago.
+uint64 VulkanRenderer::ApplyDelayedFreeToCleanupId(uint64 finishedCommandBufferId) const
+{
+	if (m_delayedFreeFrames == 0 || m_drainDestructionQueue)
+		return finishedCommandBufferId;
+	const uint64 frames = m_framesPresented.load(std::memory_order_acquire);
+	if (frames < m_delayedFreeFrames)
+		return 0;
+	const uint64 floorId = m_frameEndCmdBufferId[(frames - m_delayedFreeFrames) % 16].load(std::memory_order_acquire);
+	return std::min<uint64>(finishedCommandBufferId, floorId);
+}
+
+void VulkanRenderer::OnFramePresented()
+{
+	const uint64 frames = m_framesPresented.load(std::memory_order_relaxed) + 1;
+	m_frameEndCmdBufferId[frames % 16].store(GetCurrentCommandBufferId(), std::memory_order_release);
+	m_framesPresented.store(frames, std::memory_order_release);
 }
 
 void VulkanRenderer::ProcessDestructionQueue()
@@ -4120,7 +4457,7 @@ void VulkanRenderer::texture_clearSlice(LatteTexture* hostTexture, sint32 sliceI
 	else
 	{
 		cemu_assert_debug(vkTexture->dim != Latte::E_DIM::DIM_3D);
-		ClearColorImage(vkTexture, sliceIndex, mipIndex, { 0,0,0,0 }, VK_IMAGE_LAYOUT_GENERAL);
+		ClearColorImage(vkTexture, sliceIndex, mipIndex, { 0,0,0,0 }, vkTexture->GetDefaultLayout());
 	}
 }
 
@@ -4131,7 +4468,7 @@ void VulkanRenderer::texture_clearColorSlice(LatteTexture* hostTexture, sint32 s
 	{
 		cemu_assert_unimplemented();
 	}
-	ClearColorImage(vkTexture, sliceIndex, mipIndex, {r, g, b, a}, VK_IMAGE_LAYOUT_GENERAL);
+	ClearColorImage(vkTexture, sliceIndex, mipIndex, {r, g, b, a}, vkTexture->GetDefaultLayout());
 }
 
 void VulkanRenderer::texture_clearDepthSlice(LatteTexture* hostTexture, uint32 sliceIndex, sint32 mipIndex, bool clearDepth, bool clearStencil, float depthValue, uint32 stencilValue)
@@ -4172,13 +4509,78 @@ void VulkanRenderer::texture_clearDepthSlice(LatteTexture* hostTexture, uint32 s
 
 	vkCmdClearDepthStencilImage(m_state.currentCommandBuffer, imageObj->m_image, VK_IMAGE_LAYOUT_GENERAL, &depthStencilValue, 1, &range);
 
-	barrier_image<ANY_TRANSFER, ANY_TRANSFER | IMAGE_READ | IMAGE_WRITE>(vkTexture, subresourceRange, VK_IMAGE_LAYOUT_GENERAL);
+	barrier_image<ANY_TRANSFER, ANY_TRANSFER | IMAGE_READ | IMAGE_WRITE>(vkTexture, subresourceRange, vkTexture->GetDefaultLayout());
+}
+
+// Block size and bytes per block of the formats GetTextureFormatInfoVK() hands out, or false for one it doesn't know.
+static bool VulkanUploadBlockInfo(VkFormat fmt, uint32& blockW, uint32& blockH, uint32& bytesPerBlock)
+{
+	blockW = blockH = 1;
+	switch (fmt)
+	{
+	case VK_FORMAT_BC1_RGBA_SRGB_BLOCK: case VK_FORMAT_BC1_RGBA_UNORM_BLOCK: case VK_FORMAT_BC4_SNORM_BLOCK: case VK_FORMAT_BC4_UNORM_BLOCK:
+		blockW = blockH = 4; bytesPerBlock = 8; return true;
+	case VK_FORMAT_BC2_SRGB_BLOCK: case VK_FORMAT_BC2_UNORM_BLOCK: case VK_FORMAT_BC3_SRGB_BLOCK: case VK_FORMAT_BC3_UNORM_BLOCK:
+	case VK_FORMAT_BC5_SNORM_BLOCK: case VK_FORMAT_BC5_UNORM_BLOCK: case VK_FORMAT_ASTC_4x4_UNORM_BLOCK: case VK_FORMAT_ASTC_4x4_SRGB_BLOCK:
+		blockW = blockH = 4; bytesPerBlock = 16; return true;
+	case VK_FORMAT_R4G4_UNORM_PACK8: case VK_FORMAT_R8_SNORM: case VK_FORMAT_R8_UINT: case VK_FORMAT_R8_UNORM:
+		bytesPerBlock = 1; return true;
+	case VK_FORMAT_A1R5G5B5_UNORM_PACK16: case VK_FORMAT_R4G4B4A4_UNORM_PACK16: case VK_FORMAT_R5G6B5_UNORM_PACK16: case VK_FORMAT_D16_UNORM:
+	case VK_FORMAT_R16_SFLOAT: case VK_FORMAT_R16_SNORM: case VK_FORMAT_R16_UINT: case VK_FORMAT_R16_UNORM: case VK_FORMAT_R8G8_SNORM: case VK_FORMAT_R8G8_UNORM:
+		bytesPerBlock = 2; return true;
+	case VK_FORMAT_A2B10G10R10_UNORM_PACK32: case VK_FORMAT_B10G11R11_UFLOAT_PACK32: case VK_FORMAT_D24_UNORM_S8_UINT: case VK_FORMAT_D32_SFLOAT:
+	case VK_FORMAT_D32_SFLOAT_S8_UINT: // the depth aspect is the larger of the two copies
+	case VK_FORMAT_R16G16_SFLOAT: case VK_FORMAT_R16G16_UNORM: case VK_FORMAT_R32_SFLOAT: case VK_FORMAT_R32_UINT:
+	case VK_FORMAT_R8G8B8A8_SINT: case VK_FORMAT_R8G8B8A8_SNORM: case VK_FORMAT_R8G8B8A8_SRGB: case VK_FORMAT_R8G8B8A8_UINT: case VK_FORMAT_R8G8B8A8_UNORM:
+		bytesPerBlock = 4; return true;
+	case VK_FORMAT_R16G16B16A16_SFLOAT: case VK_FORMAT_R16G16B16A16_SNORM: case VK_FORMAT_R16G16B16A16_UINT: case VK_FORMAT_R16G16B16A16_UNORM:
+	case VK_FORMAT_R32G32_SFLOAT: case VK_FORMAT_R32G32_UINT:
+		bytesPerBlock = 8; return true;
+	case VK_FORMAT_R32G32B32A32_SFLOAT: case VK_FORMAT_R32G32B32A32_UINT:
+		bytesPerBlock = 16; return true;
+	default:
+		return false;
+	}
 }
 
 void VulkanRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, sint32 height, sint32 depth, void* pixelData, sint32 sliceIndex, sint32 mipIndex, uint32 compressedImageSize)
 {
 	auto vkTexture = (LatteTextureVk*)hostTexture;
 	auto vkImageObj = vkTexture->GetImageObj();
+
+	FormatInfoVK texFormatInfo;
+	GetTextureFormatInfoVK(hostTexture->format, hostTexture->isDepth, hostTexture->dim, 0, 0, &texFormatInfo);
+
+	// The copy below reads width x height texels out of the staging buffer and writes them into the level. Apple GPUs fault
+	// (a GPU address fault that loses the whole device) when either runs past its allocation, where other drivers return zero,
+	// and the Metal renderer guards exactly this. So: never write outside the level, and never read past the staging allocation.
+	if (width <= 0 || height <= 0 || mipIndex < 0 || mipIndex >= (sint32)hostTexture->mipLevels)
+	{
+		cemuLog_logOnce(LogType::Force, "Vulkan: skipped a texture upload with an impossible size ({}x{} mip {} of {}, format {:04x})", width, height, mipIndex, (sint32)hostTexture->mipLevels, (uint32)hostTexture->format);
+		return;
+	}
+	sint32 levelWidth, levelHeight;
+	hostTexture->GetSize(levelWidth, levelHeight, mipIndex);
+	uint32 blockW = 1, blockH = 1, bytesPerBlock = 0;
+	const bool knownLayout = VulkanUploadBlockInfo(texFormatInfo.vkImageFormat, blockW, blockH, bytesPerBlock);
+	// source rows keep the length the decoder wrote, even when the level is narrower than the slice
+	const uint32 sourceRowTexels = (uint32)(((uint32)width + blockW - 1) / blockW * blockW);
+	uint32 copyWidth = std::min<uint32>(width, levelWidth);
+	uint32 copyHeight = std::min<uint32>(height, levelHeight);
+	if (copyWidth != (uint32)width || copyHeight != (uint32)height)
+		cemuLog_logOnce(LogType::Force, "Vulkan: a texture upload was larger than its level ({}x{} into {}x{}, mip {}, format {:04x}); copying the part that fits", width, height, levelWidth, levelHeight, mipIndex, (uint32)hostTexture->format);
+	uint64 requiredBytes = 0;
+	if (knownLayout)
+	{
+		const uint64 rows = (copyHeight + blockH - 1) / blockH;
+		const uint64 rowBytes = (uint64)(sourceRowTexels / blockW) * bytesPerBlock;
+		const uint64 lastRowBytes = (uint64)((copyWidth + blockW - 1) / blockW) * bytesPerBlock;
+		requiredBytes = (rows - 1) * rowBytes + lastRowBytes;
+		if (requiredBytes > compressedImageSize)
+			cemuLog_logOnce(LogType::Force, "Vulkan: a texture upload had less data than the slice needs ({} of {} bytes, {}x{} mip {}, format {:04x}); the missing part is zero", compressedImageSize, requiredBytes, width, height, mipIndex, (uint32)hostTexture->format);
+	}
+
+	TraceOp(OpKind::TextureUpload, (((uint32)width & 0xFFFF) << 16) | ((uint32)height & 0xFFFF), (uint32)mipIndex, (uint32)hostTexture->format, compressedImageSize);
 	vkImageObj->flagForCurrentCommandBuffer();
 
 	draw_endRenderPass();
@@ -4186,17 +4588,16 @@ void VulkanRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, 
 	VkMemoryRequirements memRequirements;
 	vkGetImageMemoryRequirements(m_logicalDevice, vkImageObj->m_image, &memRequirements);
 
-	uint32 uploadSize = compressedImageSize;// memRequirements.size;
+	const uint32 uploadSize = (uint32)std::max<uint64>(compressedImageSize, requiredBytes);
 	uint32 uploadAlignment = memRequirements.alignment;
 
 	VKRSynchronizedRingAllocator& vkMemAllocator = memoryManager->getStagingAllocator();
 
 	auto uploadResv = vkMemAllocator.AllocateBufferMemory(uploadSize, uploadAlignment);
 	memcpy(uploadResv.memPtr, pixelData, compressedImageSize);
+	if (uploadSize > compressedImageSize)
+		memset(uploadResv.memPtr + compressedImageSize, 0, uploadSize - compressedImageSize);
 	vkMemAllocator.FlushReservation(uploadResv);
-
-	FormatInfoVK texFormatInfo;
-	GetTextureFormatInfoVK(hostTexture->format, hostTexture->isDepth, hostTexture->dim, 0, 0, &texFormatInfo);
 
 	bool is3DTexture = hostTexture->Is3DTexture();
 
@@ -4212,8 +4613,9 @@ void VulkanRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, 
 	if (texFormatInfo.vkImageAspect == VK_IMAGE_ASPECT_COLOR_BIT || texFormatInfo.vkImageAspect == VK_IMAGE_ASPECT_DEPTH_BIT)
 	{
 		imageRegion[0].bufferOffset = uploadResv.bufferOffset;
-		imageRegion[0].imageExtent.width = width;
-		imageRegion[0].imageExtent.height = height;
+		imageRegion[0].bufferRowLength = knownLayout ? sourceRowTexels : 0;
+		imageRegion[0].imageExtent.width = copyWidth;
+		imageRegion[0].imageExtent.height = copyHeight;
 		imageRegion[0].imageExtent.depth = 1;
 		imageRegion[0].imageOffset.z = is3DTexture ? sliceIndex : 0;
 
@@ -4230,8 +4632,9 @@ void VulkanRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, 
 
 		// depth only copy
 		imageRegion[0].bufferOffset = uploadResv.bufferOffset;
-		imageRegion[0].imageExtent.width = width;
-		imageRegion[0].imageExtent.height = height;
+		imageRegion[0].bufferRowLength = knownLayout ? sourceRowTexels : 0;
+		imageRegion[0].imageExtent.width = copyWidth;
+		imageRegion[0].imageExtent.height = copyHeight;
 		imageRegion[0].imageExtent.depth = 1;
 
 		imageRegion[0].imageSubresource.mipLevel = mipIndex;
@@ -4248,8 +4651,9 @@ void VulkanRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, 
 
 		// depth copy
 		imageRegion[0].bufferOffset = uploadResv.bufferOffset;
-		imageRegion[0].imageExtent.width = width;
-		imageRegion[0].imageExtent.height = height;
+		imageRegion[0].bufferRowLength = knownLayout ? sourceRowTexels : 0;
+		imageRegion[0].imageExtent.width = copyWidth;
+		imageRegion[0].imageExtent.height = copyHeight;
 		imageRegion[0].imageExtent.depth = 1;
 
 		imageRegion[0].imageSubresource.mipLevel = mipIndex;
@@ -4259,8 +4663,9 @@ void VulkanRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, 
 
 		// stencil copy
 		imageRegion[1].bufferOffset = uploadResv.bufferOffset;
-		imageRegion[1].imageExtent.width = width;
-		imageRegion[1].imageExtent.height = height;
+		imageRegion[1].bufferRowLength = knownLayout ? sourceRowTexels : 0;
+		imageRegion[1].imageExtent.width = copyWidth;
+		imageRegion[1].imageExtent.height = copyHeight;
 		imageRegion[1].imageExtent.depth = 1;
 
 		imageRegion[1].imageSubresource.mipLevel = mipIndex;
@@ -4275,7 +4680,7 @@ void VulkanRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, 
 
 	vkCmdCopyBufferToImage(m_state.currentCommandBuffer, uploadResv.vkBuffer, vkImageObj->m_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, imageRegionCount, imageRegion);
 
-	barrier_image<ANY_TRANSFER, ANY_TRANSFER | IMAGE_READ | IMAGE_WRITE>(vkTexture, barrierSubresourceRange, VK_IMAGE_LAYOUT_GENERAL);
+	barrier_image<ANY_TRANSFER, ANY_TRANSFER | IMAGE_READ | IMAGE_WRITE>(vkTexture, barrierSubresourceRange, vkTexture->GetDefaultLayout());
 }
 
 LatteTexture* VulkanRenderer::texture_createTextureEx(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels,
@@ -4353,13 +4758,11 @@ void VulkanRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, 
 		sint32 mipWidth = std::max(dst->width >> dstMip, 1);
 		sint32 mipHeight = std::max(dst->height >> dstMip, 1);
 
-
 		if (mipWidth < 4 || mipHeight < 4)
 		{
 			cemuLog_logDebug(LogType::Force, "vkCmdCopyImage - blocked copy for unsupported uncompressed->compressed copy with dst smaller than 4x4");
 			return;
 		}
-
 	}
 
 	// make sure all write operations to the src image have finished
@@ -4370,7 +4773,8 @@ void VulkanRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, 
 	vkCmdCopyImage(m_state.currentCommandBuffer, srcVkObj->m_image, VK_IMAGE_LAYOUT_GENERAL, dstVkObj->m_image, VK_IMAGE_LAYOUT_GENERAL, 1, &region);
 
 	// make sure the transfer is finished before the image is read or written
-	barrier_image<SYNC_OP::ANY_TRANSFER, SYNC_OP::IMAGE_READ | SYNC_OP::IMAGE_WRITE | SYNC_OP::ANY_TRANSFER>(dstVk, region.dstSubresource, VK_IMAGE_LAYOUT_GENERAL);
+	barrier_image<SYNC_OP::ANY_TRANSFER, SYNC_OP::IMAGE_READ | SYNC_OP::IMAGE_WRITE | SYNC_OP::ANY_TRANSFER>(srcVk, region.srcSubresource, srcVk->GetDefaultLayout());
+	barrier_image<SYNC_OP::ANY_TRANSFER, SYNC_OP::IMAGE_READ | SYNC_OP::IMAGE_WRITE | SYNC_OP::ANY_TRANSFER>(dstVk, region.dstSubresource, dstVk->GetDefaultLayout());
 }
 
 LatteTextureReadbackInfo* VulkanRenderer::texture_createReadback(LatteTextureView* textureView)
@@ -4459,7 +4863,8 @@ std::pair<VkBuffer, uint32> VulkanRenderer::buffer_genStrideWorkaroundVertexBuff
 	uint32 newStride = oldStride + (4-(oldStride % 4));
 	uint32 newSize = size / oldStride * newStride;
 
-	auto new_buffer_alloc = memoryManager->getMetalStrideWorkaroundAllocator().AllocateBufferMemory(newSize, 128);
+	// 16 bytes of tail: an attribute on the last vertex can be wider than the stride and must not read past the allocation
+	auto new_buffer_alloc = memoryManager->getMetalStrideWorkaroundAllocator().AllocateBufferMemory(newSize + 16, 128);
 
 	std::span<uint8> new_buffer{new_buffer_alloc.memPtr, new_buffer_alloc.size};
 
@@ -4495,7 +4900,10 @@ void VulkanRenderer::bufferCache_init(const sint32 bufferSize)
 	m_importedMemBaseAddress = 0x10000000;
 	size_t hostAllocationSize = 0x40000000ull;
 	// todo - get size of allocation
-	bool configUseHostMemory = false; // todo - replace this with a config option
+	// Off by default. Switch: MUFFIN_VK_HOST_MAPPED=1 (UserDefaults muffin.vk.hostMapped on iOS). On iOS it is part of the test
+	// mitigations for the GPU page fault, so the cache is always an ordinary device buffer unless the switch is set.
+	const char* hostMappedSwitch = getenv("MUFFIN_VK_HOST_MAPPED");
+	bool configUseHostMemory = hostMappedSwitch && hostMappedSwitch[0] != '\0' && hostMappedSwitch[0] != '0';
 	m_useHostMemoryForCache = false;
 	if (m_featureControl.deviceExtensions.external_memory_host && configUseHostMemory)
 	{
@@ -4506,7 +4914,10 @@ void VulkanRenderer::bufferCache_init(const sint32 bufferSize)
 		}
 	}
 	if(!m_useHostMemoryForCache)
-		memoryManager->CreateBuffer(bufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 0, m_bufferCache, m_bufferCacheMemory);
+		// The heap hands out offsets below bufferSize only. The extra guard keeps every vertex fetch (an attribute wider than its
+		// stride on the last vertex) and every dynamic-offset uniform binding (offset + the fixed 64 KB range) inside the VkBuffer,
+		// because Apple GPUs fault on a read past the end of a buffer.
+		memoryManager->CreateBuffer((VkDeviceSize)bufferSize + 64 * 1024 + 256, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 0, m_bufferCache, m_bufferCacheMemory);
 }
 
 void VulkanRenderer::bufferCache_upload(uint8* buffer, sint32 size, uint32 bufferOffset)
@@ -4635,13 +5046,16 @@ void VulkanRenderer::AppendOverlayDebugInfo()
 void VKRDestructibleObject::flagForCurrentCommandBuffer()
 {
 	m_lastCmdBufferId = VulkanRenderer::GetInstance()->GetCurrentCommandBufferId();
+	m_lastFrame = VulkanRenderer::GetInstance()->GetFramesPresented();
 }
 
 bool VKRDestructibleObject::canDestroy()
 {
 	if (m_refCount > 0)
 		return false;
-	return VulkanRenderer::GetInstance()->HasCommandBufferFinished(m_lastCmdBufferId);
+	if (!VulkanRenderer::GetInstance()->HasCommandBufferFinished(m_lastCmdBufferId))
+		return false;
+	return VulkanRenderer::GetInstance()->HasFrameDelayElapsed(m_lastFrame);
 }
 
 VKRObjectTexture::VKRObjectTexture()
@@ -4777,16 +5191,23 @@ void VKRObjectSampler::DestroyCache()
 	// assuming all other objects which depend on vkSampler are destroyed, this cache should also have been emptied already
 	// but just to be sure lets still clear the cache
 	cemu_assert_debug(s_samplerCache.empty());
-	for(auto& sampler : s_samplerCache)
+	// ~VKRObjectSampler erases its own entry from s_samplerCache, so deleting while iterating the map would follow a
+	// freed node (a crash on every Vulkan shutdown). Take the entries out first.
+	std::unordered_map<uint64, VKRObjectSampler*> samplers;
+	samplers.swap(s_samplerCache);
+	for(auto& sampler : samplers)
 	{
 		cemu_assert_debug(sampler.second->m_refCount == 0);
 		delete sampler.second;
 	}
-	s_samplerCache.clear();
 }
 
 VKRObjectRenderPass::VKRObjectRenderPass(AttachmentInfo_t& attachmentInfo, sint32 colorAttachmentCount)
 {
+	VulkanRenderer* vkRenderer = VulkanRenderer::GetInstance();
+	bool useAttachmentFeedbackLoop = vkRenderer->UseAttachmentFeedbackLoop();
+	VkImageLayout attachmentLayout = useAttachmentFeedbackLoop ? VK_IMAGE_LAYOUT_ATTACHMENT_FEEDBACK_LOOP_OPTIMAL_EXT : VK_IMAGE_LAYOUT_GENERAL;
+
 	// generate helper hash for pipeline state
 	uint64 stateHash = 0;
 	for (int i = 0; i < Latte::GPU_LIMITS::NUM_COLOR_ATTACHMENTS; ++i)
@@ -4820,7 +5241,7 @@ VKRObjectRenderPass::VKRObjectRenderPass(AttachmentInfo_t& attachmentInfo, sint3
 		m_colorAttachmentFormat[i] = attachmentInfo.colorAttachment[i].format;
 
 		color_attachments_references[i].attachment = (uint32)attachments_descriptions.size();
-		color_attachments_references[i].layout = VK_IMAGE_LAYOUT_GENERAL;
+		color_attachments_references[i].layout = attachmentLayout;
 
 		VkAttachmentDescription entry{};
 		entry.format = attachmentInfo.colorAttachment[i].format;
@@ -4829,8 +5250,8 @@ VKRObjectRenderPass::VKRObjectRenderPass(AttachmentInfo_t& attachmentInfo, sint3
 		entry.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		entry.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		entry.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		entry.initialLayout = VK_IMAGE_LAYOUT_GENERAL;
-		entry.finalLayout = VK_IMAGE_LAYOUT_GENERAL;
+		entry.initialLayout = attachmentLayout;
+		entry.finalLayout = attachmentLayout;
 		attachments_descriptions.emplace_back(entry);
 
 		numColorAttachments = i + 1;
@@ -4847,7 +5268,7 @@ VKRObjectRenderPass::VKRObjectRenderPass(AttachmentInfo_t& attachmentInfo, sint3
 	{
 		hasDepthStencilAttachment = true;
 		depth_stencil_attachments_references.attachment = (uint32)attachments_descriptions.size();
-		depth_stencil_attachments_references.layout = VK_IMAGE_LAYOUT_GENERAL;
+		depth_stencil_attachments_references.layout = attachmentLayout;
 		m_depthAttachmentFormat = attachmentInfo.depthAttachment.format;
 
 		VkAttachmentDescription entry{};
@@ -4865,8 +5286,8 @@ VKRObjectRenderPass::VKRObjectRenderPass(AttachmentInfo_t& attachmentInfo, sint3
 			entry.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 			entry.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		}
-		entry.initialLayout = VK_IMAGE_LAYOUT_GENERAL;
-		entry.finalLayout = VK_IMAGE_LAYOUT_GENERAL;
+		entry.initialLayout = attachmentLayout;
+		entry.finalLayout = attachmentLayout;
 		attachments_descriptions.emplace_back(entry);
 	}
 
@@ -4887,12 +5308,29 @@ VKRObjectRenderPass::VKRObjectRenderPass(AttachmentInfo_t& attachmentInfo, sint3
 	renderPassInfo.subpassCount = 1;
 	renderPassInfo.pSubpasses = &subpass;
 
-	renderPassInfo.pDependencies = nullptr;
-	renderPassInfo.dependencyCount = 0;
+	VkSubpassDependency feedbackLoopDependency{};
+	if (useAttachmentFeedbackLoop)
+	{
+		feedbackLoopDependency.srcSubpass = 0;
+		feedbackLoopDependency.dstSubpass = 0;
+		feedbackLoopDependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+		feedbackLoopDependency.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+		feedbackLoopDependency.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+		feedbackLoopDependency.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+		feedbackLoopDependency.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT | VK_DEPENDENCY_FEEDBACK_LOOP_BIT_EXT;
+		renderPassInfo.pDependencies = &feedbackLoopDependency;
+		renderPassInfo.dependencyCount = 1;
+	}
+	else
+	{
+		renderPassInfo.pDependencies = nullptr;
+		renderPassInfo.dependencyCount = 0;
+	}
 	// before Cemu 1.25.5 we used zero here, which means implicit synchronization. For 1.25.5 it was changed to 2 (using the subpass dependencies above)
 	// Reverted this again to zero for Cemu 1.25.5b as the performance cost is just too high. Manual synchronization is preferred
+	// as of Cemu 2.7 we are now using VK_EXT_attachment_feedback_loop_layout with a matching renderpass dependency if supported. Otherwise we are falling back to the above
 
-	if (vkCreateRenderPass(VulkanRenderer::GetInstance()->GetLogicalDevice(), &renderPassInfo, nullptr, &m_renderPass) != VK_SUCCESS)
+	if (vkCreateRenderPass(vkRenderer->GetLogicalDevice(), &renderPassInfo, nullptr, &m_renderPass) != VK_SUCCESS)
 	{
 		cemuLog_log(LogType::Force, "Vulkan-Error: Failed to create render pass");
 		throw std::runtime_error("failed to create render pass!");

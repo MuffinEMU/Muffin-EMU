@@ -1,4 +1,10 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import SwiftUI
+import UIKit
 
 /// Settings keys for the overlay rows, one @AppStorage key each, matching CemuConfig's
 /// `overlay` struct. `cpuMode` has a key and default (GameManager still pushes it) but no
@@ -36,21 +42,22 @@ enum OverlaySettings {
     static let defaultDebug = true // matches CemuConfig's overlay.debug default
 }
 
-/// Text binding for a packed 0xAARRGGBB colour. Accepts a 6-digit RGB hex (treated as
-/// fully opaque) or an 8-digit ARGB one; anything else is left uncommitted.
-func hexColourBinding(_ value: Binding<Int>) -> Binding<String> {
+/// Colour binding over a packed 0xAARRGGBB value, for a ColorPicker. Always fully opaque on the
+/// way out: a see-through text colour only ever made the readout hard to find. (The old
+/// hex text field rejected every keystroke until a whole 6 or 8 digit value was pasted.)
+func packedColourBinding(_ value: Binding<Int>) -> Binding<Color> {
     Binding {
-        String(format: "#%08X", UInt32(truncatingIfNeeded: value.wrappedValue))
+        let packed = UInt32(truncatingIfNeeded: value.wrappedValue)
+        return Color(.sRGB,
+                     red: Double((packed >> 16) & 0xFF) / 255,
+                     green: Double((packed >> 8) & 0xFF) / 255,
+                     blue: Double(packed & 0xFF) / 255,
+                     opacity: 1)
     } set: { newValue in
-        let cleaned = newValue
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "#", with: "")
-        guard let parsed = UInt32(cleaned, radix: 16) else { return }
-        switch cleaned.count {
-        case 6: value.wrappedValue = Int(0xFF000000 | parsed)
-        case 8: value.wrappedValue = Int(parsed)
-        default: return
-        }
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        guard UIColor(newValue).getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return }
+        func byte(_ component: CGFloat) -> UInt32 { UInt32(max(0, min(1, component)) * 255 + 0.5) }
+        value.wrappedValue = Int(0xFF000000 | (byte(red) << 16) | (byte(green) << 8) | byte(blue))
     }
 }
 
@@ -68,6 +75,9 @@ struct OverlaySettingsSection: View {
     @AppStorage(OverlaySettings.ramUsageKey) private var ramUsageEnabled = OverlaySettings.defaultRamUsage
     @AppStorage(OverlaySettings.vramUsageKey) private var vramUsageEnabled = OverlaySettings.defaultVramUsage
     @AppStorage(OverlaySettings.debugKey) private var debugEnabled = OverlaySettings.defaultDebug
+    @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
+
+    private var advanced: Bool { SettingsMode.isAdvanced(raw: settingsModeRaw) }
 
     private var position: ScreenPosition {
         ScreenPosition(rawValue: positionRaw) ?? .disabled
@@ -78,15 +88,20 @@ struct OverlaySettingsSection: View {
     var body: some View {
         Section {
             positionPicker
-            textColorField
-            textScaleSlider
+            // Position and Show FPS are the overlay's on/off; the rest is Advanced mode only (see AdvancedSettings).
+            if advanced {
+                textColorField
+                textScaleSlider
+            }
             fpsToggle
-            drawcallsToggle
-            cpuUsageToggle
-            cpuPerCoreUsageToggle
-            ramUsageToggle
-            vramUsageToggle
-            debugToggle
+            if advanced {
+                drawcallsToggle
+                cpuUsageToggle
+                cpuPerCoreUsageToggle
+                ramUsageToggle
+                vramUsageToggle
+                debugToggle
+            }
         } header: {
             SettingsSectionHeader("Performance Overlay", icon: "speedometer", accent: .io)
         } footer: {
@@ -117,26 +132,19 @@ struct OverlaySettingsSection: View {
         }
     }
 
-    private var textColorHex: Binding<String> { hexColourBinding($textColor) }
-
     private var textColorField: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Text Color")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-            TextField("AARRGGBB", text: textColorHex)
-                .textInputAutocapitalization(.characters)
-                .autocorrectionDisabled()
-        }
-        .disabled(isOff)
-        .onChange(of: textColor) { newValue in
-            cemu_bridge_set_overlay_text_color(UInt32(truncatingIfNeeded: newValue))
-        }
+        ColorPicker("Text colour", selection: packedColourBinding($textColor), supportsOpacity: false)
+            .font(.system(size: 15, weight: .semibold, design: .rounded))
+            .disabled(isOff)
+            .onChange(of: textColor) { newValue in
+                cemu_bridge_set_overlay_text_color(UInt32(truncatingIfNeeded: newValue))
+            }
     }
 
     private var textScaleSlider: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text("Text Scale")
+                Text("Text size")
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                 Spacer()
                 Text("\(textScale)%")
@@ -167,7 +175,7 @@ struct OverlaySettingsSection: View {
 
     private var drawcallsToggle: some View {
         Toggle(isOn: $drawcallsEnabled) {
-            Text("Draw Calls")
+            Text("Show draw calls")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.accentText)
@@ -179,7 +187,7 @@ struct OverlaySettingsSection: View {
 
     private var cpuUsageToggle: some View {
         Toggle(isOn: $cpuUsageEnabled) {
-            Text("Show CPU Usage")
+            Text("Show CPU usage")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.accentText)
@@ -191,7 +199,7 @@ struct OverlaySettingsSection: View {
 
     private var cpuPerCoreUsageToggle: some View {
         Toggle(isOn: $cpuPerCoreUsageEnabled) {
-            Text("CPU Per Core Usage")
+            Text("Show CPU usage per core")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.accentText)
@@ -203,7 +211,7 @@ struct OverlaySettingsSection: View {
 
     private var ramUsageToggle: some View {
         Toggle(isOn: $ramUsageEnabled) {
-            Text("Show RAM Usage")
+            Text("Show RAM usage")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.accentText)
@@ -215,7 +223,7 @@ struct OverlaySettingsSection: View {
 
     private var vramUsageToggle: some View {
         Toggle(isOn: $vramUsageEnabled) {
-            Text("VRAM Usage")
+            Text("Show VRAM usage")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.accentText)
@@ -227,7 +235,7 @@ struct OverlaySettingsSection: View {
 
     private var debugToggle: some View {
         Toggle(isOn: $debugEnabled) {
-            Text("Debug")
+            Text("Show debug info")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.accentText)
@@ -239,9 +247,13 @@ struct OverlaySettingsSection: View {
 
     private var fullText: String {
         """
-        The overlay is the engine's own readout, like desktop Cemu's. Position picks a corner of the TV screen; Off hides it.
+        The overlay is the engine's own readout. Position picks a corner of the TV screen; Off hides it, and the other rows stay dimmed until a corner is chosen.
 
-        FPS is the frame rate the game is producing. CPU, per-core CPU, RAM and VRAM usage measure MuffinEMU itself, not the whole device. Draw Calls counts draw commands in the current frame. Debug adds a few lines of renderer state.
+        FPS is the frame rate the game is producing. CPU, per-core CPU, RAM and VRAM usage measure MuffinEMU itself, not the whole device. Draw calls counts draw commands in the current frame. Debug info adds a few lines of renderer state.
+
+        The panel only appears while at least one of FPS, draw calls, CPU, per-core CPU or RAM is on. VRAM usage and debug info are extra lines inside it, so on their own they show nothing.
+
+        Text size and colour change the readout's look. Changes show up straight away.
         """
     }
 }

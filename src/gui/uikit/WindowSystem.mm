@@ -147,31 +147,125 @@ void CaptureInput(const ControllerState&, const ControllerState&)
 
 
 
+// ---------------------------------------------------------------------------
+// Error dialogs
+//
+// Alerts are shown one at a time from the top-most view controller, so one that arrives while a sheet or a
+// full-screen cover is open still appears (presenting from the root would fail silently there). One that arrives
+// while another alert, or a transition, is in the way waits its turn instead of being lost.
+
+static NSMutableArray<NSDictionary*>* g_alertQueue = nil;
+static bool g_alertActive = false;
+
+static NSString* AlertString(std::string_view text)
+{
+    // string_view is not guaranteed to be null-terminated, so build a std::string first.
+    const std::string copy(text);
+    return [NSString stringWithUTF8String:copy.c_str()] ?: @"";
+}
+
+static UIViewController* TopPresenter()
+{
+    UIViewController* top = g_mainWindow.rootViewController;
+    if (!top)
+    {
+        for (UIScene* scene in UIApplication.sharedApplication.connectedScenes)
+        {
+            if (![scene isKindOfClass:[UIWindowScene class]])
+                continue;
+            for (UIWindow* window in ((UIWindowScene*)scene).windows)
+            {
+                if (window.isKeyWindow && window.rootViewController)
+                {
+                    top = window.rootViewController;
+                    break;
+                }
+            }
+            if (top)
+                break;
+        }
+    }
+    while (top.presentedViewController && !top.presentedViewController.isBeingDismissed)
+        top = top.presentedViewController;
+    return top;
+}
+
+// Main thread only.
+static void PumpAlerts(int attempt)
+{
+    if (g_alertActive || g_alertQueue.count == 0)
+        return;
+    UIViewController* top = TopPresenter();
+    if (!top || top.isBeingPresented || top.isBeingDismissed || [top isKindOfClass:[UIAlertController class]])
+    {
+        if (attempt < 100)
+        {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                PumpAlerts(attempt + 1);
+            });
+            return;
+        }
+        // Nothing could present for about ten seconds. Release everyone waiting rather than hold them forever.
+        NSArray<NSDictionary*>* dropped = [g_alertQueue copy];
+        [g_alertQueue removeAllObjects];
+        for (NSDictionary* job in dropped)
+        {
+            dispatch_block_t done = job[@"done"];
+            if (done)
+                done();
+        }
+        return;
+    }
+
+    NSDictionary* job = g_alertQueue.firstObject;
+    [g_alertQueue removeObjectAtIndex:0];
+    g_alertActive = true;
+
+    UIAlertController* alert = [UIAlertController alertControllerWithTitle:job[@"title"]
+                                                                   message:job[@"message"]
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    dispatch_block_t done = job[@"done"];
+    [alert addAction:[UIAlertAction actionWithTitle:@"OK"
+                                              style:UIAlertActionStyleDefault
+                                            handler:^(UIAlertAction* _Nonnull) {
+        g_alertActive = false;
+        if (done)
+            done();
+        PumpAlerts(0);
+    }]];
+    [top presentViewController:alert animated:YES completion:nil];
+}
+
+static void EnqueueAlert(NSString* title, NSString* message, dispatch_block_t done)
+{
+    NSDictionary* job = @{
+        @"title": title.length ? title : @"MuffinEMU",
+        @"message": message ?: @"",
+        @"done": done ?: ^{}
+    };
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!g_alertQueue)
+            g_alertQueue = [NSMutableArray array];
+        [g_alertQueue addObject:job];
+        PumpAlerts(0);
+    });
+}
+
+// Callers on a worker thread (guest memory setup, the title loader) often exit the process the moment this returns, so
+// from any thread but the main one the call waits until the alert is dismissed. On the main thread it can't wait: the
+// alert is shown by that same thread's run loop.
 void ShowErrorDialog(std::string_view message,
                      std::string_view title,
                      std::optional<ErrorCategory>)
 {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        NSString* msg = [NSString stringWithUTF8String:message.data()];
-        NSString* ttl = [NSString stringWithUTF8String:title.data()];
-
-        UIAlertController* alert =
-        [UIAlertController alertControllerWithTitle:ttl
-                                            message:msg
-                                     preferredStyle:UIAlertControllerStyleAlert];
-
-        UIAlertAction* ok =
-        [UIAlertAction actionWithTitle:@"OK"
-                                 style:UIAlertActionStyleDefault
-                               handler:nil];
-
-        [alert addAction:ok];
-
-        [g_mainWindow.rootViewController
-            presentViewController:alert
-                         animated:YES
-                       completion:nil];
+    const bool onMain = [NSThread isMainThread];
+    dispatch_semaphore_t dismissed = onMain ? nil : dispatch_semaphore_create(0);
+    EnqueueAlert(AlertString(title), AlertString(message), ^{
+        if (dismissed)
+            dispatch_semaphore_signal(dismissed);
     });
+    if (dismissed)
+        dispatch_semaphore_wait(dismissed, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(300 * NSEC_PER_SEC)));
 }
 
 }
@@ -180,25 +274,7 @@ void ShowErrorDialog(std::string_view title,
                      std::string_view message,
                      void (^callback)(void))
 {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        NSString* msg = [NSString stringWithUTF8String:message.data()];
-        NSString* ttl = [NSString stringWithUTF8String:title.data()];
-
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:msg
-                                                                       message:ttl
-                                                                preferredStyle:UIAlertControllerStyleAlert];
-
-        UIAlertAction *okAction = [UIAlertAction actionWithTitle:@"OK"
-                                                          style:UIAlertActionStyleDefault
-                                                        handler:^(UIAlertAction * _Nonnull action) {
-            if (callback) {
-                callback();
-            }
-        }];
-
-        [alert addAction:okAction];
-        [g_mainWindow.rootViewController presentViewController:alert animated:YES completion:nil];
-    });
+    EnqueueAlert(AlertString(title), AlertString(message), callback);
 }
 
 
@@ -226,8 +302,9 @@ void CemuUIKit_SetMainView(UIView* view)
         ? view.window.screen.nativeScale
         : UIScreen.mainScreen.nativeScale;
 
+    // __bridge, not __bridge_retained: nothing ever released the extra retain, so every title launch leaked a layer. g_mainView keeps it alive.
     WindowHandleInfo info { WindowHandleInfo::Backend::UIKit, view,
-                            (__bridge_retained CAMetalLayer*)view.layer };
+                            (__bridge void*)view.layer };
     g_windowInfo.window_main = info;
     g_windowInfo.canvas_main = info;
 }
@@ -309,7 +386,14 @@ void CemuUIKit_UpdateMainWindowSize(CGFloat width, CGFloat height, CGFloat scale
 
         // Keep the Metal layer's drawableSize in step with the window; nothing else on iOS resizes it
         // after the initial InitializeLayer(). Vulkan/MoltenVK reads the layer size itself on the next
-        // swapchain rebuild.
+        // swapchain rebuild, from bounds * contentsScale, so the scale has to be on the layer by then
+        // (a mid-game render-scale change, e.g. the thermal cool-down, would otherwise keep the old size).
+        if (!metal && g_mainView)
+        {
+            CAMetalLayer* layer = (CAMetalLayer*)g_mainView.layer;
+            if (layer.contentsScale != resolvedScale)
+                layer.contentsScale = resolvedScale;
+        }
 #ifdef ENABLE_METAL
         if (metal)
         {
@@ -329,7 +413,8 @@ void CemuUIKit_SetPadView(UIView* view)
 {
     g_padView = view;
 
-    WindowHandleInfo info { WindowHandleInfo::Backend::UIKit, view, (__bridge_retained CAMetalLayer*)view.layer };
+    // __bridge: g_padView keeps the layer alive (see CemuUIKit_SetMainView)
+    WindowHandleInfo info { WindowHandleInfo::Backend::UIKit, view, (__bridge void*)view.layer };
 
     g_windowInfo.window_pad = info;
     g_windowInfo.canvas_pad = info;
@@ -457,6 +542,11 @@ void CemuUIKit_DescribeMainSurface(char* out, size_t outSize)
 void CemuUIKit_SetVisibleOutputs(bool tv, bool pad)
 {
     g_windowInfo.visible_outputs.store((tv ? 1u : 0u) | (pad ? 2u : 0u));
+}
+
+void CemuUIKit_SetOutputSources(bool mainShowsGamePad, bool padShowsTV)
+{
+    g_windowInfo.output_sources.store((mainShowsGamePad ? 1u : 0u) | (padShowsTV ? 2u : 0u));
 }
 
 void CemuUIKit_SetDRCPrimary(bool enabled)

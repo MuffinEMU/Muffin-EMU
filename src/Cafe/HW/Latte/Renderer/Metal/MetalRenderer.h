@@ -4,6 +4,7 @@
 
 #include "Cafe/HW/Latte/Renderer/Metal/MetalLayerHandle.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalPerformanceMonitor.h"
+#include "Cafe/HW/Latte/Renderer/Metal/MetalEncoderResidency.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalOutputShaderCache.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalAttachmentsInfo.h"
 #include "Common/DeviceCapabilities.h"
@@ -311,6 +312,9 @@ public:
 	void DeleteFontTextures() override;
 
 	bool UseTFViaSSBO() const override { return true; }
+	// No mesh shaders: geometry-shader and RECTS draws run as two compute kernels plus a passthrough vertex shader. Baked into
+	// every shader generated, and fixed by the hardware, so it can never change while a title runs.
+	bool UseGeometryShaderEmulation() const override { return !m_supportsMeshShaders && m_emulateMissingEffects; }
 	void AppendOverlayDebugInfo() override;
 
 	// rendertarget
@@ -337,6 +341,9 @@ public:
 
 		void texture_setLatteTexture(LatteTextureView* textureView, uint32 textureUnit) override;
 		void texture_notifyDelete(LatteTextureView* textureView);
+		// Copy raw BC blocks, written through an uncompressed alias surface, into a compressed texture this GPU stores as a transcode
+		// (ASTC or decoded). Returns nullptr when the copy was done, otherwise the reason it could not be.
+		const char* CopyRawBlocksIntoTranscodedTexture(LatteTexture* src, sint32 srcMip, sint32 srcX, sint32 srcY, sint32 srcSlice, LatteTexture* dst, sint32 dstMip, sint32 dstX, sint32 dstY, sint32 dstSlice, sint32 blocksW, sint32 blocksH, sint32 sliceCount);
 		void texture_copyImageSubData(LatteTexture* src, sint32 srcMip, sint32 effectiveSrcX, sint32 effectiveSrcY, sint32 srcSlice, LatteTexture* dst, sint32 dstMip, sint32 effectiveDstX, sint32 effectiveDstY, sint32 dstSlice, sint32 effectiveCopyWidth, sint32 effectiveCopyHeight, sint32 srcDepth) override;
 
 	LatteTextureReadbackInfo* texture_createReadback(LatteTextureView* textureView) override;
@@ -369,6 +376,11 @@ public:
 
 	// minIndex/fetchVertexManually let the snapshot cache upload only the range a draw
 	// actually reads - see the firstByte computation in the implementation.
+	// Geometry-shader emulation. Returns false when the draw produced nothing (counted and logged as skipped when it was a draw that should have rendered).
+	bool RunGeometryEmulation(struct PipelineObject* pipelineObj, bool isRects, LatteDecompilerShader* vertexShader, LatteDecompilerShader* geometryShader, LattePrimitiveMode primitiveMode, uint32 count, uint32 instanceCount, uint32& drawVertexCount, MTL::PrimitiveType& drawPrimitiveType);
+	bool EnsureGeometryEmulationBuffers(uint64 payloadBytes, uint64 outBytes, uint64 primCountBytes);
+	void ReleaseGeometryEmulationBuffers();
+	void LogGeometryEmulationSummary(const char* when);
 	void draw_updateVertexBuffersDirectAccess(uint32 minIndex, uint32 maxIndex, uint32 baseInstance, uint32 instanceCount, bool fetchVertexManually);
 	void draw_updateUniformBuffersDirectAccess(LatteDecompilerShader* shader, const uint32 uniformBufferRegOffset);
     void PrepareUniformBufferSizes(LatteDecompilerShader* shader);
@@ -450,6 +462,8 @@ public:
     void ResetEncoderState()
     {
         m_state.m_encoderState = {};
+        // Residency declared on the previous encoder means nothing to this one
+        m_encoderResidency.Reset();
 
         // TODO: set viewport and scissor to render target dimensions if render commands
 
@@ -470,6 +484,7 @@ public:
     }
 
     void SetBuffer(MTL::RenderCommandEncoder* renderCommandEncoder, MetalShaderType shaderType, MTL::Buffer* buffer, size_t offset, uint32 index);
+    void SetBytes(MTL::RenderCommandEncoder* renderCommandEncoder, MetalShaderType shaderType, const void* bytes, uint32 length, uint32 index);
     void SetTexture(MTL::RenderCommandEncoder* renderCommandEncoder, MetalShaderType shaderType, MTL::Texture* texture, uint32 index);
     void SetSamplerState(MTL::RenderCommandEncoder* renderCommandEncoder, MetalShaderType shaderType, MTL::SamplerState* samplerState, uint32 index);
 
@@ -483,9 +498,13 @@ public:
     void ProcessFinishedCommandBuffers();
 
     bool AcquireDrawable(bool mainWindow);
+#if BOOST_OS_IOS
+    // "Record screen": draws the picture just presented into the recording's own buffer. See IOSScreenRecorder.mm.
+    void EncodeScreenRecordingFrame(MTL::Texture* source, MTL::RenderPipelineState* pipeline, uint8 shaderType, bool useLinearTexFilter, bool padView);
+#endif
 
 	bool CheckIfRenderPassNeedsFlush(LatteDecompilerShader* shader);
-	bool BindStageResources(MTL::RenderCommandEncoder* renderCommandEncoder, LatteDecompilerShader* shader, bool usesGeometryShader);
+	bool BindStageResources(MTL::RenderCommandEncoder* renderCommandEncoder, LatteDecompilerShader* shader, bool usesGeometryShader, MTL::ComputeCommandEncoder* computeCommandEncoder = nullptr);
 
     void ClearColorTextureInternal(MTL::Texture* mtlTexture, sint32 sliceIndex, sint32 mipIndex, float r, float g, float b, float a);
 
@@ -620,6 +639,22 @@ private:
 	bool m_hasUnifiedMemory;
 	bool m_supportsMetal3;
 	bool m_supportsMeshShaders;
+	// emulate_missing_effects, read once at Initialize: shaders bake the choice in, so it cannot change while a title runs
+	bool m_emulateMissingEffects = false;
+	// Scratch the emulated geometry stages hand to each other and to the passthrough vertex shader. Private memory, regrown on demand.
+	MTL::Buffer* m_gsPayloadBuffer = nullptr;
+	MTL::Buffer* m_gsOutBuffer = nullptr;
+	MTL::Buffer* m_gsPrimCountBuffer = nullptr;
+	uint64 m_gsPayloadBufferSize = 0;
+	uint64 m_gsOutBufferSize = 0;
+	uint64 m_gsPrimCountBufferSize = 0;
+	// Per session: what was emulated and what was still skipped. Skipped should read 0; each reason is logged the first time it happens.
+	uint64 m_gsEmulatedDraws = 0;
+	uint64 m_gsSkippedDraws = 0;
+	uint64 m_rectEmulatedDraws = 0;
+	uint64 m_rectSkippedDraws = 0;
+	uint32 m_gsSkipReasonsLogged = 0;
+	uint64 m_gsMaxScratchBytes = 0; // scratch cap, scaled with physical RAM when the buffers are first requested
 	MTL::ArgumentBuffersTier m_argumentBufferTier{MTL::ArgumentBuffersTier1};
 	uint32 m_maxArgumentBufferSamplerCount{};
 	uint32 m_recommendedMaxVRAMUsage;
@@ -684,6 +719,8 @@ private:
 	std::vector<uint32> m_executingQueueGenerations; // command queue generation each executing command buffer was made on, same order
 	MetalEncoderType m_encoderType = MetalEncoderType::None;
 	MTL::CommandEncoder* m_commandEncoder = nullptr;
+	// What the current render encoder has already been told to keep resident (see BindStageResources)
+	MetalEncoderResidency m_encoderResidency;
 
     uint32 m_recordedDrawcalls;
     // Submits recorded work that has sat unsubmitted while the command processor was idle (see NotifyLatteCommandProcessorIdle())
@@ -700,9 +737,8 @@ private:
     uint64 m_startAvailableMemory = 0;
 
     // Draw breadcrumbs (see MetalDrawBreadcrumb)
-    // Ring capacity is chosen from the device's physical memory when the renderer is created (about 0.7 KB per
-    // entry): 1024 draws on devices with 6 GB or more, fewer on small ones, so a low-memory iPhone does not
-    // pay for a trail it rarely needs while a big iPad keeps a long one.
+    // Ring capacity is set when the renderer is created, large enough to cover every draw in the command buffers
+    // that can be in flight at once. It is the same on every device (about 1 KB per entry).
     uint32 m_breadcrumbCapacity = 1024;
     std::vector<MetalDrawBreadcrumb> m_breadcrumbs;
     uint32 m_breadcrumbNext = 0;

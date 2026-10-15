@@ -32,6 +32,12 @@ IAudioAPI::IAudioAPI(uint32 samplerate, uint32 channels, uint32 samples_per_bloc
 void IAudioAPI::PrintLogging()
 {
     cemuLog_log(LogType::Force, "------- Init Audio backend -------");
+#if BOOST_OS_IOS
+    // Only the iOS backend exists on this platform; listing the Windows and desktop ones as "not supported" on
+    // every launch was noise that read like a problem.
+    cemuLog_log(LogType::Force, "iOS: {}", s_availableApis[IOSAudio] ? "available" : "not supported");
+    return;
+#endif
     cemuLog_log(LogType::Force, "DirectSound: {}", s_availableApis[DirectSound] ? "available" : "not supported");
     cemuLog_log(LogType::Force, "XAudio 2.8: {}", s_availableApis[XAudio2] ? "available" : "not supported");
     if (!s_availableApis[XAudio2])
@@ -40,9 +46,6 @@ void IAudioAPI::PrintLogging()
     }
 
     cemuLog_log(LogType::Force, "Cubeb: {}", s_availableApis[Cubeb] ? "available" : "not supported");
-#if BOOST_OS_IOS
-    cemuLog_log(LogType::Force, "iOS: {}", s_availableApis[IOSAudio] ? "available" : "not supported");
-#endif
 }
 
 void IAudioAPI::InitWFX(sint32 samplerate, sint32 channels, sint32 bits_per_sample)

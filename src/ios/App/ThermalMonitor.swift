@@ -1,8 +1,53 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import Foundation
 import Combine
 #if os(iOS)
 import UIKit
 #endif
+
+/// Thermal settings and state that other code reads from anywhere. Outside the main-actor class below
+/// so RenderScale.current and the Advanced registry can use them without hopping actors.
+enum ThermalSettings {
+    static let scaleKey = "muffin.thermal.scaleBeforeThrottle"
+
+    /// The remembered Resolution is stored for as long as a throttle is in effect.
+    static var isHoldingScale: Bool { UserDefaults.standard.string(forKey: scaleKey) != nil }
+
+    /// Which thermal state starts the automatic cool-down (Settings > CPU, Advanced mode).
+    static let thresholdKey = "muffin.thermal.coolDownThreshold"
+    static let defaultThreshold = Threshold.serious
+
+    enum Threshold: String, CaseIterable, Identifiable {
+        /// iOS has started to throttle. The default: lowering the pixel count gives frames back.
+        case serious
+        /// iOS is throttling hard. The game keeps full quality for longer.
+        case critical
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .serious:  return "Serious"
+            case .critical: return "Critical"
+            }
+        }
+
+        var summary: String {
+            switch self {
+            case .serious:  return "Cools down as soon as iOS starts slowing the device."
+            case .critical: return "Waits until iOS is slowing the device hard. The game keeps its quality longer, and may stutter or run hot first."
+            }
+        }
+    }
+
+    static var threshold: Threshold {
+        Threshold(rawValue: UserDefaults.standard.string(forKey: thresholdKey) ?? "") ?? defaultThreshold
+    }
+}
 
 /// Reads `ProcessInfo.thermalState` and, when the device gets hot, lowers Render Scale to
 /// battery saver and (at `.critical`) slows the emulated cores until it cools.
@@ -36,9 +81,14 @@ final class ThermalMonitor: ObservableObject {
 
     /// Persisted so a restore survives the app being killed while hot; otherwise Render Scale
     /// would stay pinned at battery saver with nothing remembering the previous value.
-    private static let scaleBeforeThrottleKey = "muffin.thermal.scaleBeforeThrottle"
+    private static let scaleBeforeThrottleKey = ThermalSettings.scaleKey
     private var isThrottling = false
     private var observing = false
+
+    /// Told, in words for a player, when the automatic response starts or ends. GameManager
+    /// shows it over the game; the response used to lower the picture quality with no sign
+    /// at all. Not called for the title stopping or the setting being switched off.
+    var onNotice: (@MainActor (String) -> Void)?
 
     private init() {}
 
@@ -64,6 +114,11 @@ final class ThermalMonitor: ObservableObject {
         UserDefaults.standard.set(chosen.rawValue, forKey: RenderScale.storageKey)
         userChosenScale = nil
         cemu_bridge_log_line("iOS thermal: last run ended while throttled; restored render scale to \(chosen.rawValue)")
+    }
+
+    /// The threshold was changed in Settings: apply it to the state the device is in now.
+    func thresholdChanged() {
+        applyAutoThrottleIfNeeded()
     }
 
     /// Idempotent.
@@ -105,11 +160,14 @@ final class ThermalMonitor: ObservableObject {
     private func applyAutoThrottleIfNeeded() {
         guard autoThrottleEnabled else {
             // Turning the setting off mid-throttle has to unwind, not freeze in place.
+            cooldownTask?.cancel()
+            cooldownTask = nil
             if isThrottling { unwind(reason: "auto-reduce turned off") }
             return
         }
 
-        let shouldThrottle = (state == .serious || state == .critical)
+        // Serious and critical by default; with the threshold on Critical, only critical.
+        let shouldThrottle = state == .critical || (state == .serious && ThermalSettings.threshold == .serious)
 
         // Re-applied on every change while hot so .serious -> .critical escalates.
         let micros: UInt32 = shouldThrottle ? throttleMicros(for: state) : 0
@@ -117,16 +175,37 @@ final class ThermalMonitor: ObservableObject {
 
         if shouldThrottle && !isThrottling {
             // Remember the user's choice before overwriting it.
-            userChosenScale = RenderScale.current
+            userChosenScale = RenderScale.storedChoice
             // Battery saver, and only from .serious upward.
             UserDefaults.standard.set(RenderScale.battery.rawValue, forKey: RenderScale.storageKey)
             isThrottling = true
             DisplayRouter.shared.reapplyRenderScale(reason: "thermal state \(description)")
             cemu_bridge_log_line("iOS thermal: reduced render scale to battery saver while hot")
-        } else if !shouldThrottle && isThrottling {
-            unwind(reason: "cooled to \(description)")
+            // Already on battery saver: the picture didn't change, so there's nothing to tell the player.
+            if userChosenScale != .battery {
+                onNotice?("The device is hot, so MuffinEMU made the picture softer to keep the game running. It goes back when the device cools.")
+            }
+            cooldownTask?.cancel()
+            cooldownTask = nil
+        } else if shouldThrottle {
+            cooldownTask?.cancel()
+            cooldownTask = nil
+        } else if isThrottling && cooldownTask == nil {
+            cooldownTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                guard let self, !Task.isCancelled else { return }
+                self.cooldownTask = nil
+                guard self.isThrottling else { return }
+                // Only when the picture actually goes back: not if it was already battery saver, or the player picked a
+                // different Resolution while it was hot (their choice stands).
+                let pictureReturns = self.userChosenScale.map { $0 != .battery } == true && RenderScale.storedChoice == .battery
+                self.unwind(reason: "cooled to \(self.description)")
+                if pictureReturns { self.onNotice?("The device has cooled down. The picture is back to normal.") }
+            }
         }
     }
+
+    private var cooldownTask: Task<Void, Never>?
 
     /// Puts everything back. Shared by every exit path: cooling down, the setting being
     /// switched off, and the title stopping.
@@ -141,7 +220,7 @@ final class ThermalMonitor: ObservableObject {
     /// Puts the remembered Resolution back, unless the user picked a different one while
     /// throttled (then their new choice stands).
     private func restoreChosenScale() {
-        if let restored = userChosenScale, RenderScale.current == .battery {
+        if let restored = userChosenScale, RenderScale.storedChoice == .battery {
             UserDefaults.standard.set(restored.rawValue, forKey: RenderScale.storageKey)
         }
         userChosenScale = nil
@@ -150,6 +229,8 @@ final class ThermalMonitor: ObservableObject {
     /// Called when a title stops (and before a settings reset), so a throttle is never left
     /// holding the user's Render Scale at battery saver.
     func titleStopped() {
+        cooldownTask?.cancel()
+        cooldownTask = nil
         // Cleared unconditionally: the governor is a C++ atomic that outlives any one title.
         cemu_bridge_set_thermal_throttle_micros(0)
         guard isThrottling else { return }

@@ -49,6 +49,8 @@ typedef NS_ENUM(NSInteger, ObjCCPUMode) {
     ObjCCPUModeDualcoreRecompiler    = 3,
     ObjCCPUModeMulticoreRecompiler   = 4,
     ObjCCPUModeAuto                  = 5,
+    ObjCCPUModeTwocoreRecompiler     = 6,
+    ObjCCPUModeTwocoreInterpreter    = 7,
 };
 
 typedef NS_ENUM(NSInteger, ObjCCafeConsoleLanguage) {
@@ -127,6 +129,7 @@ typedef NS_ENUM(NSInteger, ObjCPrecompiledShaderOption) {
 
 // Metal
 @property (nonatomic) BOOL forceMeshShaders;
+@property (nonatomic) BOOL emulateMissingEffects;
 @property (nonatomic, copy) NSString* _Nonnull gpuCaptureDir;
 @property (nonatomic) BOOL framebufferFetch;
 

@@ -2,6 +2,7 @@
 
 void memory_init();
 void memory_mapForCurrentTitle();
+bool memory_ensureHostRange(uint32 offset, uint32 size); // iOS: reserve host address space behind a guest range before mapping it directly
 void memory_unmapForCurrentTitle();
 
 // Guest ranges that a GPU buffer wraps without copying (Metal imports MEM2 this way). A range that is registered here is never

@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import SwiftUI
 
 /// Where an on-screen overlay is drawn, mirroring CemuConfig.h's own ScreenPosition enum
@@ -30,10 +35,10 @@ enum ScreenPosition: Int, CaseIterable, Identifiable {
         switch self {
         case .disabled:     return "Off"
         case .topLeft:      return "Top Left"
-        case .topCenter:    return "Top Center"
+        case .topCenter:    return "Top Centre"
         case .topRight:     return "Top Right"
         case .bottomLeft:   return "Bottom Left"
-        case .bottomCenter: return "Bottom Center"
+        case .bottomCenter: return "Bottom Centre"
         case .bottomRight:  return "Bottom Right"
         }
     }

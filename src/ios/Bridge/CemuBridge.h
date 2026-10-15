@@ -141,6 +141,22 @@ bool cemu_bridge_has_pad_render_surface(void);
 /// already-registered surface(s) are visible without registering or releasing anything.
 void cemu_bridge_set_visible_outputs(bool tv, bool pad);
 
+/// Which Wii U screen each registered surface shows. By default the TV surface shows the TV screen and the
+/// GamePad surface the GamePad screen. `mainShowsGamePad` makes the TV surface show the GamePad screen instead
+/// and `padShowsTV` makes the GamePad surface show the TV screen, so a second display can repeat the first.
+/// Takes effect on the next frame; no surface is created or released.
+void cemu_bridge_set_output_sources(bool mainShowsGamePad, bool padShowsTV);
+
+/// True once the renderer has a layer behind the registered GamePad surface, i.e. frames can reach it.
+/// Registered without this is a surface nothing draws to.
+bool cemu_bridge_pad_layer_active(void);
+
+/// Gives a registered GamePad surface its layer if it has none. A no-op otherwise.
+void cemu_bridge_ensure_pad_layer(void);
+
+/// Frames presented to the GamePad surface since launch, for judging whether it is being drawn to.
+uint32_t cemu_bridge_pad_present_count(void);
+
 /// The GamePad's own touchscreen - a real Wii U input, and a distinct one from every
 /// button on the pad. `x`/`y` are in the SAME physical-pixel space
 /// cemu_bridge_resize_render_surface()'s width/height already are for the pad surface
@@ -231,6 +247,18 @@ void cemu_bridge_get_progress(CemuBridgeProgress* out);
 /// reuses FSTVolume / TitleInfo, the same engine code every ordinary boot already
 /// depends on to read a disc.
 bool cemu_bridge_start_decrypt(const char* srcPath, const char* destPath, bool toWua);
+
+/// Packs several titles of one game (base, update, DLC) into a single .wua, given as
+/// newline-separated paths (folders, NUS dumps, WUD/WUX; one title each). Shares the
+/// decrypt progress / cancel calls below. Validates before writing: sources from
+/// different games finish with result_status 9, the same title twice with 10. Writes to
+/// destPath + ".part" and renames on success, so an existing destPath survives a failure.
+/// Skips ._* and .DS_Store entries.
+bool cemu_bridge_start_wua_build(const char* sourcePathsNewlineSeparated, const char* destPath);
+
+/// Lists the title roots in a .wua as "titleIdHex16 version" lines into outLines.
+/// Returns the number of titles, or -1 on a bad argument. 0 when it can't be opened.
+int cemu_bridge_wua_list_titles(const char* wuaPath, char* outLines, size_t outSize);
 
 typedef struct {
     bool is_running;
@@ -430,6 +458,14 @@ const char* cemu_bridge_usb_device_create(CemuBridgeUSBDevice device, uint32_t f
 /// a Dimensions figure, since only the toypad has a physical position to move between.
 const char* cemu_bridge_usb_device_move_dimensions(int fromSlot, int toSlot);
 
+/// Taps an amiibo on the emulated NFC reader: the core's nnNfp_touchNfcTagFromFile (desktop
+/// Cemu's "Load amiibo / NFC file"). `path` is a full NTAG215 dump (.bin/.nfc, 532 to 572
+/// bytes). NULL on success; otherwise a short reason to show the player: no game has started
+/// the NFC library yet, the file can't be read, or it isn't an amiibo dump. The amiibo
+/// master keys are built into the core, so no key file is needed. The tag stays on the reader
+/// for about 1.5 seconds, as a real tap does.
+const char* cemu_bridge_touch_amiibo(const char* path);
+
 /// How fast the emulated console believes time is passing, as a right-shift factor:
 /// 3 = real time (1x), 4 = half (0.5x), 5 = quarter, 6 = an eighth, and so on
 /// (ActiveSettings::SetTimerShiftFactor(), desktop Cemu's Timer Speed).
@@ -484,6 +520,26 @@ bool cemu_bridge_recompiler_enabled(void);
 /// the fast path. Read when a title starts.
 void cemu_bridge_set_favour_accuracy(bool enabled);
 
+/// Speed before picture quality, one step past the default speed path. On: shaders are built
+/// without Cemu's strict 0*anything=0 multiply (fewer GPU instructions, possible lighting or
+/// shadow glitches), shaders always compile in the background (no stalls, objects can pop in
+/// briefly), and the per-draw crash breadcrumbs are skipped (less detail in a crash report).
+/// The Swift side also caps the presented resolution at Balanced and uses linear scaling.
+/// Favour accuracy wins when both are on, including a per-game accuracy override. Read when a
+/// title starts.
+void cemu_bridge_set_favour_performance(bool enabled);
+bool cemu_bridge_favour_performance(void);
+
+/// "Full speed renders!": everything for smooth, complete frames at the game's own Wii U frame
+/// rate. On, the GPU thread runs at the highest scheduling class, each frame is presented no
+/// sooner than the game's own frame interval (steady pacing, never faster than the console), and
+/// per-draw crash breadcrumbs are skipped. `shaderMode` decides the first time a never-seen shader
+/// is needed: 0 waits for it (a short hitch, never a missing or flickering object), 1 keeps going
+/// (never a hitch, the object can be missing for a moment). This choice wins over Favour accuracy,
+/// Favour performance and Compile shaders in the background. Read when a title starts.
+void cemu_bridge_set_full_speed_renders(bool enabled, int shaderMode);
+bool cemu_bridge_full_speed_renders(void);
+
 /// Best-effort real device temperature in Celsius, or NaN when it cannot be read.
 ///
 /// iOS publishes NO device temperature to apps - ProcessInfo.thermalState's four levels
@@ -512,11 +568,10 @@ void cemu_bridge_set_thermal_throttle_micros(uint32_t micros);
 
 /// Run the three emulated Espresso cores on three host threads instead of one.
 ///
-/// Off by default, and that default is measured rather than assumed: on an A12Z iPad Pro
-/// running Wind Waker HD, one core holds 40-60fps and three managed 4-20. A fanless part
-/// does not get three times the work out of three times the power draw - it heats up
-/// within a minute and the SoC takes the clocks back. Worth trying on a device with more
-/// thermal headroom; not worth being the default on this one.
+/// Off by default. Three host threads draw about three times the power of one, and a part
+/// that runs out of thermal headroom heats up and has its clocks taken back, which can
+/// leave it slower than one core. Auto only picks three on a device that qualifies from
+/// its own performance-core count, memory tier and thermal state (ios_decide_core_count).
 void cemu_bridge_set_multicore_enabled(bool enabled);
 
 /// How many host threads run the three emulated cores: 0 = Auto, 1 = one core, 2 = three
@@ -543,11 +598,11 @@ void cemu_bridge_set_draw_breadcrumbs(bool enabled);
 /// runs), or an empty string before the first one. Copy it; the pointer is per-thread.
 const char* cemu_bridge_perf_line(void);
 
-/// "iPad8,11, Apple A12Z GPU, 4 performance + 4 efficiency cores, 5664 MB RAM": what the
+/// "iPad14,3, Apple M1 GPU, 4 performance + 4 efficiency cores, 7500 MB RAM": what the
 /// performance log and reports use to tell devices apart.
 const char* cemu_bridge_device_summary(void);
 
-/// Low Power Mode: run one emulated CPU core and nothing else changes. Separate from
+/// One-core mode: run one emulated CPU core and nothing else changes. Separate from
 /// cemu_bridge_set_favour_accuracy(), which also forces synchronous shader compilation
 /// and accurate barriers (more work, the wrong lever for a device that is already hot).
 /// Read when a title starts - the core count cannot change under a running title.
@@ -567,17 +622,11 @@ void cemu_bridge_set_async_shader_compile(bool enabled);
 bool cemu_bridge_async_shader_compile(void);
 
 
-/// VSync for both Wii U screens' Metal layers - CAMetalLayer.displaySyncEnabled, which
-/// nothing on this port has ever set before (Cemu's own `vsync` config value only ever
-/// reached the Vulkan backend's swapchain present-mode selection - VulkanRenderer.cpp/
-/// SwapchainInfoVk.cpp - and does nothing for Metal). Metal's own default for a freshly
-/// created CAMetalLayer is true (synced), so leaving this untouched changed nothing for
-/// anyone; on means nextDrawable() paces to the display's refresh (smoother, capped at
-/// the screen's rate, no tearing), off lets a title that can render faster than that do
-/// so uncapped, at the cost of possible tearing. Applied in
-/// MetalRenderer::InitializeLayer() right after setPixelFormat(), so - like the other
-/// settings on this page - it takes effect on the NEXT title launch, not the one already
-/// running.
+/// Stores Cemu's `vsync` config value. It has no visible effect on iOS and Settings no longer
+/// offers it: iOS always syncs presents to the display (CAMetalLayer.displaySyncEnabled is
+/// macOS-only, and nothing on this port sets it), so the Metal renderer never reads this value,
+/// and the Vulkan renderer's iOS path (SwapchainInfoVk::ChoosePresentMode) uses FIFO whatever
+/// it says. Kept so the saved "muffin.render.vsync" key and the audit harness still work.
 void cemu_bridge_set_vsync_enabled(bool enabled);
 
 bool cemu_bridge_vsync_enabled(void);
@@ -619,6 +668,12 @@ void cemu_bridge_set_downscale_filter(int filter);
 /// effect on the next launch. Vulkan (MoltenVK) never reads this field.
 void cemu_bridge_set_framebuffer_fetch(bool enabled);
 bool cemu_bridge_framebuffer_fetch(void);
+
+/// Metal-only: on a GPU without mesh shaders, geometry-shader and RECTS draws are rebuilt from compute passes. Off skips
+/// those draws instead. Off by default. Read once when the Metal layer
+/// initializes, so it takes effect on the next game launch.
+void cemu_bridge_set_emulate_missing_effects(bool enabled);
+bool cemu_bridge_emulate_missing_effects(void);
 
 // ---------------------------------------------------------------------------
 // Screen orientation, gamma and the on-screen performance overlay.
@@ -729,6 +784,44 @@ bool cemu_bridge_notification_shader_compiling(void);
 void cemu_bridge_set_notification_friends(bool enabled);
 bool cemu_bridge_notification_friends(void);
 
+/// Native overlay. By default the core draws the overlay and notifications above with ImGui
+/// into the game's render surface, whose reduced backing scale makes the text soft. When this
+/// is on the core stops drawing them and the app draws the same text itself, at full screen
+/// resolution, from cemu_bridge_native_overlay_text(). Off (the default) is the old ImGui
+/// path. Turn it off again whenever nothing is polling the text.
+void cemu_bridge_set_native_overlay(bool enabled);
+bool cemu_bridge_native_overlay(void);
+
+/// The overlay text the core would have drawn, built from the same settings and timing. One
+/// string: the stats block's lines separated by '\n', then one record separator (0x1E) and
+/// each notification after it, also separated by 0x1E (a notification's own lines are
+/// separated by '\n'). The stats block may be empty. Empty string when the native overlay is
+/// off. Polling consumes the one-shot shader/pipeline counters, so only one caller should
+/// poll. Copy it; the pointer is per-thread. Call from the main thread.
+const char* cemu_bridge_native_overlay_text(void);
+
+/// Progress of the shader and pipeline cache loading screen, which the app draws natively
+/// (while cemu_bridge_native_overlay() is on the core leaves everything but the background
+/// image to it). Returns the phase: 0 not loading, 1 shaders, 2 pipelines. loaded and total
+/// are file counts for that phase (total can be 0). Cheap and thread-safe; either pointer
+/// may be NULL.
+int32_t cemu_bridge_cache_loading(uint32_t* loaded, uint32_t* total);
+
+/// Native dialogs. A title's software keyboard and error viewer are drawn by the app instead
+/// of by ImGui inside the game's render surface while this is on (turn it off when nothing
+/// is polling). Poll cemu_bridge_native_dialog_request() from the main thread; it is cheap
+/// when nothing is pending. The reply is one string, fields separated by 0x1F, or empty:
+///   "K" id maxLength multiline(0/1) text hint   - the keyboard
+///   "E" id buttonCount(1/2) title message button1 button2   - the error viewer
+/// Answer with the id from the request; an answer for an older request is ignored.
+/// cemu_bridge_native_keyboard_answer: answer 0 = text changed (keep open), 1 = OK,
+/// 2 = Cancel (the title gets the text the field started with). The error viewer's button is
+/// 0 (left / only) or 1 (right). Copy the string; the pointer is per-thread.
+void cemu_bridge_set_native_dialogs(bool enabled);
+const char* cemu_bridge_native_dialog_request(void);
+void cemu_bridge_native_keyboard_answer(uint64_t id, const char* text, int answer);
+void cemu_bridge_native_error_answer(uint64_t id, int button);
+
 // MARK: - Audio
 //
 // Eight of CemuConfig's audio fields, plain (not ConfigValue-wrapped) sint32/bool/enum
@@ -833,6 +926,54 @@ long long cemu_bridge_clear_shader_cache(unsigned long long titleId, bool includ
 /// Returns 0 on success. Either out pointer may be null.
 int cemu_bridge_shader_cache_stats(unsigned long long titleId, long long* outLearnedBytes, long long* outCompiledBytes);
 
+/// Importing a learned-shader or pipeline cache file for one title (per-game options screen). Both read the
+/// file with the engine's own cache reader (FileCache), so desktop Cemu files (V3, or the older V2 header) and
+/// MuffinEMU files (including ones with the entry checksums) are handled alike. Desktop shader entries are
+/// converted by the loader the first time the game starts; nothing is converted here.
+///
+/// Which kind of file it is and which game it belongs to come from the version stamp in the file header, never
+/// from the file name. Only call these with no title running.
+typedef enum {
+    CEMU_CACHE_FILE_UNKNOWN  = 0, // not a cache this title can use; see the status
+    CEMU_CACHE_FILE_SHADERS  = 1, // learned shaders (<titleid>_mtlshaders.bin / <titleid>_shaders.bin)
+    CEMU_CACHE_FILE_PIPELINE = 2, // shader pipelines (<titleid>_mtlpipeline.bin / <titleid>_vkpipeline.bin)
+} CemuCacheFileKind;
+
+typedef enum {
+    CEMU_CACHE_STATUS_OK            = 0,
+    CEMU_CACHE_STATUS_NOT_A_CACHE   = 1, // not a FileCache file, or its header/file table is damaged
+    CEMU_CACHE_STATUS_OTHER_GAME    = 2, // version stamp belongs to a different title
+    CEMU_CACHE_STATUS_OLD_FORMAT    = 3, // learned shaders from desktop Cemu before 1.16 (keyed by the RPX hash): can't be converted
+    CEMU_CACHE_STATUS_NOTHING_USABLE = 4, // a cache for this title, but none of its entries is usable
+    CEMU_CACHE_STATUS_TITLE_RUNNING = 5,
+} CemuCacheStatus;
+
+typedef struct {
+    int kind;               // CemuCacheFileKind
+    int status;             // CemuCacheStatus
+    unsigned int stamp;     // the file's version stamp
+    int entryCount;         // entries in the file
+    int usableCount;        // entries that look like valid shader entries (learned shaders only; pipelines: = entryCount)
+    int damagedCount;       // entries that failed their checksum and were dropped from the copy being read
+} CemuCacheFileInfo;
+
+/// Looks at `path` without changing anything and says what it is and whether `titleId` can use it.
+void cemu_bridge_cache_file_inspect(unsigned long long titleId, const char* path, CemuCacheFileInfo* outInfo);
+
+/// What a version stamp stands for when it isn't the title's own: returns the CemuCacheFileKind that `stamp` is
+/// for `titleId` (SHADERS or PIPELINE), or UNKNOWN. Lets the app name the game a wrong file belongs to by trying
+/// the stamp against each title in the library.
+int cemu_bridge_cache_stamp_kind(unsigned long long titleId, unsigned int stamp);
+
+/// Merges the entries of `path` into the title's cache file. Entries already in the title's file win; the file
+/// itself is never replaced. Learned shaders go to `<titleid>_mtlshaders.bin` when `renderer` is 2 (Metal) or
+/// `<titleid>_shaders.bin` when it is 1 (Vulkan). A pipeline cache goes to `<titleid>_vkpipeline.bin` when
+/// `pipelineIsVulkan`, else `<titleid>_mtlpipeline.bin`, whatever the current renderer is. Returns a
+/// CemuCacheStatus (the file is checked again here), or a negative number if the title's own file could not be
+/// opened or has another title's stamp (nothing is changed then). Counts may be null.
+int cemu_bridge_cache_file_import(unsigned long long titleId, const char* path, int kind, int renderer, bool pipelineIsVulkan,
+                                  int* outAdded, int* outAlreadyThere, int* outSkipped);
+
 
 /// The reason behind cemu_bridge_cpu_mode(), in a sentence the person holding the iPad
 /// can act on - which is the point: the answer used to be obtainable only by reading a
@@ -840,6 +981,10 @@ int cemu_bridge_shader_cache_stats(unsigned long long titleId, long long* outLea
 /// next call ON THE SAME THREAD overwrites; Swift's String(cString:) copies, so that is
 /// enough lifetime for any caller here.
 const char* cemu_bridge_cpu_mode_detail(void);
+
+/// How many file reads since launch came back short of what the file still held. The core's file layer returns what it got
+/// instead of crashing; this is how the app learns that a drive stopped answering.
+uint32_t cemu_bridge_storage_read_fault_count(void);
 
 bool cemu_bridge_is_title_running(void);
 void cemu_bridge_pause(void);
@@ -856,6 +1001,26 @@ bool cemu_bridge_clean_start_required(void);
 /// game is prepared. The app applies that title's per-game settings here, the same ones a library launch pushes before boot.
 typedef void (*CemuTitleSwitchCallback)(uint64_t titleId);
 void cemu_bridge_set_title_switch_callback(CemuTitleSwitchCallback callback);
+
+/// What a physical controller's buttons mean to the app's own menus rather than to the game.
+/// HOME is reported whether or not menu capture is on; the other four only while it is.
+typedef enum {
+    CEMU_BRIDGE_MENU_HOME    = 0, // the controller's HOME / guide button went down
+    CEMU_BRIDGE_MENU_UP      = 1, // d-pad up, or the left stick pushed up
+    CEMU_BRIDGE_MENU_DOWN    = 2,
+    CEMU_BRIDGE_MENU_CONFIRM = 3, // A
+    CEMU_BRIDGE_MENU_BACK    = 4, // B
+} CemuBridgeMenuEvent;
+
+/// Called on the main thread, once per press, for the events above.
+typedef void (*CemuMenuInputCallback)(CemuBridgeMenuEvent event);
+void cemu_bridge_set_menu_input_callback(CemuMenuInputCallback callback);
+
+/// While on, the bound physical controller drives the app's menu instead of the game: the game sees none of its
+/// buttons, sticks or triggers, and the menu events above are delivered. Turning it off hands the controller back to
+/// the game, and anything still held at that moment stays ignored until it is let go, so the press that chose a menu
+/// row is never also a press in the game. Touch input is unaffected. Call from the main thread.
+void cemu_bridge_set_menu_capture(bool capture);
 /// A one-line reason for the log and the message, valid until the next call on the same thread.
 const char* cemu_bridge_clean_start_reason(void);
 
@@ -877,12 +1042,33 @@ bool cemu_bridge_save_state(const char* path);
 
 /// Restores guest RAM from a file `cemu_bridge_save_state()` wrote, into the SAME
 /// still-running title instance the save was taken from - not "the same game relaunched".
+/// Every launch of a title has its own session token, stored in the save file; a file from
+/// another launch is refused before the game is even paused (see
+/// `cemu_bridge_save_state_inspect()` and IOSSaveState.cpp for why it cannot be made to
+/// work across launches).
 /// Refuses (returns false, touches no memory) unless the currently running title's ID,
 /// active guest thread list, and mapped memory layout all match the save exactly; a
 /// mismatch means the save doesn't line up with the live session and there is no safe way
 /// to reconcile that. On success, forces the recompiler to drop any JIT-compiled code that
 /// may now be stale (safe under the interpreter too - a no-op there).
 bool cemu_bridge_load_state(const char* path);
+
+/// Why the last `cemu_bridge_save_state()` or `cemu_bridge_load_state()` returned false: a sentence meant to be shown to the
+/// player as it is, valid until the next call on the same thread. Empty after a success. Read it on the thread that made
+/// the call (the save queue), right after it returned: the text belongs to the most recent save or load.
+const char* cemu_bridge_save_state_last_error(void);
+
+/// The same failure as a code, for the UI to branch on. 0 none, 1 no path, 2 no game running, 3 couldn't pause, 4 a CPU
+/// core never went idle (a long loading call), 5 the GPU never drained, 6 not enough storage, 7 couldn't create the file,
+/// 8 write failed, 9 file missing, 10 not a save state, 11 older format, 12 a different game, 13 from an earlier session,
+/// 14 the game's thread set changed since the save, 15 its memory layout changed, 16 file damaged, 17 damaged mid-restore
+/// (the game should be restarted).
+int cemu_bridge_save_state_last_error_code(void);
+
+/// What a slot file is, judged from its header alone (nothing is paused, no memory is read). 0 unreadable or not a save
+/// state, 1 loadable now (taken in this launch of the running game), 2 from an earlier session (the game or the app was
+/// relaunched since: kept on disk but can't be loaded), 3 saved by a different game, 4 an older file format.
+int cemu_bridge_save_state_inspect(const char* path);
 
 /// Human-readable one-liner describing engine/bridge state, for display in the UI.
 /// Never NULL. Points to static/thread-local storage; copy if you need to keep it.
@@ -923,6 +1109,12 @@ void cemu_bridge_memory_note(const char* tag);
 /// exist to explain (jetsam) delivers no signal and takes any buffered log with
 /// it. Idempotent; safe to call more than once.
 void cemu_bridge_start_memory_watchdog(void);
+
+/// Saves the Metal pipelines compiled so far to the on-disk binary archive and returns
+/// when that is done or after 4 s. Blocks, so call it off the main thread (and under a
+/// background task when the app is leaving the foreground). A no-op without a running
+/// title. Safe to call at any time, from any thread.
+void cemu_bridge_flush_pipeline_cache(void);
 
 /// Absolute path of the file cemu_bridge_log_checkpoint() and the crash handler write
 /// to. Never NULL, but empty if $HOME was unset and the log was never opened. Points to
@@ -1094,6 +1286,12 @@ void cemu_bridge_set_active_account_persistent_id(uint32_t persistentId);
 /// below, which only decides WHERE an online-capable account connects.
 bool cemu_bridge_account_is_online_valid(uint32_t persistentId);
 
+/// Why persistentId can't play online, from Account::GetOnlineAccountError():
+/// 0 none (valid), 1 no account ID, 2 password not cached, 3 password cache empty,
+/// 4 no principal ID, -1 no such account. Call cemu_bridge_accounts_refresh() first
+/// if the account.dat may have just changed.
+int cemu_bridge_account_online_error(uint32_t persistentId);
+
 /// Real Wii U country codes, for the same picker desktop Cemu's account editor uses
 /// (NCrypto::GetCountryCount()/GetCountryAsString()). Records separated by 0x1E, fields
 /// by 0x1F: code (decimal), name. Index 0's placeholder entry is included; NCrypto's
@@ -1113,8 +1311,8 @@ typedef enum {
 /// and Pretendo's server hostnames are already baked into the engine (NintendoURLs/
 /// PretendoURLs in config/NetworkSettings.h) - selecting either needs no address from the
 /// user. Custom is the one exception: the engine replays whatever account/ECS/NUS/etc URLs
-/// are already in Documents/mlc/network_services.xml, which this bridge does not create or
-/// edit - see cemu_bridge_custom_network_service_available(). Setting Custom while that file
+/// are already in Documents/mlc/network_services.xml, which the app writes
+/// (CustomServers.swift) - see cemu_bridge_custom_network_service_available(). Setting Custom while that file
 /// doesn't exist is accepted here but the engine itself falls back to Offline at the point it
 /// would actually connect (CemuConfig::GetAccountNetworkService() enforces this), so the UI
 /// should disable Custom rather than let it look chosen and silently do nothing.
@@ -1122,10 +1320,38 @@ CemuBridgeNetworkService cemu_bridge_network_service(uint32_t persistentId);
 void cemu_bridge_set_network_service(uint32_t persistentId, CemuBridgeNetworkService service);
 
 /// Whether NetworkService::Custom is actually usable right now (NetworkConfig::XMLExists()).
-/// Custom has no in-app configuration UI on any Cemu port, including this one: it only
-/// works once the user has placed a hand-written network_services.xml in the mlc folder
-/// themselves, so there is no server URL to prompt for here - see the type comment above.
+/// True only for a file that parses and lists at least one http(s) address. The app's
+/// Network Service > Custom servers section (CustomServers.swift) writes and swaps that file.
 bool cemu_bridge_custom_network_service_available(void);
+
+/// Reads Documents/mlc/network_services.xml again after the app replaced or removed it, and
+/// returns whether it's now a usable Custom Network Service. Without this the engine keeps
+/// the file as it was when the app started.
+bool cemu_bridge_reload_custom_network_service(void);
+
+/// Whether the file at path is a usable network_services.xml (parses, has <content> and at
+/// least one http(s) address under <urls>). Doesn't touch the active file.
+bool cemu_bridge_network_services_xml_is_valid(const char* path);
+
+/// What network the device is on, as reported by the app's path monitor.
+typedef enum {
+    CEMU_BRIDGE_DEVICE_NETWORK_OFFLINE  = 0,
+    CEMU_BRIDGE_DEVICE_NETWORK_WIFI     = 1,
+    CEMU_BRIDGE_DEVICE_NETWORK_CELLULAR = 2,
+    /// Wired or any other usable path (Ethernet adapter, hotspot link, ...).
+    CEMU_BRIDGE_DEVICE_NETWORK_OTHER    = 3,
+} CemuBridgeDeviceNetwork;
+
+/// Tells the core whether the device has a network path. The emulated Wii U's nn_ac library
+/// reports connected only while this is true and online play is set up. One relaxed atomic
+/// store; safe from any thread, before or during a game.
+void cemu_bridge_set_device_network(CemuBridgeDeviceNetwork kind);
+
+/// Whether the emulated console currently appears connected: follows the device only.
+bool cemu_bridge_console_appears_connected(void);
+
+/// Whether online play is set up (valid online account on Pretendo or Custom, with the online files).
+bool cemu_bridge_online_play_enabled(void);
 
 /// Which analog stick an axis call is about.
 typedef enum {
@@ -1176,6 +1402,38 @@ void cemu_bridge_set_stick_axis(CemuBridgeStick stick, float x, float y);
 /// function on the same thread; copy it before calling again.
 const char* cemu_bridge_memory_headroom_summary(void);
 
+/// Record the game's TV audio to an M4A (AAC, 256 kbps, stereo) file at `path`. The folder must
+/// exist. Returns false when a recording is already on. The samples are copied from the TV
+/// device's feed on the audio thread into a lock-free ring; a background thread encodes them.
+bool cemu_bridge_audio_record_start(const char* path);
+
+/// Stops the recording and finishes the file. Blocks until the encoder has closed it, so call it
+/// off the main thread. Does nothing when no recording is on.
+void cemu_bridge_audio_record_stop(void);
+
+bool cemu_bridge_audio_record_active(void);
+
+/// Seconds of audio written to the current (or last) recording.
+double cemu_bridge_audio_record_seconds(void);
+
+/// "Record screen" (HOME menu): saves the picture the game is showing (the main output, which is the TV
+/// or the GamePad according to the Screen Layout) at the game's own render size, with the TV audio, to
+/// an MP4 (HEVC, or H.264 where HEVC is not available) at `path`. The folder must exist. Returns false
+/// when a recording is already on. The file is opened when the first picture arrives.
+bool cemu_bridge_screen_record_start(const char* path);
+
+/// Stops the recording and finishes the file. Blocks until the encoder has closed it, so call it off the
+/// main thread. Returns true when a playable file was written; the file is removed otherwise.
+bool cemu_bridge_screen_record_stop(void);
+
+bool cemu_bridge_screen_record_active(void);
+
+/// Seconds since the first picture of the current recording.
+double cemu_bridge_screen_record_seconds(void);
+
+/// True when the writer hit an error (storage full, for one); the caller should stop.
+bool cemu_bridge_screen_record_failed(void);
+
 int cemu_bridge_input_button_mapping_count(void);
 
 /// Which controller profile the GamePad is on ("default" when none was loaded). Owned by
@@ -1189,6 +1447,11 @@ const char* cemu_bridge_input_profile_name(void);
 /// would be undone by the same bad profile at the next launch, which is precisely the
 /// failure this exists to cure.
 bool cemu_bridge_reset_controller_bindings(void);
+
+
+/// Stops the core compositing a Wii U screen that no output is showing. The game, GX2 swaps and
+/// vsync are untouched; only the host copy to the hidden screen's layer is skipped. Off by default.
+void cemu_bridge_set_skip_hidden_screen(bool tv, bool pad);
 
 
 #ifdef __cplusplus

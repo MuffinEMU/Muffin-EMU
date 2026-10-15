@@ -1,6 +1,8 @@
 #include "Cafe/HW/Latte/Renderer/Metal/MetalLayerHandle.h"
+#include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalLayer.h"
 
+#include "Cafe/HW/Latte/Core/PerfTelemetry.h"
 #include "gui/interface/WindowSystem.h"
 
 MetalLayerHandle::MetalLayerHandle(MTL::Device* device, const Vector2i& size, bool mainWindow)
@@ -41,7 +43,8 @@ MetalLayerHandle::~MetalLayerHandle()
 MetalLayerHandle::MetalLayerHandle(MetalLayerHandle&& other) noexcept
     : m_layer(other.m_layer), m_layerScaleX(other.m_layerScaleX), m_layerScaleY(other.m_layerScaleY),
       m_drawable(other.m_drawable), m_device(other.m_device), m_isMainWindow(other.m_isMainWindow),
-      m_lastGoodWidth(other.m_lastGoodWidth), m_lastGoodHeight(other.m_lastGoodHeight), m_acquireCount(other.m_acquireCount)
+      m_lastGoodWidth(other.m_lastGoodWidth), m_lastGoodHeight(other.m_lastGoodHeight), m_acquireCount(other.m_acquireCount),
+      m_skipAcquires(other.m_skipAcquires), m_starvedCount(other.m_starvedCount)
 {
     other.m_layer = nullptr;
     other.m_drawable = nullptr;
@@ -63,6 +66,8 @@ MetalLayerHandle& MetalLayerHandle::operator=(MetalLayerHandle&& other) noexcept
     m_lastGoodWidth = other.m_lastGoodWidth;
     m_lastGoodHeight = other.m_lastGoodHeight;
     m_acquireCount = other.m_acquireCount;
+    m_skipAcquires = other.m_skipAcquires;
+    m_starvedCount = other.m_starvedCount;
     other.m_layer = nullptr;
     other.m_drawable = nullptr;
     return *this;
@@ -126,11 +131,29 @@ bool MetalLayerHandle::AcquireDrawable()
     if (m_drawable)
         return true;
 
+    // Starved layer: do not wait for it again yet (see the member comment).
+    if (m_skipAcquires > 0)
+    {
+        --m_skipAcquires;
+        return false;
+    }
+
     // nextDrawable() returns an autoreleased object; retain it until PresentDrawable() or the destructor releases it.
     // It can block (up to a second) when every drawable is still in use, so it leaves a breadcrumb.
+    const uint64_t acquireStart = PerfTelemetry::NowNs();
     {
         LatteWait::Scope waitScope("waiting for a screen drawable", LatteWait::Kind::Display);
         m_drawable = m_layer->nextDrawable();
+    }
+    // A healthy layer hands out a drawable within a refresh or two. Taking a quarter of a second or more
+    // (or nothing at all) means drawables are not coming back, and the next call would wait just as long.
+    const uint64_t acquireNs = PerfTelemetry::NowNs() - acquireStart;
+    if (!m_drawable || acquireNs >= 250ull * 1000000ull)
+    {
+        m_skipAcquires = 30;
+        if (m_starvedCount++ % 20 == 0)
+            cemuLog_log(LogType::Force, "layer {} ({}) is not returning drawables ({} ms for {}); skipping its next {} presents ({} times so far)",
+                (void*)this, m_isMainWindow ? "TV" : "GamePad", acquireNs / 1000000ull, m_drawable ? "a drawable" : "nothing", m_skipAcquires, m_starvedCount);
     }
     if (!m_drawable)
     {
@@ -169,7 +192,16 @@ bool MetalLayerHandle::AcquireDrawable()
 
 void MetalLayerHandle::PresentDrawable(MTL::CommandBuffer* commandBuffer)
 {
-    commandBuffer->presentDrawable(m_drawable);
+    // Full speed renders: keep each frame on screen for at least the game's own frame interval,
+    // the GX2 swap interval in 60 Hz vsyncs (1 = 60 fps, 2 = 30 fps), so frames arrive evenly and
+    // never faster than on the console. 1.5 ms under the exact interval so a frame that is on time
+    // is not pushed a whole refresh later (on a 60 Hz panel 16.7 ms would otherwise become 33.3).
+    // Swap interval 0 means the game asked for no vsync: present at once, as before.
+    const uint32 swapInterval = LatteGPUState.sharedArea ? LatteGPUState.sharedArea->swapInterval : 0;
+    if (g_latteFullSpeedRenders.load(std::memory_order_relaxed) && swapInterval > 0 && swapInterval <= 4)
+        commandBuffer->presentDrawableAfterMinimumDuration(m_drawable, (double)swapInterval / 60.0 - 0.0015);
+    else
+        commandBuffer->presentDrawable(m_drawable);
     m_drawable->release();
     m_drawable = nullptr;
     if (m_isMainWindow)

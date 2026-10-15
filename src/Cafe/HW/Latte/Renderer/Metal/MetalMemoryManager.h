@@ -7,6 +7,8 @@
 #include "Common/DeviceCapabilities.h"
 
 #include <array>
+#include <unordered_map>
+#include <vector>
 
 /// One slot of an argument buffer, recorded rather than encoded immediately.
 ///
@@ -48,6 +50,14 @@ public:
     /// draw only reads from an offset onward compare and copy just that tail.
     MetalSynchronizedHeapAllocator::AllocatorReservation* GetCachedSnapshot(uint32 slot, const void* data, uint32 size, uint32 firstByte = 0);
     MetalSynchronizedHeapAllocator::AllocatorReservation* GetCachedArgumentBuffer(uint32 stage, MTL::ArgumentEncoder* encoder, const MetalArgumentBindings& bindings);
+    /// Drops every cached argument buffer. Used when nothing cached can be trusted any more (after the GPU
+    /// queue was replaced): the allocations are retired against the command buffers that may still be reading
+    /// them, exactly like a replaced snapshot.
+    void ReleaseArgumentCache();
+    /// Called when a new command buffer begins. Cached argument buffers now survive across command buffers
+    /// (see the lifetime notes on ArgumentCacheEntry); this only drops the ones that have not been used for a
+    /// few command buffers, which bounds how long they keep their resources alive.
+    void AgeArgumentCache();
     void GetSnapshotStats(uint32& numBuffers, size_t& totalSize, size_t& freeSize) const
     {
         m_snapshotAllocator.GetStats(numBuffers, totalSize, freeSize);
@@ -78,6 +88,7 @@ public:
         m_stagingAllocator.CleanupBuffer(latestFinishedCommandBuffer);
         m_indexAllocator.CleanupBuffer(latestFinishedCommandBuffer);
         m_snapshotAllocator.CleanupBuffer(latestFinishedCommandBuffer);
+        ReclaimArgumentBlocks(latestFinishedCommandBuffer);
         m_sharedTracker.Complete(latestFinishedCommandBuffer);
     }
 
@@ -158,12 +169,51 @@ private:
         uint32 endByte = 0;
     } m_snapshots[SnapshotCount]{};
 
-    struct ArgumentSnapshot
+    // A few encoded argument buffers per stage instead of only the last one: draws of different objects
+    // interleave, so the single previous encode rarely matched.
+    //
+    // Lifetime: an entry survives across command buffers (a layout's first encode in every command buffer used
+    // to miss, because the cache was emptied per command buffer). That is safe because
+    //  - the argument buffer holds only plain handles (buffer address, texture and sampler IDs, constants) and is
+    //    never written again after the encode, so any number of command buffers can read it;
+    //  - every resource it references is retained by the entry, so a handle can neither dangle nor be recycled
+    //    for a different object (the bindings compare by pointer) while the entry is cached;
+    //  - residency is not cached: callers still call useResource() per command encoder before every lookup;
+    //  - the allocation is only recycled after the newest command buffer at eviction time has finished, and the
+    //    queue completes in order, so no earlier command buffer can still be reading it.
+    // The age limit keeps retained textures and buffers from being held for long after the renderer dropped them.
+    static constexpr uint32 ARGUMENT_CACHE_ENTRIES = 48;
+    static constexpr uint32 ARGUMENT_CACHE_MAX_AGE = 6; // command buffers an entry may go unused before it is dropped
+    struct ArgumentCacheEntry
     {
+        uint64 hash = 0;
+        uint64 lastUse = 0;
+        uint64 lastGeneration = 0; // m_argumentGeneration when last used
         MTL::ArgumentEncoder* encoder = nullptr; // retained to keep layout identity stable
         MetalArgumentBindings bindings{};
         MetalSynchronizedHeapAllocator::AllocatorReservation* allocation = nullptr;
-    } m_argumentSnapshots[METAL_SHADER_TYPE_TOTAL]{};
+    };
+    struct ArgumentCache
+    {
+        std::vector<ArgumentCacheEntry> entries;
+        uint64 useCounter = 0;
+    } m_argumentCaches[METAL_SHADER_TYPE_TOTAL]{};
+    uint64 m_argumentGeneration = 0; // counts command buffers begun
+
+    // Argument buffers are small, uniform in size per layout and made and dropped hundreds of times per frame,
+    // so going through the general heap for each one (free list search, bookkeeping map, release queue) was
+    // the largest part of the encode cost. Evicted blocks wait here until the GPU is done with them, then go to
+    // a free list per size and are handed out again directly. Bounded by ARGUMENT_BLOCK_POOL_MAX;
+    // past that, blocks go back to the heap as before.
+    static constexpr uint32 ARGUMENT_BLOCK_POOL_MAX = 1536;
+    using ArgumentBlock = MetalSynchronizedHeapAllocator::AllocatorReservation;
+    ArgumentBlock* AllocateArgumentBlock(uint32 size, uint32 alignment);
+    void RetireArgumentBlock(ArgumentBlock* block);
+    void ReclaimArgumentBlocks(MTL::CommandBuffer* finishedCommandBuffer);
+    std::unordered_map<uint32, std::vector<ArgumentBlock*>> m_freeArgumentBlocks; // by size
+    std::unordered_map<MTL::CommandBuffer*, std::vector<ArgumentBlock*>> m_retiringArgumentBlocks;
+    uint32 m_pooledArgumentBlocks = 0; // free plus retiring
+    void ReleaseArgumentCacheEntry(ArgumentCacheEntry& entry);
 
     MTL::Buffer* m_bufferCache = nullptr;
     size_t m_bufferCacheSize = 0;

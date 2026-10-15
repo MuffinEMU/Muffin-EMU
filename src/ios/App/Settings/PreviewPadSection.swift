@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -9,6 +14,9 @@ struct PreviewPadSection: View {
     // only reads UserDefaults at launch and the live pad reads its @Published values.
     @AppStorage(PreviewPadStore.enabledKey) private var previewPadEnabled = PreviewPadStore.defaultEnabled
     @ObservedObject private var previewPad = PreviewPadStore.shared
+    // Either of these wins over the Preview pad (ContentView's padSystem), so say so here.
+    @AppStorage(MeloControlsSetting.storageKey) private var useMeloControls = MeloControlsSetting.defaultValue
+    @AppStorage(TouchLabSettings.schemeKey) private var touchLabScheme = TouchLabSettings.defaultScheme
     @State private var showingLayoutExporter = false
     /// Filled by the Export button, so the layout is captured once on tap, not on every render.
     @State private var layoutDocument = LazyLayoutDocument(file: nil)
@@ -21,18 +29,32 @@ struct PreviewPadSection: View {
 
     private var previewLayoutPresetBinding: Binding<String> {
         Binding(get: { previewPad.layoutPreset.rawValue },
-               set: { previewPad.layoutPreset = PreviewLayoutPreset(rawValue: $0) ?? .iPadPro2020 })
+               set: { previewPad.layoutPreset = PreviewLayoutPreset(rawValue: $0) ?? .native })
     }
     private var previewColourPresetBinding: Binding<String> {
-        Binding(get: { previewPad.colourPreset.rawValue },
-               set: { previewPad.colourPreset = PreviewColourPreset(rawValue: $0) ?? .wiiUWhite })
+        Binding(get: { previewPad.customColours == nil ? previewPad.colourPreset.rawValue : Self.customColourTag },
+               set: { if $0 != Self.customColourTag { previewPad.colourPreset = PreviewColourPreset(rawValue: $0) ?? .wiiUWhite } })
     }
     private var previewDisplayModeBinding: Binding<String> {
         Binding(get: { previewPad.displayMode.rawValue },
                set: { previewPad.displayMode = PadLayout.DisplayMode(rawValue: $0) ?? .fit })
     }
     private var previewLayoutPreset: PreviewLayoutPreset { previewPad.layoutPreset }
-    private var previewColourPreset: PreviewColourPreset { previewPad.colourPreset }
+    /// The picker's extra row while imported colours are in effect.
+    private static let customColourTag = "custom"
+
+    private var otherPadChosen: Bool {
+        (useMeloControls && MeloControlsSetting.isAvailable) || TouchLabSettings.isTouchLab(touchLabScheme)
+    }
+
+    private var toggleCaption: String {
+        if previewPadEnabled && otherPadChosen {
+            return "Not showing: Melo-Controller or a control style is chosen under On-screen Controls, and wins over this."
+        }
+        return previewPadEnabled
+            ? "Replaces the normal pad. If controls don't respond, turn this off."
+            : "Experimental. Replaces the normal pad while on."
+    }
 
     var body: some View {
         Section {
@@ -40,16 +62,15 @@ struct PreviewPadSection: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Use the new pad system")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text(previewPadEnabled
-                         ? "Replaces the normal pad. If controls don't respond, turn this off."
-                         : "Experimental. Replaces the normal pad while on.")
+                    Text(toggleCaption)
                         .font(.system(size: 12))
-                        .foregroundColor(previewPadEnabled ? MuffinTheme.cautionText : MuffinTheme.secondaryText)
+                        .foregroundColor(previewPadEnabled && !otherPadChosen ? MuffinTheme.cautionText : MuffinTheme.secondaryText)
                 }
             }
             .tint(MuffinTheme.accentText)
 
-            if previewPadEnabled {
+            // Hidden while another pad wins over this one: the options wouldn't change anything on screen.
+            if previewPadEnabled && !otherPadChosen {
                 previewControls
             }
         } header: {
@@ -70,9 +91,9 @@ struct PreviewPadSection: View {
             importLayout(result)
         }
         .fileExporter(isPresented: $showingColourExporter,
-                     document: MuffinColourDocument(previewColourPreset.file),
+                     document: MuffinColourDocument(previewPad.colourFile),
                      contentType: .muffinColour,
-                     defaultFilename: previewColourPreset.file.name) { _ in }
+                     defaultFilename: previewPad.colourFile.name) { _ in }
         .fileImporter(isPresented: $showingColourImporter, allowedContentTypes: [.muffinColour]) { result in
             importColour(result)
         }
@@ -109,6 +130,9 @@ struct PreviewPadSection: View {
         Picker("Colours", selection: previewColourPresetBinding) {
             ForEach(PreviewColourPreset.allCases) { preset in
                 Text(preset.file.name).tag(preset.rawValue)
+            }
+            if let custom = previewPad.customColours {
+                Text(custom.name).tag(Self.customColourTag)
             }
         }
         .pickerStyle(.menu)
@@ -187,10 +211,8 @@ struct PreviewPadSection: View {
             }
             defer { url.stopAccessingSecurityScopedResource() }
             let data = try Data(contentsOf: url)
-            _ = try MuffinColourFile.decode(data)
-            // Custom colours aren't supported by the 3-preset picker; the file is only checked.
-            previewFileAlertTitle = "Colours"
-            previewFileErrorMessage = "Colours file is valid, but custom colours aren't supported yet."
+            let file = try MuffinColourFile.decode(data)
+            PreviewPadStore.shared.applyImportedColours(file)
         } catch {
             previewFileAlertTitle = "Error"
             previewFileErrorMessage = "Couldn't import that .muffinclr file: \(error.localizedDescription)"

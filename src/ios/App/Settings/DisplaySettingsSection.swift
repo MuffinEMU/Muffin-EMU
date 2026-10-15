@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import SwiftUI
 
 /// Two features share this section:
@@ -16,6 +21,19 @@ struct DisplaySettingsSection: View {
     private var screenLayout = ScreenLayout.initialValue
     @AppStorage(LocalScreenLayoutSettings.showSwapButtonKey)
     private var showLocalSwapButton = LocalScreenLayoutSettings.defaultShowSwapButton
+    @AppStorage(HiddenScreenSettings.pauseHiddenTVKey)
+    private var pauseHiddenTV = false
+    @AppStorage(HiddenScreenSettings.pauseHiddenPadKey)
+    private var pauseHiddenPad = false
+
+    // Read by OrientationPolicy each time UIKit asks which way the app may turn, so there is nothing to push.
+    @AppStorage(OrientationPolicy.allowPortraitKey)
+    private var allowPortrait = OrientationPolicy.defaultAllowPortrait
+
+    @AppStorage(BrightnessBoost.key)
+    private var brightnessBoost = BrightnessBoost.defaultValue
+    @AppStorage(ScreenBrightness.maxWhilePlayingKey)
+    private var maxBrightnessWhilePlaying = ScreenBrightness.defaultMaxWhilePlaying
 
     @AppStorage(ExternalDisplaySystemSettings.enabledKey)
     private var externalDisplaySystemEnabled = ExternalDisplaySystemSettings.defaultEnabled
@@ -23,6 +41,8 @@ struct DisplaySettingsSection: View {
     private var swapScreens = DisplayLayoutSettings.defaultSwap
     @AppStorage(DisplayLayoutSettings.showSwapButtonKey)
     private var showSwapButton = DisplayLayoutSettings.defaultShowSwapButton
+    @AppStorage(DisplayLayoutSettings.deviceShowsKey)
+    private var deviceShows = DisplayLayoutSettings.defaultDeviceShows
 
     var body: some View {
         Section {
@@ -57,19 +77,90 @@ struct DisplaySettingsSection: View {
 
             if screenLayout == .singleScreen {
                 Toggle(isOn: $showLocalSwapButton) {
-                    Text("Show Swap Button (TV ⇄ Pad)")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Show swap button")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        Text("A small button on screen to switch between the TV and GamePad screens.")
+                            .font(.system(size: 12))
+                            .foregroundColor(MuffinTheme.secondaryText)
+                    }
+                }
+                .tint(MuffinTheme.accentText)
+
+                Toggle(isOn: $pauseHiddenTV) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Pause the TV screen when it isn't shown")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        Text("Stops drawing the TV while the GamePad is up. The game keeps running. Saves heat and battery.")
+                            .font(.system(size: 12))
+                            .foregroundColor(MuffinTheme.secondaryText)
+                    }
+                }
+                .tint(MuffinTheme.accentText)
+
+                Toggle(isOn: $pauseHiddenPad) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Pause the GamePad screen when it isn't shown")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        Text("Stops drawing the GamePad while the TV is up. The game keeps running. Saves heat and battery.")
+                            .font(.system(size: 12))
+                            .foregroundColor(MuffinTheme.secondaryText)
+                    }
                 }
                 .tint(MuffinTheme.accentText)
             }
 
-            Divider()
+            // iPhone only: iPad stays landscape, and the menus on every device do.
+            if UIDevice.current.userInterfaceIdiom == .phone {
+                Toggle(isOn: $allowPortrait) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Allow portrait during games")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        Text("Hold the phone upright to play: the picture goes along the top and the controls below it. Off keeps games in landscape.")
+                            .font(.system(size: 12))
+                            .foregroundColor(MuffinTheme.secondaryText)
+                    }
+                }
+                .tint(MuffinTheme.accentText)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Brightness boost")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    Spacer()
+                    Text(BrightnessBoost.label(for: brightnessBoost))
+                        .font(.system(size: 13))
+                        .foregroundColor(MuffinTheme.secondaryText)
+                }
+                HStack(spacing: 8) {
+                    Text("Off").font(.system(size: 12)).foregroundColor(MuffinTheme.secondaryText)
+                    Slider(value: $brightnessBoost, in: 0...BrightnessBoost.maxValue)
+                        .tint(MuffinTheme.accentText)
+                        .accessibilityLabel("Brightness boost")
+                    Text("Strong").font(.system(size: 12)).foregroundColor(MuffinTheme.secondaryText)
+                }
+                Text("Brightness boost lightens the game picture beyond your screen's maximum. Higher settings wash out dark areas.")
+                    .font(.system(size: 12))
+                    .foregroundColor(MuffinTheme.secondaryText)
+            }
+
+            Toggle(isOn: $maxBrightnessWhilePlaying) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Max screen brightness while playing")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    Text("Sets your screen to full brightness during a game and puts it back afterwards.")
+                        .font(.system(size: 12))
+                        .foregroundColor(MuffinTheme.secondaryText)
+                }
+            }
+            .tint(MuffinTheme.accentText)
 
             Toggle(isOn: $externalDisplaySystemEnabled) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Enable External Display System")
+                    Text("Use an external display")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text("Off by default. Turn it on before connecting a second display.")
+                    Text("Experimental. Turn it on before connecting a second screen.")
                         .font(.system(size: 12))
                         .foregroundColor(MuffinTheme.secondaryText)
                 }
@@ -83,11 +174,11 @@ struct DisplaySettingsSection: View {
             if externalDisplaySystemEnabled {
                 Toggle(isOn: $swapScreens) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("External display: which screen goes there")
+                        Text("GamePad screen on the external display")
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
                         Text(swapScreens
-                             ? "GamePad screen on the external display, TV screen on this device."
-                             : "TV screen on the external display, GamePad screen on this device.")
+                             ? "On: the external display shows the GamePad screen."
+                             : "Off: the external display shows the TV screen.")
                             .font(.system(size: 12))
                             .foregroundColor(MuffinTheme.secondaryText)
                     }
@@ -98,11 +189,34 @@ struct DisplaySettingsSection: View {
                     DisplayRouter.shared.rerouteForScreenLayoutChange()
                 }
 
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("When a TV is connected, this device shows")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        Spacer()
+                        Picker("When a TV is connected, this device shows", selection: $deviceShows) {
+                            ForEach(DeviceScreenMode.allCases) { mode in
+                                Text(mode.string).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .tint(MuffinTheme.accentText)
+                    }
+                    Text(deviceShowsCaption)
+                        .font(.system(size: 12))
+                        .foregroundColor(MuffinTheme.secondaryText)
+                }
+                // Applies at once in a running game; with none running it is used the next time a game starts.
+                .onChange(of: deviceShows) { _ in
+                    DisplayRouter.shared.rerouteForScreenLayoutChange()
+                }
+
                 Toggle(isOn: $showSwapButton) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Show swap button (to external display)")
+                        Text("Show swap button during play")
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        Text("A small on-screen button while playing with an external display connected, so the setting above can be flipped without leaving the game.")
+                        Text("A small button over the game while an external display is connected, to flip the setting above without leaving the game.")
                             .font(.system(size: 12))
                             .foregroundColor(MuffinTheme.secondaryText)
                     }
@@ -113,12 +227,26 @@ struct DisplaySettingsSection: View {
             SettingsSectionHeader("Display", icon: "rectangle.on.rectangle", accent: .io)
         } footer: {
             InfoButton.footer(
-                "Screen Layout arranges the TV and GamePad on this device. External display output is off until you enable it, and needs a second screen that MuffinEMU can open a window on; AirPlay mirroring doesn't count.",
+                "Screen Layout arranges the TV and GamePad on this device. The external display is off until you turn it on, and needs a second screen that MuffinEMU can open a window on; AirPlay mirroring doesn't count.",
                 title: "Display",
-                text: "The Wii U has two screens: the TV and the GamePad.\n\nScreen Layout: Single Screen shows one at a time with a swap button; Adaptive shows both, stacked in portrait and side by side in landscape; Both Screens (GamePad Top Right) keeps the TV full size with a small GamePad inset.\n\nExternal display output is off by default; turn it on before connecting a display. It is experimental and hasn't been tested on much hardware.")
+                text: "The Wii U has two screens: the TV and the GamePad.\n\nScreen Layout: Single Screen shows one at a time with a swap button; Adaptive shows both, stacked in portrait and side by side in landscape; Both Screens (GamePad Top Right) keeps the TV full size with a small GamePad inset.\n\nAllow portrait during games (iPhone): hold the phone upright and the picture goes along the top with the controls below it. Menus stay in landscape. Turn it off if you'd rather a game never turns when the phone tilts; the iOS rotation lock works too.\n\nThe external display is off by default; turn it on before connecting a display. Then choose which Wii U screen it shows, and what this device shows next to it: the other screen, the same screen, or only the controls. It is experimental and hasn't been tested on much hardware.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }
 
     @State private var screenLayoutInfoShown = false
+
+    /// What the choice above does with the swap setting as it is now.
+    private var deviceShowsCaption: String {
+        let tvScreen = swapScreens ? "GamePad screen" : "TV screen"
+        let otherScreen = swapScreens ? "TV screen" : "GamePad screen"
+        switch deviceShows {
+        case .otherScreen:
+            return "The external display shows the \(tvScreen) and this device shows the \(otherScreen)."
+        case .sameScreen:
+            return "Both show the \(tvScreen)."
+        case .nothing:
+            return "The external display shows the \(tvScreen). This device shows only the on-screen controls on black."
+        }
+    }
 }

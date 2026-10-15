@@ -1,0 +1,19 @@
+// swift-tools-version: 5.9
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
+import PackageDescription
+
+let package = Package(
+    name: "MuffinLoadKit",
+    platforms: [.iOS(.v15), .macOS(.v13)],
+    products: [
+        .library(name: "LoadKit", targets: ["LoadKit"]),
+    ],
+    targets: [
+        .target(name: "LoadKit"),
+        .executableTarget(name: "loadkit-check", dependencies: ["LoadKit"]),
+    ]
+)

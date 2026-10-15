@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team.
+// SPDX-License-Identifier: MPL-2.0
+// This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 // Takes the device capability snapshot (see Common/DeviceCapabilities.h) and exposes it to
 // Swift through CemuDeviceCaps.h. Compiled into the engine with the bridge.
 
@@ -159,6 +164,7 @@ extern "C" void cemu_device_caps_get(CemuDeviceCaps* out)
     out->minBootHeadroomBytes = b.minBootHeadroomBytes;
     out->jitArenaStartMB = b.jitArenaStartMB;
     out->logicalCores = i.logicalCores;
+    out->maxHostThreads = b.maxHostThreads;
     out->perfCores = i.perfCores;
     out->effCores = i.effCores;
     out->screenClass = (int32_t)i.screen;

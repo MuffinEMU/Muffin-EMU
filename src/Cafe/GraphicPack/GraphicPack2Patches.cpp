@@ -63,7 +63,12 @@ void PatchErrorHandler::showStageErrorMessageBox()
 		}
 	}
 
+	#if BOOST_OS_IOS
+	errorMsg.append("\n \n").append(_tr("This graphic pack was skipped."));
+	WindowSystem::ShowErrorDialog(errorMsg, _tr("A graphic pack couldn't be applied"), WindowSystem::ErrorCategory::GRAPHIC_PACKS);
+	#else
 	WindowSystem::ShowErrorDialog(errorMsg, _tr("Graphic pack error"), WindowSystem::ErrorCategory::GRAPHIC_PACKS);
+	#endif
 }
 
 // loads Cemu-style patches (patch_<anything>.asm)

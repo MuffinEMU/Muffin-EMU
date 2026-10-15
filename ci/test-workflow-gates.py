@@ -1,4 +1,14 @@
 #!/usr/bin/env python3
+# MuffinEMU — code by the MuffinEMU Development Team.
+# Copyright (c) 2026 MuffinEMU Development Team.
+# SPDX-License-Identifier: MPL-2.0
+# This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
+# MuffinEMU — code by the MuffinEMU Development Team.
+# Copyright (c) 2026 MuffinEMU Development Team.
+# SPDX-License-Identifier: MPL-2.0
+# This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 """Which publishing steps and jobs of build-ios-app.yml run for each kind of trigger.
 
 It takes the REAL `if:` expressions from the workflow, the REAL channel decision

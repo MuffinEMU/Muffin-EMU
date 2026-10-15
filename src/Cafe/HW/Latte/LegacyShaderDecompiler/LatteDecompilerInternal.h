@@ -202,6 +202,8 @@ struct LatteDecompilerShaderContext
 	LatteParsedGSCopyShader* parsedGSCopyShader;
 	// state
 	bool hasError;
+	// vertex shader outputs the pixel shader reads but this shader never writes; main() sets them to zero (GLSL)
+	std::vector<uint32> zeroDefaultOutputSemantics;
 	// type tracker
 	struct
 	{

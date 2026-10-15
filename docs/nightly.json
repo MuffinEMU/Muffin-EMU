@@ -1,37 +1,77 @@
 {
   "name": "MuffinEMU Nightly",
-  "identifier": "com.kiddreads.MuffinEMU.nightly",
+  "identifier": "com.void.muffinemu.nightly",
   "subtitle": "The newest MuffinEMU build, rebuilt on every change.",
-  "description": "The install source for MuffinEMU, a Wii U emulator for iPhone and iPad built on Cemu. This source serves the nightly build: the newest code, rebuilt on every change and not tested. It has the same bundle identifier as the standard build, so installing it replaces a standard install and keeps your games, saves and settings. Add it only if you want the newest build rather than the one known to work.",
-  "iconURL": "https://kiddreads.github.io/MuffinEMU/icon.png",
-  "website": "https://kiddreads.github.io/MuffinEMU/",
-  "tintColor": "E5652E",
+  "description": "Wii U on iPhone and iPad, done right. GamePad, TV, or both. Free and open source. This source serves the nightly build: the newest code, rebuilt on every change and not tested. It has the same bundle identifier as the standard build, so installing it replaces a standard install and keeps your games, saves and settings. Add it only if you want the newest build rather than the one known to work.",
+  "iconURL": "https://muffinemu.github.io/MuffinEMU/icon.png",
+  "headerURL": "https://muffinemu.github.io/MuffinEMU/assets/source-header.jpg",
+  "website": "https://muffinemu.github.io/MuffinEMU/",
+  "tintColor": "#E5652E",
+  "featuredApps": [
+    "com.void.muffinemu"
+  ],
   "apps": [
     {
       "name": "MuffinEMU Nightly",
-      "bundleIdentifier": "com.kiddreads.MuffinEMU",
-      "developerName": "kiddreads",
+      "bundleIdentifier": "com.void.muffinemu",
+      "developerName": "Void",
       "subtitle": "Wii U emulator - nightly build",
-      "localizedDescription": "MuffinEMU is a Wii U emulator for iPhone and iPad (iOS 15 and later), built on Cemu.\n\n- Import games from Files: WUA, decrypted games, and encrypted dumps with your own keys.txt. DLC and updates install from the app.\n- Metal renderer by default, with Vulkan through MoltenVK as an option.\n- Runs on the interpreter out of the box, and on the faster recompiler when a JIT enabler such as StikDebug is attached.\n- An on-screen GamePad laid out from a real Wii U GamePad, with an optional analog stick, skins and a layout editor. Hardware controllers work alongside it.\n- Single screen, both screens, or the TV image on an external display.\n- Save states, graphic packs, and 31 app icons with matching themes.\n\nThis source serves the nightly build: the newest code, rebuilt on every change and not tested. It has the same bundle identifier as the standard build, so installing it replaces a standard install and keeps your games, saves and settings. Add it only if you want the newest build rather than the one known to work.\n\nBring your own games and keys. No copyrighted content is distributed here.",
-      "iconURL": "https://kiddreads.github.io/MuffinEMU/icon.png",
-      "tintColor": "E5652E",
+      "localizedDescription": "Wii U on iPhone and iPad. Play on-screen, use the GamePad, or switch to your TV. Free, open source, and built around Cemu.\n\nGames, keys and system files are not included. Bring the games you own.\n\n- Add games from Files: WUA, WUD/WUX, decrypted or encrypted with your own keys. Updates and DLC install in the app\n- HD box art and game info find themselves: summaries, release dates and more\n- Download art packs, including 3D boxes, or add your own covers in up to 4K\n- Cards, large covers, 3D boxes, grid or list, any size, with sorting, grouping and renaming\n\n[Serious Graphics]\n- A Metal renderer built for Apple GPUs, with Vulkan as an option\n- Graphic packs, resolution scaling and a brightness boost for dim scenes\n- Bring your desktop Cemu shader caches and skip the stutter\n\n[Speed]\n- Plays out of the box\n- Turn on JIT with StikDebug or LiveContainer for the full-speed recompiler. MuffinEMU offers to do it at launch\n\n[The GamePad, Done Right]\n- On-screen controls measured from a real Wii U GamePad, with skins, analog sticks and a layout editor\n- Controllers work right alongside it\n- One screen or both, iPhone portrait, or the TV picture on an external display\n\n[Online]\n- Pretendo Network with your own Wii U account files\n- Custom servers, including ones you host at home\n\n[Make It Yours]\n- Per-game settings, Basic and Advanced modes, and one-tap settings backup\n- 31 app icons with matching themes\n\nFree, open source and updated constantly. Wii U on iOS, the way it should be.\n\nOfficial Site: https://muffinemu.github.io/MuffinEMU/\nGuides: https://muffinemu.github.io/MuffinEMU/docs/\nSource code: https://github.com/MuffinEMU/Muffin-EMU\nReport a problem: https://github.com/MuffinEMU/Muffin-EMU/issues\n\nLegal\n\nMuffinEMU is not affiliated with Nintendo or Apple. Wii U is a trademark of Nintendo. No copyrighted games, keys or firmware are distributed here.",
+      "iconURL": "https://muffinemu.github.io/MuffinEMU/icon.png",
+      "tintColor": "#E5652E",
       "category": "games",
+      "screenshots": {
+        "ipad": [
+          {
+            "imageURL": "https://muffinemu.github.io/MuffinEMU/assets/screenshots/ipad/01-landscape-2.png",
+            "width": 2732,
+            "height": 2048
+          },
+          {
+            "imageURL": "https://muffinemu.github.io/MuffinEMU/assets/screenshots/ipad/02-landscape-3.png",
+            "width": 2732,
+            "height": 2048
+          },
+          {
+            "imageURL": "https://muffinemu.github.io/MuffinEMU/assets/screenshots/ipad/03-portrait-1.png",
+            "width": 2048,
+            "height": 2732
+          },
+          {
+            "imageURL": "https://muffinemu.github.io/MuffinEMU/assets/screenshots/ipad/mario-kart-8-classic-pad.jpg",
+            "width": 1600,
+            "height": 1199
+          },
+          {
+            "imageURL": "https://muffinemu.github.io/MuffinEMU/assets/screenshots/ipad/mario-kart-8-zone-pad.jpg",
+            "width": 1600,
+            "height": 1199
+          }
+        ]
+      },
       "screenshotURLs": [],
       "versions": [
         {
-          "version": "2026.10.1",
-          "date": "2026-10-01T04:36:53Z",
-          "localizedDescription": "The newest build of MuffinEMU, from commit 0686f32e8ea7b4dd67894077b3979c756aa2a61b on `main`.\n\n**Known issue:** the on-screen controls don't respond reliably yet. A fix is on the way.\n\nThis tag moves. Every eligible build of main replaces it, so the download here is\nalways the newest code, never a version you can come back to. For that, use a\nnumbered release.\n\nThis build has not been tested. If you want the version that is known to\nwork, install the latest numbered release instead.",
-          "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/nightly/MuffinEMU.ipa",
-          "size": 68965469,
+          "version": "10.3",
+          "date": "2026-10-15T17:20:39Z",
+          "localizedDescription": "The newest build of MuffinEMU, from commit ce16f765d00b710ece1ea03d0a81a3c67a981f13 on `main`.",
+          "downloadURL": "https://github.com/MuffinEMU/Muffin-EMU/releases/download/nightly/MuffinEMU.ipa",
+          "size": 145837255,
           "minOSVersion": "15.0"
         }
       ],
       "appPermissions": {
-        "entitlements": [],
-        "privacy": {}
+        "entitlements": [
+          "com.apple.developer.kernel.increased-memory-limit",
+          "get-task-allow"
+        ],
+        "privacy": {
+          "NSMicrophoneUsageDescription": "MuffinEMU uses the microphone only when a Wii U game asks for GamePad microphone input.",
+          "NSLocalNetworkUsageDescription": "MuffinEMU connects to game servers on your local network when you use a custom server hosted at home."
+        }
       }
     }
   ],
-  "news": []
+  "news": [],
+  "sourceURL": "https://muffinemu.github.io/MuffinEMU/nightly.json"
 }

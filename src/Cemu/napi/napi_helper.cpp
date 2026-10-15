@@ -110,7 +110,7 @@ CURLcode _sslctx_function_CUSTOM(CURL* curl, void* sslctx, void* param)
 	}
 	for (auto& clientCertId : requestHelper->GetClientCertIds())
 	{
-		if (iosuCrypto_addCACertificate(sslctx, clientCertId) == false)
+		if (iosuCrypto_addClientCertificate(sslctx, clientCertId) == false)
 		{
 			cemuLog_log(LogType::Force, "Invalid client certificate ({})", clientCertId);
 		}
@@ -165,6 +165,11 @@ void CurlRequestHelper::initate(NetworkService service, std::string url, SERVER_
 	if (IsNetworkServiceSSLDisabled(service))
 	{
 		curl_easy_setopt(m_curl, CURLOPT_SSL_VERIFYPEER, 0L);
+	}
+	else if (service == NetworkService::Custom && !ActiveSettings::HasRequiredOnlineFiles())
+	{
+		// A custom server used without a Wii U: there are no Nintendo CA or client certificates to install,
+		// so keep libcurl's default certificate check (or none, when the server's XML turns it off).
 	}
 	else if (sslContext == SERVER_SSL_CONTEXT::ACT || sslContext == SERVER_SSL_CONTEXT::TAGAYA)
 	{

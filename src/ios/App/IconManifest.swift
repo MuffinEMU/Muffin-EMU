@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import Foundation
 
 /// Mirrors icon-manifest.json (bundled as a resource) - the single source of
@@ -8,12 +13,42 @@ struct AppIconOption: Codable, Identifiable {
     let name: String
     let tier: String
     let tagline: String
+    /// Present when the icon was redrawn: the original art still ships, as "AltIcon-<id>-classic",
+    /// with its original tagline, for players who prefer it (IconStyle.classic).
+    let classic: ClassicVersion?
+
+    struct ClassicVersion: Codable {
+        let tagline: String
+    }
 
     var isPro: Bool { tier == "pro" }
 
     /// Matches the "AltIcon-<id>" naming used for both the asset catalog appiconsets
     /// and the CFBundleAlternateIcons keys in Info-AlternateIcons.plist.
     var alternateIconName: String { "AltIcon-\(id)" }
+
+    /// The icon to use in a given style; icons that were never redrawn look the same in both.
+    func alternateIconName(_ style: IconStyle) -> String {
+        style == .classic && classic != nil ? "AltIcon-\(id)-classic" : alternateIconName
+    }
+
+    func tagline(_ style: IconStyle) -> String {
+        style == .classic ? (classic?.tagline ?? tagline) : tagline
+    }
+}
+
+/// Which art the icon picker shows and applies: the revamped icons (default) or the originals.
+enum IconStyle: String, CaseIterable, Identifiable {
+    case revamped, classic
+
+    var id: String { rawValue }
+    var title: String { self == .revamped ? "Revamped" : "Classic" }
+
+    static let defaultsKey = "muffin.icons.style"
+    static var current: IconStyle {
+        get { IconStyle(rawValue: UserDefaults.standard.string(forKey: defaultsKey) ?? "") ?? .revamped }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: defaultsKey) }
+    }
 }
 
 private struct IconManifestFile: Codable {
@@ -32,4 +67,13 @@ enum IconManifest {
         }
         return file.icons
     }()
+
+    /// The manifest id behind a system alternate icon name, in either style
+    /// ("AltIcon-galaxy-space-classic" -> "galaxy-space"); nil means the main icon.
+    static func id(forAlternateIconName name: String?) -> String? {
+        guard var s = name else { return nil }
+        if s.hasPrefix("AltIcon-") { s.removeFirst("AltIcon-".count) }
+        if s.hasSuffix("-classic") { s.removeLast("-classic".count) }
+        return s
+    }
 }

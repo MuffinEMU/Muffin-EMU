@@ -2,6 +2,7 @@
 #include "Cafe/HW/Latte/LatteAddrLib/LatteAddrLib.h"
 #include "config/ActiveSettings.h"
 #include "Cafe/CafeSystem.h"
+#include "Cafe/HW/Latte/Core/PerfTelemetry.h"
 
 //#define BENCHMARK_TEXTURE_DECODING		// if defined, time it takes to decode textures will be measured and logged to log.txt
 
@@ -704,7 +705,23 @@ void LatteTextureLoader_UpdateTextureSliceData(LatteTexture* tex, uint32 sliceIn
 
 	if (tex->overwriteInfo.hasFormatOverwrite == false && tex->overwriteInfo.hasResolutionOverwrite == false)
 	{
-		texDecoder->decode(&textureLoader, pixelData);
+		PerfTelemetry::Get().textureDecodes.fetch_add(1, std::memory_order_relaxed);
+		PerfTelemetry::ScopedTimer textureDecodeTimer(PerfTelemetry::Get().textureDecodeNs);
+		// A decode that can't get memory (a huge scratch buffer during a scene load, say) used to throw
+		// std::bad_alloc out of the GPU thread and stop the game. Treat it like a missing upload buffer:
+		// leave the texture as it is and have it loaded again later.
+		try
+		{
+			texDecoder->decode(&textureLoader, pixelData);
+		}
+		catch (const std::bad_alloc&)
+		{
+			cemuLog_log(LogType::Force, "Texture decode ran out of memory ({}x{}x{}, format {:04x}); the texture will be loaded again",
+				textureLoader.width, textureLoader.height, textureLoader.surfaceInfoDepth, (int)tex->format);
+			g_renderer->texture_uploadBufferUnavailable(tex);
+			g_renderer->texture_releaseTextureUploadBuffer(pixelData);
+			return;
+		}
 	}
 
 #ifdef BENCHMARK_TEXTURE_DECODING
@@ -743,7 +760,21 @@ void LatteTextureLoader_UpdateTextureSliceData(LatteTexture* tex, uint32 sliceIn
 	// load slice
 	//debug_printf("[Load Slice] Addr: %08x MIP: %02d Slice: %02d Res %04x/%04x Texel Res %04x/%04x Fmt %04x Tm %d\n", textureLoader.physAddress, mipIndex, sliceIndex, textureLoader.width, textureLoader.height, textureLoader.texelCountX, textureLoader.texelCountY, (int)format, tileMode);
 
-	LatteTextureLoader_loadTextureDataIntoSlice(tex, textureLoader.width, textureLoader.height, depth, mipLevels, pixelData, sliceIndex, mipIndex, imageSize);
+	// The upload itself can run out of memory too (a staging buffer, an encoder). That used to throw std::bad_alloc out of
+	// the GPU thread and stop the game; skip this slice like a missing upload buffer instead, once per kind in the log.
+	try
+	{
+		LatteTextureLoader_loadTextureDataIntoSlice(tex, textureLoader.width, textureLoader.height, depth, mipLevels, pixelData, sliceIndex, mipIndex, imageSize);
+	}
+	catch (const std::bad_alloc&)
+	{
+		cemuLog_logOnce(LogType::Force, "Texture upload ran out of memory ({}x{}x{}, format {:04x}); that texture will be loaded again", textureLoader.width, textureLoader.height, textureLoader.surfaceInfoDepth, (int)tex->format);
+		g_renderer->texture_uploadBufferUnavailable(tex);
+		g_renderer->texture_releaseTextureUploadBuffer(pixelData);
+		if (textureLoader.dump)
+			free(textureLoader.dumpRGBA);
+		return;
+	}
 	// write texture dump
 	if (textureLoader.dump)
 	{
@@ -805,7 +836,9 @@ void LatteTextureLoader_writeReadbackTextureToMemory(LatteTextureDefinition* tex
 		{
 			optimizedLinearReadbackWriteLoop<uint64>(&textureLoader, linearPixelData, sourceRowPitch);
 		}
-		else if (textureData->format == Latte::E_GX2SURFFMT::R32_G32_B32_A32_FLOAT)
+		else if (textureData->format == Latte::E_GX2SURFFMT::R32_G32_B32_A32_FLOAT ||
+			textureData->format == Latte::E_GX2SURFFMT::R32_G32_B32_A32_SINT ||
+			textureData->format == Latte::E_GX2SURFFMT::R32_G32_B32_A32_UINT)
 		{
 			for (sint32 y = 0; y < textureLoader.height; y += textureLoader.stepY)
 			{

@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import CoreGraphics
 import Foundation
 
@@ -33,8 +38,12 @@ public final class AdaptivePad: ControlScheme {
     private var pending: [Int: CGPoint] = [:]
     private var lastUnit: CGFloat = 1
 
-    public init(learned: [Int: CGPoint] = [:]) {
+    /// A's size as a multiple of its usual one (1...1.8). Learned offsets don't depend on it.
+    public let aScale: CGFloat
+
+    public init(learned: [Int: CGPoint] = [:], aScale: CGFloat = 1) {
         self.learned = learned
+        self.aScale = aScale
         super.init(info: Self.schemeInfo)
     }
 
@@ -62,10 +71,11 @@ public final class AdaptivePad: ControlScheme {
     }
 
     override public func makeControls(_ context: LayoutContext) -> [PadControl] {
-        let controls = GamePadArrangement.build(context)
+        let controls = GamePadArrangement.build(context, aScale: aScale)
         // The arrangement may have shrunk to fit, so read the unit back off a control
-        // rather than from the context.
-        lastUnit = controls.first { $0.role == .face }.map { $0.shape.boundingBox.width } ?? context.unit
+        // rather than from the context. X is a neighbour, so undo its shrink.
+        lastUnit = controls.first { $0.role == .face }
+            .map { $0.shape.boundingBox.width / PadParts.neighbourScale(forA: aScale) } ?? context.unit
         return controls
     }
 

@@ -1,15 +1,29 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import SwiftUI
 
 @main
 struct CemuApp: App {
+    // Narrows the orientations Info.plist lists to what the screen on show may use.
+    @UIApplicationDelegateAdaptor(AppOrientationDelegate.self) private var orientationDelegate
     // Theme tokens are plain statics, so views do not redraw on their own.
     // Keying the tree to the current theme id rebuilds it when the theme changes.
     @ObservedObject private var themeStore = MuffinThemeStore.shared
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         // The device capability snapshot and its one-line summary, before anything else is written:
         // every device log starts with it, so reports from different devices compare.
         DeviceCapabilities.bootstrap()
+        DeviceConnection.shared.start()
+        // Before anything reads the mode: an update must not switch off advanced settings already in use.
+        SettingsMode.chooseInitialModeIfNeeded()
+        // Before any Settings screen or pad reads it: decides whether the polished control look starts on.
+        TouchLabSettings.registerShowcaseStyleDefault()
+        MeloControlsSetting.clearIfUnavailable()
 
         // Which build is this? The release commit and core are stamped into Info.plist when the IPA
         // is packaged (ci/package-ipas.sh), outside the core's own fingerprint, so a core reused
@@ -24,6 +38,7 @@ struct CemuApp: App {
         // Earliest Swift-side checkpoint; if it is missing from the crash log, the
         // crash happened in native static initialisation.
         cemu_bridge_log_checkpoint("CemuApp.init() reached")
+        cemu_bridge_log_checkpoint(Ownership.notice)
 
         // Create the folders players drop keys and games into, so Files lists
         // Documents on a fresh install. Idempotent.
@@ -37,8 +52,7 @@ struct CemuApp: App {
         }
 
 
-        // Push the saved VSync setting before the renderer creates its layer, so the
-        // toggle takes effect on the first launch after changing it.
+        // Push the saved (legacy) VSync value; it has no effect on iOS, see CemuBridge.h.
         cemu_bridge_set_vsync_enabled(
             UserDefaults.standard.object(forKey: "muffin.render.vsync") as? Bool ?? true)
     }
@@ -53,6 +67,25 @@ struct CemuApp: App {
                 // of them all over the app. Set once here, it reaches every scroll view below,
                 // including the ones in sheets and in screens added later.
                 .muffinScrollEdgeBlurHidden()
+                // A swipe-away from the app switcher gives no willTerminate. Ask for the preferences to be
+                // written out as soon as the app stops being active, not on cfprefsd's own schedule.
+                .onChange(of: scenePhase) { phase in
+                    if phase != .active {
+                        ControllerCustomLayout.shared.flushPending()
+                        var task = UIBackgroundTaskIdentifier.invalid
+                        task = UIApplication.shared.beginBackgroundTask(withName: "Flush preferences") {
+                            UIApplication.shared.endBackgroundTask(task)
+                        }
+                        let flushTask = task
+                        DispatchQueue.global(qos: .userInitiated).async {
+                            UserDefaults.standard.synchronize()
+                            UIApplication.shared.endBackgroundTask(flushTask)
+                        }
+                    }
+                }
+                .onChange(of: scenePhase) { phase in
+                    if phase == .background { PipelineCacheFlusher.flushForBackground() }
+                }
                 .onAppear {
                     cemu_bridge_log_checkpoint("ContentView.onAppear reached")
                     #if os(iOS)
@@ -79,5 +112,30 @@ extension View {
         #else
         self
         #endif
+    }
+}
+
+/// iOS kills backgrounded apps without notice, so shaders compiled since the last periodic save would be lost.
+/// The save runs on a utility queue under a background task so it can finish after the app has left the screen.
+enum PipelineCacheFlusher {
+    private final class TaskBox { var id = UIBackgroundTaskIdentifier.invalid }
+
+    static func flushForBackground() {
+        let box = TaskBox()
+        box.id = UIApplication.shared.beginBackgroundTask(withName: "FlushPipelineCache") {
+            if box.id != .invalid {
+                UIApplication.shared.endBackgroundTask(box.id)
+                box.id = .invalid
+            }
+        }
+        DispatchQueue.global(qos: .utility).async {
+            cemu_bridge_flush_pipeline_cache()
+            DispatchQueue.main.async {
+                if box.id != .invalid {
+                    UIApplication.shared.endBackgroundTask(box.id)
+                    box.id = .invalid
+                }
+            }
+        }
     }
 }

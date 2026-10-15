@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team.
+// SPDX-License-Identifier: MPL-2.0
+// This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 // Emulated toy-to-life devices for iOS: Skylanders Portal, Disney Infinity Base, LEGO
 // Dimensions Toypad. Ported from the desktop wxWidgets UI's own logic
 // (gui/wxgui/EmulatedUSBDevices/EmulatedUSBDeviceFrame.cpp), which already drives the

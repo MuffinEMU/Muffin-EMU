@@ -639,6 +639,18 @@ bool fsc_isWritable(FSCVirtualFile* fscFile)
 	return fscFile->fscQueryValueU64(FSC_QUERY_WRITEABLE) != 0;
 }
 
+static std::atomic<uint32> s_shortReadCount{0};
+
+void fscNoteShortRead()
+{
+	s_shortReadCount.fetch_add(1, std::memory_order_relaxed);
+}
+
+uint32 fscShortReadCount()
+{
+	return s_shortReadCount.load(std::memory_order_relaxed);
+}
+
 /*
  * Read data from file
  * Returns number of bytes successfully read

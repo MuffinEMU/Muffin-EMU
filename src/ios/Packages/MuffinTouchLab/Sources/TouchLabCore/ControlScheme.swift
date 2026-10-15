@@ -1,5 +1,59 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import CoreGraphics
 import Foundation
+
+/// How a steering area turns a finger into a stick.
+///
+/// Horizontal travel is the steering and gets nearly the whole range. Vertical travel only
+/// matters for throwing an item forward or back, so it has its own, larger dead zone: a
+/// thumb that wanders up or down while turning must not throw anything.
+public struct SteerSpec: Equatable, Sendable {
+    public var stick: PadStick
+    /// Finger travel for full lock, in points.
+    public var lockX: CGFloat
+    /// Finger travel for full forward / back, in points.
+    public var lockY: CGFloat
+    /// Fraction of `lockY` that is ignored.
+    public var deadY: Double
+    /// Once the finger is this many `lockX` away the anchor follows it, so turning back
+    /// is as quick as turning in, however far the thumb overshot.
+    public var followPast: CGFloat
+    /// Steering X comes from the device's motion; the finger only gives Y.
+    public var tilt: Bool
+
+    public init(stick: PadStick = .left, lockX: CGFloat, lockY: CGFloat, deadY: Double = 0.45,
+                followPast: CGFloat = 1.3, tilt: Bool = false) {
+        self.stick = stick
+        self.lockX = lockX
+        self.lockY = lockY
+        self.deadY = deadY
+        self.followPast = followPast
+        self.tilt = tilt
+    }
+}
+
+public enum SteerMath {
+    /// A finger offset from the anchor (view points, +y down) as a console-convention stick
+    /// value (+y up). Each axis has its own dead zone, rescaled so the output ramps from
+    /// zero rather than jumping, and its own full-travel distance.
+    public static func value(offset: CGPoint, spec: SteerSpec, deadX: Double, deadY: Double, curve: Double) -> StickValue {
+        func axis(_ travel: CGFloat, _ lock: CGFloat, _ dead: Double, _ curve: Double) -> Double {
+            guard lock > 0 else { return 0 }
+            let raw = Double(abs(travel) / lock)
+            guard raw > dead else { return 0 }
+            let live = min((raw - dead) / max(1 - dead, 0.0001), 1)
+            let shaped = pow(live, curve)
+            return travel < 0 ? -shaped : shaped
+        }
+        let x = axis(offset.x, spec.lockX, deadX, curve)
+        let y = -axis(offset.y, spec.lockY, deadY, 1)
+        return StickValue(x: x, y: y == 0 ? 0 : y)
+    }
+}
 
 /// One on-screen control, declaratively. Schemes are mostly just functions from a
 /// `LayoutContext` to a list of these; `ControlScheme` does the touch handling for all of
@@ -23,6 +77,15 @@ public struct PadControl {
         /// decays to centre when the finger stops. `fullSpeed` is points/second for full
         /// deflection.
         case swipeStick(PadStick, fullSpeed: CGFloat)
+        /// A large held zone that presses a SET of buttons (A alone, A and R together, ...).
+        /// A finger slides between the pedals of one `group` without lifting, with hysteresis
+        /// so a thumb resting on a boundary doesn't flicker between them.
+        case pedal(Set<PadButton>)
+        /// Steering area: a stick whose anchor appears under the thumb, read mostly sideways.
+        /// See `SteerSpec`.
+        case steer(SteerSpec)
+        /// Tap to take the current device angle as straight ahead (tilt steering).
+        case recentre
     }
 
     public var kind: Kind
@@ -41,9 +104,14 @@ public struct PadControl {
     public var priority: Int
     /// Takes part in between-button chords (thumb across the gap presses both).
     public var chords: Bool
+    /// A fixed stick's drawn knob radius, when the layout sized it itself. nil = the scheme's
+    /// own (`knobRadius`, a size from the pad's unit before any fitting).
+    public var knob: CGFloat?
 
     public init(_ kind: Kind, shape: PadShape, role: RenderElement.Role, label: String = "",
-                group: Int = 0, cluster: Int = -1, reach: CGFloat = 0, priority: Int = 1, chords: Bool = false) {
+                group: Int = 0, cluster: Int = -1, reach: CGFloat = 0, priority: Int = 1, chords: Bool = false,
+                knob: CGFloat? = nil) {
+        self.knob = knob
         self.kind = kind
         self.shape = shape
         self.role = role
@@ -62,7 +130,7 @@ public struct PadControl {
 
     public var isZone: Bool {
         switch kind {
-        case .floatingStick, .swipeStick: return true
+        case .floatingStick, .swipeStick, .steer: return true
         default: return false
         }
     }
@@ -105,6 +173,9 @@ open class ControlScheme: TouchScheme {
     }
 
     var tracks: [TouchID: Track] = [:]
+    /// Control indices by slide group, rebuilt whenever the controls are, so a finger moving
+    /// doesn't scan the whole list for its neighbours on every sample.
+    private var groupCache: [Int: [Int]] = [:]
     /// Last short, still tap per control - the first half of a double-tap.
     private var lastTap: [Int: (time: Double, point: CGPoint)] = [:]
 
@@ -125,16 +196,38 @@ open class ControlScheme: TouchScheme {
     /// The last finger has lifted.
     open func didBecomeIdle() {}
 
+    /// A finger landed on a recentre control.
+    open func recentreRequested() {}
+
     // MARK: - TouchScheme
 
     public func layout(_ context: LayoutContext) {
         self.context = context
         tracks.removeAll()
-        baseControls = makeControls(context)
+        baseControls = makeControls(context).map { applyTolerance($0, context) }
         applyOffsets()
     }
 
+    /// The player's touch tolerance: a button or pedal reaches at least as far past its drawn
+    /// edge as MuffinEMU's own pad would let a touch miss by. Never less than the scheme's own.
+    private func applyTolerance(_ c: PadControl, _ ctx: LayoutContext) -> PadControl {
+        guard let tolerance = ctx.tolerance else { return c }
+        switch c.kind {
+        case .button, .pedal: break
+        default: return c
+        }
+        let box = c.shape.boundingBox
+        let radius = min(box.width, box.height) / 2
+        var out = c
+        out.reach = max(c.reach, (tolerance.reachFactor - 1) * radius)
+        return out
+    }
+
     private func applyOffsets() {
+        defer {
+            groupCache = [:]
+            for (i, c) in controls.enumerated() where c.group != 0 { groupCache[c.group, default: []].append(i) }
+        }
         controls = baseControls.map { c in
             guard c.cluster >= 0, let d = clusterOffsets[c.cluster], d != .zero else { return c }
             var moved = c
@@ -186,6 +279,23 @@ open class ControlScheme: TouchScheme {
         return (first.0, pressed)
     }
 
+    /// The pedal under a finger among `candidates`: the one whose edge the finger is deepest
+    /// inside, or nearest to when it is in a gap.
+    func pedals(at point: CGPoint, among candidates: [Int]) -> Int? {
+        candidates
+            .compactMap { i -> (Int, CGFloat)? in
+                guard case .pedal = controls[i].kind else { return nil }
+                let d = controls[i].shape.edgeDistance(to: point)
+                return d <= controls[i].reach ? (i, d) : nil
+            }
+            .min { $0.1 < $1.1 }?.0
+    }
+
+    func pedalButtons(_ index: Int) -> Set<PadButton> {
+        if case .pedal(let set) = controls[index].kind { return set }
+        return []
+    }
+
     public func began(_ touch: TouchID, at point: CGPoint, time: Double) -> Contribution? {
         guard let index = resolve(point) else { return nil }
         let c = controls[index]
@@ -199,13 +309,21 @@ open class ControlScheme: TouchScheme {
         case let .dpad(click, clickRadius, _, _):
             if click != nil, point.distance(to: c.shape.center) <= clickRadius { t.clickHeld = true }
         case .stick(_, _, let click):
-            t.origin = c.shape.center
+            // Relative: the centre is where the thumb landed, so landing is never a push.
+            t.origin = context.stick.relativeCentre ? point : c.shape.center
             t.clickHeld = click != nil && isDoubleTap(index, point, time)
         case let .floatingStick(_, travel, _, _, click):
             t.origin = floatingOrigin(for: point, travel: travel)
             t.clickHeld = click != nil && isDoubleTap(index, point, time)
         case .swipeStick:
             break
+        case .pedal:
+            let hit = pedals(at: point, among: groupMembers(of: index)) ?? index
+            t.control = hit
+        case .steer:
+            t.origin = point
+        case .recentre:
+            recentreRequested()
         }
         tracks[touch] = t
         didBegin(control: t.control, at: point)
@@ -233,6 +351,14 @@ open class ControlScheme: TouchScheme {
         if tracks.isEmpty { didBecomeIdle() }
     }
 
+    /// Set by a subclass that steers from the device's motion: replaces the finger's X on a
+    /// steering area. nil = the finger steers.
+    var steerOverrideX: Double?
+
+    open func ambient() -> Contribution? { nil }
+    open var wantsMotion: Bool { false }
+    open func motion(angle: Double) -> [TouchID: Contribution] { [:] }
+
     public var needsTicks: Bool {
         tracks.values.contains { t in
             if case .swipeStick = controls[t.control].kind { return true }
@@ -250,7 +376,7 @@ open class ControlScheme: TouchScheme {
             var track = t
             let decay = CGFloat(exp(-idle / 0.06))
             track.velocity = t.velocity * decay
-            track.stickValue = swipeValue(track.velocity, fullSpeed: fullSpeed)
+            track.stickValue = swipeValue(track.velocity, fullSpeed: fullSpeed, stick: stick)
             tracks[id] = track
             out[id] = Contribution(stick: stick, stickValue: track.stickValue)
         }
@@ -262,7 +388,7 @@ open class ControlScheme: TouchScheme {
     private func groupMembers(of index: Int) -> [Int] {
         let g = controls[index].group
         guard g != 0 else { return [index] }
-        return controls.indices.filter { controls[$0].group == g }
+        return groupCache[g] ?? [index]
     }
 
     private func isDoubleTap(_ index: Int, _ point: CGPoint, _ time: Double) -> Bool {
@@ -276,7 +402,7 @@ open class ControlScheme: TouchScheme {
         point
     }
 
-    private func contribution(for t: inout Track, at point: CGPoint, time: Double) -> Contribution {
+    func contribution(for t: inout Track, at point: CGPoint, time: Double) -> Contribution {
         let c = controls[t.control]
         defer { t.last = point; t.lastTime = time }
 
@@ -316,40 +442,94 @@ open class ControlScheme: TouchScheme {
             return Contribution(buttons: pressed)
 
         case let .stick(stick, travel, click):
-            return stickContribution(&t, stick: stick, travel: travel, click: click, point: point, follow: false)
+            return stickContribution(&t, stick: stick, travel: travel, click: click, point: point,
+                                     follow: context.stick.followsThumb, fixedBase: !context.stick.relativeCentre)
 
         case let .floatingStick(stick, travel, _, follow, click):
-            return stickContribution(&t, stick: stick, travel: travel, click: click, point: point, follow: follow)
+            return stickContribution(&t, stick: stick, travel: travel, click: click, point: point,
+                                     follow: follow || context.stick.followsThumb, fixedBase: false)
+
+        case .pedal:
+            let members = groupMembers(of: t.control)
+            if let best = pedals(at: point, among: members) {
+                if best != t.control {
+                    let current = c.shape.edgeDistance(to: point)
+                    let challenger = controls[best].shape.edgeDistance(to: point)
+                    // Hand over when the other pedal is clearly nearer, or this one has let go
+                    // of the finger altogether.
+                    if challenger < current - 0.08 * context.unit || current > c.reach {
+                        t.control = best
+                    }
+                }
+                t.buttons = pedalButtons(t.control)
+            } else if c.shape.edgeDistance(to: point) > c.reach + 0.5 * context.unit {
+                // Well clear of every pedal: let go, but keep tracking so sliding back presses again.
+                t.buttons = []
+            }
+            return Contribution(buttons: t.buttons)
+
+        case let .steer(spec):
+            var offset = point - t.origin
+            let follow = spec.lockX * spec.followPast
+            if abs(offset.x) > follow {
+                // Past the end of the travel: the anchor comes along, keeping the finger
+                // `follow` away from it.
+                t.origin.x += offset.x > 0 ? offset.x - follow : offset.x + follow
+                offset = point - t.origin
+            }
+            // The player's calibration for this stick: their comfortable throw is full lock, and
+            // their rest wobble is never steered on.
+            let cal = context.calibration[spec.stick].clamped
+            let tuning = context.stick.clamped
+            var calibrated = spec
+            calibrated.lockX = spec.lockX * CGFloat(cal.fullThrow)
+            var value = SteerMath.value(offset: offset, spec: calibrated,
+                                        deadX: max(tuning.deadzone, cal.jitter / cal.fullThrow), deadY: spec.deadY,
+                                        curve: tuning.curve)
+            var knobX = min(max(offset.x, -spec.lockX), spec.lockX)
+            if let tilt = steerOverrideX {
+                value.x = tilt
+                knobX = CGFloat(tilt) * spec.lockX
+            }
+            t.knob = CGPoint(x: knobX, y: min(max(offset.y, -spec.lockY), spec.lockY))
+            t.stickValue = value
+            return Contribution(stick: spec.stick, stickValue: value)
+
+        case .recentre:
+            return .none
 
         case let .swipeStick(stick, fullSpeed):
             let dt = max(time - t.lastTime, 1.0 / 240)
             let instant = (point - t.last) * CGFloat(1 / dt)
             t.velocity = t.velocity * 0.45 + instant * 0.55
-            t.stickValue = swipeValue(t.velocity, fullSpeed: fullSpeed)
+            t.stickValue = swipeValue(t.velocity, fullSpeed: fullSpeed, stick: stick)
             return Contribution(stick: stick, stickValue: t.stickValue)
         }
     }
 
     private func stickContribution(_ t: inout Track, stick: PadStick, travel: CGFloat, click: PadButton?,
-                                   point: CGPoint, follow: Bool) -> Contribution {
+                                   point: CGPoint, follow: Bool, fixedBase: Bool) -> Contribution {
         var offset = point - t.origin
-        if follow, offset.length > travel {
-            t.origin = t.origin + offset * (1 - travel / offset.length)
+        let reach = travel + StickMath.overtravel(travel)
+        if follow, offset.length > reach {
+            t.origin = t.origin + offset * (1 - reach / offset.length)
             offset = point - t.origin
         }
         t.knob = StickMath.knobOffset(offset: offset, travel: travel, gate: context.stick.gate)
-        t.stickValue = StickMath.value(offset: offset, travel: travel, tuning: context.stick)
+        t.stickValue = StickMath.value(offset: offset, travel: travel, tuning: context.stick,
+                                       calibration: context.calibration[stick], fixedBase: fixedBase)
         var buttons: Set<PadButton> = []
         if t.clickHeld, let click { buttons.insert(click) }
         t.buttons = buttons
         return Contribution(buttons: buttons, stick: stick, stickValue: t.stickValue)
     }
 
-    private func swipeValue(_ v: CGPoint, fullSpeed: CGFloat) -> StickValue {
+    private func swipeValue(_ v: CGPoint, fullSpeed: CGFloat, stick: PadStick) -> StickValue {
         var x = Double(v.x / fullSpeed), y = Double(-v.y / fullSpeed)
         let m = (x * x + y * y).squareRoot()
         if m > 1 { x /= m; y /= m }
-        if m < context.stick.deadzone { return .zero }
+        // A swipe has no travel to calibrate, but the player's rest wobble still isn't a swipe.
+        if m < max(context.stick.deadzone, context.calibration[stick].clamped.jitter) { return .zero }
         return StickValue(x: x, y: y)
     }
 
@@ -375,14 +555,17 @@ open class ControlScheme: TouchScheme {
                 }
                 if let click {
                     out.append(RenderElement(shape: .circle(center: o, radius: clickRadius), role: .dot,
-                                             lit: pressed.contains(click)))
+                                             label: c.label, lit: pressed.contains(click)))
                 }
 
             case let .stick(_, travel, click):
                 let t = active[i]
-                out.append(RenderElement(shape: .circle(center: c.shape.center, radius: travel + knobRadius), role: .stickBase,
+                // The base stays put unless a finger has moved it (relative centre, follow).
+                let base = t?.origin ?? c.shape.center
+                let knobRadius = c.knob ?? self.knobRadius
+                out.append(RenderElement(shape: .circle(center: base, radius: travel + knobRadius), role: .stickBase,
                                          lit: t != nil))
-                out.append(RenderElement(shape: .circle(center: c.shape.center + (t?.knob ?? .zero), radius: knobRadius),
+                out.append(RenderElement(shape: .circle(center: base + (t?.knob ?? .zero), radius: knobRadius),
                                          role: .stickKnob, label: c.label,
                                          lit: click.map { pressed.contains($0) } ?? false))
 
@@ -400,6 +583,26 @@ open class ControlScheme: TouchScheme {
 
             case .swipeStick:
                 out.append(RenderElement(shape: c.shape, role: .zone, label: c.label, lit: active[i] != nil, ghost: true))
+
+            case let .pedal(set):
+                out.append(RenderElement(shape: c.shape, role: c.role, label: c.label, lit: set.isSubset(of: pressed)))
+
+            case let .steer(spec):
+                out.append(RenderElement(shape: c.shape, role: .area, label: c.label, lit: active[i] != nil))
+                if spec.tilt {
+                    // The wheel: a resting track and a knob that follows the device's angle.
+                    let mid = c.shape.center
+                    out.append(RenderElement(shape: .circle(center: mid, radius: spec.lockX + knobRadius), role: .stickBase, ghost: true))
+                    let x = CGFloat(sticks[spec.stick]?.x ?? 0) * spec.lockX
+                    out.append(RenderElement(shape: .circle(center: mid + CGPoint(x: x, y: 0), radius: knobRadius), role: .stickKnob,
+                                             lit: x != 0, ghost: x == 0))
+                } else if let t = active[i] {
+                    out.append(RenderElement(shape: .circle(center: t.origin, radius: knobRadius * 0.3), role: .dot))
+                    out.append(RenderElement(shape: .circle(center: t.origin + t.knob, radius: knobRadius), role: .stickKnob, lit: true))
+                }
+
+            case .recentre:
+                out.append(RenderElement(shape: c.shape, role: c.role, label: c.label, lit: active[i] != nil))
             }
         }
         return out

@@ -20,6 +20,12 @@
 		<string>arm64</string>
 		<string>metal</string>
 	</array>
+	<!-- Schemes the JIT enabler setting asks canOpenURL about (App/JITEnabler.swift). -->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>stikdebug</string>
+		<string>livecontainer</string>
+	</array>
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
@@ -33,11 +39,69 @@
 	     working (they filter by the Swift-side UTType, not this plist) but the Files app
 	     showing a generic document icon and name instead of "Muffin Layout"/"Muffin
 	     Colours" for these two extensions. -->
+	<!-- Wii U game files. Imported, not exported: MuffinEMU doesn't own these formats, it opens
+	     them. Declaring them is what puts MuffinEMU under "Open with" and in the share sheet for
+	     .wua, .wud, .wux and .rpx; ContentView.openSharedFile imports what arrives. -->
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.muffinemu.wiiu.wua</string>
+			<key>UTTypeDescription</key>
+			<string>Wii U Archive</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>wua</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.muffinemu.wiiu.disc</string>
+			<key>UTTypeDescription</key>
+			<string>Wii U Disc Image</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>wud</string>
+					<string>wux</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.muffinemu.wiiu.rpx</string>
+			<key>UTTypeDescription</key>
+			<string>Wii U Executable</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>rpx</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
 			<key>UTTypeIdentifier</key>
-			<string>com.kiddreads.muffin.layout</string>
+			<string>com.void.muffinemu.layout</string>
 			<key>UTTypeDescription</key>
 			<string>Muffin Layout</string>
 			<key>UTTypeConformsTo</key>
@@ -54,7 +118,7 @@
 		</dict>
 		<dict>
 			<key>UTTypeIdentifier</key>
-			<string>com.kiddreads.muffin.colour</string>
+			<string>com.void.muffinemu.colour</string>
 			<key>UTTypeDescription</key>
 			<string>Muffin Colours</string>
 			<key>UTTypeConformsTo</key>
@@ -78,6 +142,20 @@
 	<array>
 		<dict>
 			<key>CFBundleTypeName</key>
+			<string>Wii U Game</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Default</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.muffinemu.wiiu.wua</string>
+				<string>com.muffinemu.wiiu.disc</string>
+				<string>com.muffinemu.wiiu.rpx</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
 			<string>Muffin Layout</string>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
@@ -85,7 +163,7 @@
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.kiddreads.muffin.layout</string>
+				<string>com.void.muffinemu.layout</string>
 			</array>
 		</dict>
 		<dict>
@@ -97,7 +175,7 @@
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.kiddreads.muffin.colour</string>
+				<string>com.void.muffinemu.colour</string>
 			</array>
 		</dict>
 	</array>
@@ -214,6 +292,126 @@
 			<dict>
 				<key>CFBundleIconName</key>
 				<string>AltIcon-pro-holographic</string>
+			</dict>
+			<key>pro-royal-velvet</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-pro-royal-velvet</string>
+			</dict>
+			<key>pro-aurora</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-pro-aurora</string>
+			</dict>
+			<key>cherry-blossom</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-cherry-blossom</string>
+			</dict>
+			<key>cookies-and-cream</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-cookies-and-cream</string>
+			</dict>
+			<key>campfire-smores</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-campfire-smores</string>
+			</dict>
+			<key>under-the-sea</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-under-the-sea</string>
+			</dict>
+			<key>rainy-day</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-rainy-day</string>
+			</dict>
+			<key>cafe-latte</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-cafe-latte</string>
+			</dict>
+			<key>retro-pixel</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-retro-pixel</string>
+			</dict>
+			<key>pro-gold-vip-glow</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-pro-gold-vip-glow</string>
+			</dict>
+			<key>galaxy-space-classic</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-galaxy-space-classic</string>
+			</dict>
+			<key>holiday-frost-classic</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-holiday-frost-classic</string>
+			</dict>
+			<key>spooky-halloween-classic</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-spooky-halloween-classic</string>
+			</dict>
+			<key>autism-awareness-classic</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-autism-awareness-classic</string>
+			</dict>
+			<key>retro-classic</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-retro-classic</string>
+			</dict>
+			<key>pumpkin-spice-classic</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-pumpkin-spice-classic</string>
+			</dict>
+			<key>neon-cyber-classic</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-neon-cyber-classic</string>
+			</dict>
+			<key>pro-gold-vip-classic</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-pro-gold-vip-classic</string>
+			</dict>
+			<key>pro-diamond-ice-classic</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-pro-diamond-ice-classic</string>
+			</dict>
+			<key>pro-holographic-classic</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-pro-holographic-classic</string>
+			</dict>
+			<key>equality-classic</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-equality-classic</string>
+			</dict>
+			<key>mental-health-pride-classic</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-mental-health-pride-classic</string>
+			</dict>
+			<key>adhd-awareness-classic</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-adhd-awareness-classic</string>
+			</dict>
+			<key>audhd-awareness-classic</key>
+			<dict>
+				<key>CFBundleIconName</key>
+				<string>AltIcon-audhd-awareness-classic</string>
 			</dict>
 			<key>progress-pride</key>
 			<dict>

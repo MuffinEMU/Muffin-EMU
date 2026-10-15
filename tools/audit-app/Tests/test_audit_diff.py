@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# MuffinEMU — code by the MuffinEMU Development Team.
+# Copyright (c) 2026 MuffinEMU Development Team.
+# SPDX-License-Identifier: MPL-2.0
+# This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 """Tests for audit_diff.py, run by the audit workflow's checks job against the sample report the Swift
 logic tests write (AUDIT_SAMPLE_OUT), so the diff is exercised on the real writer's output.
 

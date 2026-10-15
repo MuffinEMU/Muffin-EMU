@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import Foundation
 #if canImport(Metal)
 import Metal
@@ -258,8 +263,7 @@ struct GraphicPackDetails {
 ///
 /// Nothing here measures speed, and nothing is ever applied automatically: it is a starting point
 /// drawn from the GPU family, the memory, the screen and the power mode, so a small iPhone, a base
-/// iPad and an M-series iPad Pro each get their own answer. A12Z iPads are scored by the same rule
-/// as every other device.
+/// iPad and an M-series iPad Pro each get their own answer. Every device is scored by the same rule.
 struct GraphicPackDeviceProfile: Equatable {
     /// 1 (Apple GPU family 5 or older) ... 5 (family 9 or newer).
     var gpuFamily: Int

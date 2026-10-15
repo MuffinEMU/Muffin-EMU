@@ -156,6 +156,8 @@ uint32 FSCVirtualFile_Host::fscReadData(void* buffer, uint32 size)
 	sint32 bytesToRead = std::min(bytesLeft, size);
 	uint32 bytesRead = m_fs->readData(buffer, bytesToRead);
 	m_seek += bytesRead;
+	if (bytesRead < (uint32)bytesToRead)
+		fscNoteShortRead();
 	return bytesRead;
 }
 

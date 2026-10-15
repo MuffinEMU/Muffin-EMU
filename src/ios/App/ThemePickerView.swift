@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import SwiftUI
 
 /// Picks which MuffinTheme palette is active, independent of IconPickerView. The theme
@@ -6,8 +11,7 @@ import SwiftUI
 struct ThemePickerView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var store = MuffinThemeStore.shared
-    private let currentIconId = UIApplication.shared.alternateIconName
-        .map { $0.replacingOccurrences(of: "AltIcon-", with: "") } ?? "original"
+    private let currentIconId = IconManifest.id(forAlternateIconName: UIApplication.shared.alternateIconName) ?? "original"
 
     private var orderedThemes: [MuffinThemeDefinition] {
         let all = MuffinThemePresets.all

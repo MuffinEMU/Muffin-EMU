@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import SwiftUI
 import MetalKit
 import UniformTypeIdentifiers
@@ -5,15 +10,44 @@ import Foundation
 
 struct ContentView: View {
     @StateObject var gameManager = GameManager()
+    @Environment(\.scenePhase) private var appScenePhase
     @AppStorage(OnboardingState.completedKey) private var onboardingCompleted = false
-    // Set by SettingsOnboardingRow's "Show welcome guide again" (AboutSettingsSection),
-    // which resets onboardingCompleted but has no view of ContentView's own
-    // fullScreenCover binding to force it to present again if it's already false.
-    @State private var showOnboardingRequested = false
+    // What the welcome guide's full-screen cover follows. Its own state rather than a binding computed from
+    // onboardingCompleted: Settings > About > "Show welcome guide again" clears that flag and posts a notification, and a
+    // cover bound to the flag tried to present while the Settings sheet was still up (SwiftUI drops that), and once
+    // shown could not be closed because only the flag was reset on Finish.
+    @State private var showOnboarding = OnboardingState.shouldPresentOnFirstLaunch
     @State private var selectedGame: GameMetadata?
     @State private var showingGameBrowser = true
     @State private var showingFavorites = false
-    @State private var selectedSkin: WiiUControllerSkin = WiiUControllerSkin.standard
+    @State private var sharedImportError: String?
+    /// The skin's name, stored so the choice survives relaunch (it used to be @State and reset to Standard).
+    /// A name rather than the skin: ControllerSkinLibrary.getSkin(by:) also resolves renamed skins.
+    @AppStorage(ControllerSkinStorage.key) private var selectedSkinName = WiiUControllerSkin.standard.name
+
+    private var selectedSkin: Binding<WiiUControllerSkin> {
+        Binding(
+            get: { ControllerSkinLibrary.getSkin(by: selectedSkinName) ?? WiiUControllerSkin.standard },
+            set: { selectedSkinName = $0.name }
+        )
+    }
+
+    /// Wii U game files MuffinEMU claims; anything else opened into the app is ignored.
+    static let sharedGameExtensions: Set<String> = ["wua", "wud", "wux", "rpx"]
+
+    private func openSharedFile(_ url: URL) {
+        guard url.isFileURL, Self.sharedGameExtensions.contains(url.pathExtension.lowercased()) else { return }
+        if gameManager.emulationState == .idle { showingGameBrowser = true }
+        Task {
+            do {
+                try await gameManager.importROM(from: url)
+            } catch {
+                sharedImportError = error.localizedDescription
+            }
+            // A shared copy lands in Documents/Inbox; once imported it is only clutter in Files.
+            if url.path.contains("/Documents/Inbox/") { try? FileManager.default.removeItem(at: url) }
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -36,7 +70,7 @@ struct ContentView: View {
                         game: game,
                         gameManager: gameManager,
                         isRunning: $showingGameBrowser,
-                        controllerSkin: $selectedSkin
+                        controllerSkin: selectedSkin
                     )
                     .overlay(alignment: .top) {
                         if let notice = gameManager.launchNotice {
@@ -53,6 +87,7 @@ struct ContentView: View {
                         message: gameManager.lastStatusMessage,
                         needsCleanRestart: gameManager.needsCleanRestart,
                         endedWhileRunning: gameManager.titleEndedByEngine,
+                        driveWasLost: gameManager.driveWasLost,
                         onDismiss: {
                             gameManager.stopEmulation()
                             showingGameBrowser = true
@@ -67,20 +102,39 @@ struct ContentView: View {
             }
         }
         .ignoresSafeArea()
-        // First launch, and again whenever Settings > About resets the flag.
-        .onReceive(NotificationCenter.default.publisher(for: .muffinReopenOnboarding)) { _ in
-            showOnboardingRequested = true
+        // "Open with MuffinEMU", "Copy to MuffinEMU" from the share sheet, and AirDrop: a Wii U game
+        // file is imported exactly as if it had been picked in the library.
+        .onOpenURL { url in openSharedFile(url) }
+        // Theme music in the library (Settings > Audio): only while no game is running and the app is on screen.
+        .onAppear { MenuMusic.shared.update(emulationState: gameManager.emulationState, appActive: appScenePhase != .background) }
+        .onChange(of: gameManager.emulationState) { state in
+            MenuMusic.shared.update(emulationState: state, appActive: appScenePhase != .background)
         }
-        .fullScreenCover(isPresented: Binding(
-            get: { !onboardingCompleted || showOnboardingRequested },
-            set: { presented in
-                if !presented {
-                    onboardingCompleted = true
-                    showOnboardingRequested = false
-                }
+        .onChange(of: appScenePhase) { phase in
+            MenuMusic.shared.update(emulationState: gameManager.emulationState, appActive: phase != .background)
+        }
+        .alert("Couldn't add that game", isPresented: Binding(
+            get: { sharedImportError != nil }, set: { if !$0 { sharedImportError = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(sharedImportError ?? "")
+        }
+        .jitEnablerPrompt(blocked: { [gameManager] in
+            switch gameManager.emulationState {
+            case .idle, .error: return false
+            case .loading, .running, .paused: return true
             }
-        )) {
-            OnboardingView(gameManager: gameManager) { onboardingCompleted = true }
+        })
+        // First launch, and again whenever Settings > About resets the flag. The library closes Settings first
+        // (GameBrowserView), so the guide waits for that sheet to finish going away.
+        .onReceive(NotificationCenter.default.publisher(for: .muffinReopenOnboarding)) { _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { showOnboarding = true }
+        }
+        .fullScreenCover(isPresented: $showOnboarding, onDismiss: { onboardingCompleted = true }) {
+            OnboardingView(gameManager: gameManager) {
+                onboardingCompleted = true
+                showOnboarding = false
+            }
         }
     }
 }
@@ -104,81 +158,195 @@ struct BootFailureView: View {
     var needsCleanRestart: Bool = false
     /// Set when the game was running and the engine ended it (it quit, or something fatal happened), as opposed to never starting.
     var endedWhileRunning: Bool = false
+    /// Set when the game stopped because the drive or folder it lives in was disconnected.
+    var driveWasLost: Bool = false
     let onDismiss: () -> Void
 
-    /// Where the diagnostics actually are. Computed from the bridge rather than written
-    /// down here, because only the bridge knows what $HOME resolved to when it opened the
-    /// file, and that differs between a normal install and a LiveContainer one.
-    private static var crashLogHint: String {
-        let path = String(cString: cemu_bridge_crash_log_path())
-        guard !path.isEmpty else {
-            return "Full detail is in log.txt. No crash log could be opened this run, so there is no CemuCrashLog.txt to send."
+    /// The name the library card shows, not the dump's file name.
+    private var name: String { game.displayTitle ?? game.title }
+
+    /// The log files that exist, for the Share diagnostics button. The crash log's path is asked of the bridge rather
+    /// than written down here, because only the bridge knows what $HOME resolved to when it opened the file, and that
+    /// differs between a normal install and a LiveContainer one. log.txt sits in the engine's user-data root.
+    private static var diagnosticFiles: [URL] {
+        var urls: [URL] = []
+        if let log = WiiUMenu.mlcRootURL?.appendingPathComponent("log.txt") { urls.append(log) }
+        let crashPath = String(cString: cemu_bridge_crash_log_path())
+        if !crashPath.isEmpty { urls.append(URL(fileURLWithPath: crashPath)) }
+        return urls.filter { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
+    /// ShareLink where it exists (iOS 16 and later), the same share sheet through UIKit before that.
+    @ViewBuilder
+    private var shareDiagnosticsButton: some View {
+        let files = Self.diagnosticFiles
+        if !files.isEmpty {
+            if #available(iOS 16.0, *) {
+                ShareLink(items: files) { shareDiagnosticsLabel }
+                    .buttonStyle(MuffinBarButtonStyle())
+            } else {
+                Button(action: { DocumentImport.presentShare(files) }) { shareDiagnosticsLabel }
+                    .buttonStyle(MuffinBarButtonStyle())
+            }
         }
-        return "Full detail is in log.txt and CemuCrashLog.txt, at:\n\(path)"
+    }
+
+    private var shareDiagnosticsLabel: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "square.and.arrow.up")
+                .font(.system(size: 14, weight: .semibold))
+            Text("Share diagnostics")
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+        }
+    }
+
+    private var title: String {
+        if needsCleanRestart { return "Restart needed before \(name)" }
+        if driveWasLost { return "\(name) stopped: drive disconnected" }
+        return endedWhileRunning ? "\(name) stopped" : "Couldn't start \(name)"
+    }
+
+    /// Keys the player added from this screen. Nil until they do.
+    @State private var keysAdded: Int?
+    @State private var keysError: String?
+
+    /// An encrypted disc image or game folder, with no keys.txt installed: the likely reason it didn't start. Homebrew
+    /// (.rpx, .elf, .wuhb), decrypted dumps and .wua archives don't need keys.
+    private var needsKeys: Bool {
+        guard !needsCleanRestart, !endedWhileRunning, keysAdded == nil, !WiiUKeys.keysFileExists() else { return false }
+        return ["wux", "wud", "iso", "tmd"].contains(URL(fileURLWithPath: game.romPath).pathExtension.lowercased())
+    }
+
+    /// What to do next, in plain words. The engine's own message and the log paths are under Details.
+    private var plainLine: String {
+        if needsCleanRestart { return "Close MuffinEMU and open it again from your Home Screen, then start a game." }
+        if driveWasLost { return "The drive or folder this game is stored on was disconnected. Connect it again, go back and start the game again." }
+        if endedWhileRunning { return "The game stopped. Go back and try it again. If it keeps happening, close and reopen MuffinEMU." }
+        if needsKeys { return "This game is encrypted, so it needs a keys.txt file to start." }
+        if let keysAdded { return "Added \(keysAdded) key\(keysAdded == 1 ? "" : "s"). Go back and start the game again. If it still won't start, close and reopen MuffinEMU." }
+        return "This game didn't start. Try again. If it keeps happening, close and reopen MuffinEMU."
     }
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            VStack(spacing: 16) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 34, weight: .semibold))
+            // Scrolls: on an iPhone in landscape, or at a large text size, the whole card is taller
+            // than the screen, and the buttons are at the bottom.
+            GeometryReader { proxy in
+                ScrollView {
+                    content
+                        .frame(maxWidth: .infinity, minHeight: proxy.size.height)
+                }
+            }
+        }
+    }
+
+    private func importKeys() {
+        DocumentImport.present(contentTypes: [.item]) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                do {
+                    keysAdded = try WiiUKeys.importKeys(from: url)
+                    keysError = nil
+                } catch {
+                    keysError = error.localizedDescription
+                }
+            case .failure(let error):
+                keysError = error.localizedDescription
+            }
+        }
+    }
+
+    private var content: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 34, weight: .semibold))
+                .foregroundColor(MuffinTheme.alertOnDark)
+                .accessibilityHidden(true)
+
+            Text(title)
+                .font(.system(.headline, design: .rounded))
+                .foregroundColor(.white)
+                .multilineTextAlignment(.center)
+                .accessibilityAddTraits(.isHeader)
+
+            Text(plainLine)
+                .font(.system(.footnote, design: .rounded))
+                .foregroundColor(.white.opacity(0.85))
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 480)
+
+            if let keysError {
+                Text(keysError)
+                    .font(.system(.footnote, design: .rounded))
                     .foregroundColor(MuffinTheme.alertOnDark)
-
-                Text(needsCleanRestart ? "Restart needed before \(game.title)" : (endedWhileRunning ? "\(game.title) stopped" : "Couldn't start \(game.title)"))
-                    .font(.system(size: 17, weight: .semibold, design: .rounded))
-                    .foregroundColor(.white)
                     .multilineTextAlignment(.center)
-
-                // The engine's own words. Empty only if the bridge never set anything,
-                // which is itself worth seeing rather than papering over.
-                Text(message.isEmpty ? "The engine didn't report a reason." : message)
-                    .font(.system(size: 13, weight: .regular, design: .rounded))
-                    .foregroundColor(.white.opacity(0.75))
-                    .multilineTextAlignment(.center)
-                    .textSelection(.enabled)
                     .frame(maxWidth: 480)
+            }
 
-                // The real path, asked of the bridge, rather than the folder this used to
-                // name. It said "Files > On My iPad > Cemu", which is true for a normally
-                // installed app and false under LiveContainer - LiveContainer redirects
-                // HOME per hosted app, so the file lands under LiveContainer's own
-                // Documents instead. Anyone who followed the old line looked in the right
-                // place for the wrong install, found nothing, and reasonably concluded no
-                // crash log existed. Selectable, because the useful thing to do with a
-                // path is copy it.
-                Text(Self.crashLogHint)
-                    .font(.system(size: 11, weight: .regular, design: .rounded))
-                    .foregroundColor(.white.opacity(0.6))
-                    .multilineTextAlignment(.center)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: 480)
-
-                if needsCleanRestart {
-                    // Closing is the player's own tap, never automatic. iOS gives an app no way to relaunch itself, and
-                    // exit(0) after a tap is accepted for a sideloaded app.
-                    Button(action: { exit(0) }) {
-                        Text("Close MuffinEMU")
-                            .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    }
-                    .buttonStyle(MuffinPrimaryButtonStyle())
-                    .padding(.top, 4)
-                }
-
-                Button(action: onDismiss) {
+            if needsKeys {
+                Button(action: importKeys) {
                     HStack(spacing: 6) {
-                        Image(systemName: "chevron.left")
+                        Image(systemName: "key.fill")
                             .font(.system(size: 14, weight: .semibold))
-                        Text("Back to games")
+                        Text("Import keys.txt")
                             .font(.system(size: 14, weight: .semibold, design: .rounded))
                     }
                 }
-                .buttonStyle(MuffinSecondaryButtonStyle())
+                .buttonStyle(MuffinPrimaryButtonStyle())
+            }
+
+            // The engine's own words, for anyone reporting the problem. Empty message only if the bridge never set
+            // anything, which is itself worth seeing rather than papering over. The logs go out through Share diagnostics.
+            DisclosureGroup("Details") {
+                VStack(spacing: 10) {
+                    Text(message.isEmpty ? "The engine didn't report a reason." : message)
+                        .font(.system(.footnote, design: .rounded))
+                        .foregroundColor(.white.opacity(0.75))
+                        .multilineTextAlignment(.center)
+                        .textSelection(.enabled)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.top, 8)
+            }
+            .font(.system(.footnote, design: .rounded))
+            .foregroundColor(.white.opacity(0.75))
+            .accentColor(.white.opacity(0.75))
+            .frame(maxWidth: 480)
+
+            // Only where the logs can explain something. Not on the restart screen (the logs are from the game that
+            // already ended, and its own screen offered them), a disconnected drive, or missing keys.
+            if !needsCleanRestart && !driveWasLost && !needsKeys {
+                shareDiagnosticsButton
+            }
+
+            if needsCleanRestart {
+                // Closing is the player's own tap, never automatic. iOS gives an app no way to relaunch itself, and
+                // exit(0) after a tap is accepted for a sideloaded app. _exit, not exit: exit() runs the core's
+                // static destructors while its threads are still alive, and one of them then locks a destroyed
+                // mutex ("mutex lock failed: Invalid argument" in the crash log). Flush, then leave without them.
+                Button(action: { fflush(nil); _exit(0) }) {
+                    Text("Close MuffinEMU")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                }
+                .buttonStyle(MuffinPrimaryButtonStyle())
                 .padding(.top, 4)
             }
-            .padding(32)
+
+            Button(action: onDismiss) {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Back to games")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                }
+            }
+            .buttonStyle(MuffinBarButtonStyle())
+            .padding(.top, 4)
         }
+        .padding(32)
     }
 }
 
@@ -189,12 +357,16 @@ enum LibrarySortOrder: String, CaseIterable, Hashable {
     case title
     case recentlyAdded
     case favoritesFirst
+    case lastPlayed
+    case mostPlayed
 
     var title: String {
         switch self {
         case .title: return "Title"
         case .recentlyAdded: return "Recently added"
-        case .favoritesFirst: return "Favorites first"
+        case .favoritesFirst: return "Favourites first"
+        case .lastPlayed: return "Last played"
+        case .mostPlayed: return "Most played"
         }
     }
 
@@ -203,6 +375,8 @@ enum LibrarySortOrder: String, CaseIterable, Hashable {
         case .title: return "textformat"
         case .recentlyAdded: return "clock"
         case .favoritesFirst: return "heart"
+        case .lastPlayed: return "clock.arrow.circlepath"
+        case .mostPlayed: return "flame"
         }
     }
 
@@ -216,15 +390,34 @@ enum LibrarySortOrder: String, CaseIterable, Hashable {
     /// `favoritesFirst` groups favorites first and sorts by title WITHIN each group -
     /// not a stable no-op, since "grouped, but otherwise still alphabetical" is what
     /// actually makes the option useful once there's more than a couple of favorites.
-    func sorted(_ games: [GameMetadata]) -> [GameMetadata] {
+    func sorted(_ games: [GameMetadata], stats: LibraryPlayStats = .shared) -> [GameMetadata] {
+        let byTitle: (GameMetadata, GameMetadata) -> Bool = {
+            $0.sortTitle.localizedCaseInsensitiveCompare($1.sortTitle) == .orderedAscending
+        }
         switch self {
+        case .lastPlayed:
+            // Never-played games go after the played ones, in title order.
+            return games.sorted { lhs, rhs in
+                switch (stats.entry(for: lhs.id)?.last, stats.entry(for: rhs.id)?.last) {
+                case let (l?, r?): return l > r
+                case (nil, nil): return byTitle(lhs, rhs)
+                case (nil, _): return false
+                case (_, nil): return true
+                }
+            }
+        case .mostPlayed:
+            return games.sorted { lhs, rhs in
+                let l = stats.entry(for: lhs.id)?.count ?? 0
+                let r = stats.entry(for: rhs.id)?.count ?? 0
+                return l != r ? l > r : byTitle(lhs, rhs)
+            }
         case .title:
-            return games.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+            return games.sorted { $0.sortTitle.localizedCaseInsensitiveCompare($1.sortTitle) == .orderedAscending }
         case .recentlyAdded:
             return games.sorted { lhs, rhs in
                 switch (lhs.addedDate, rhs.addedDate) {
                 case let (l?, r?): return l > r
-                case (nil, nil): return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+                case (nil, nil): return lhs.sortTitle.localizedCaseInsensitiveCompare(rhs.sortTitle) == .orderedAscending
                 case (nil, _): return false
                 case (_, nil): return true
                 }
@@ -232,7 +425,7 @@ enum LibrarySortOrder: String, CaseIterable, Hashable {
         case .favoritesFirst:
             return games.sorted { lhs, rhs in
                 if lhs.isFavorite != rhs.isFavorite { return lhs.isFavorite && !rhs.isFavorite }
-                return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+                return lhs.sortTitle.localizedCaseInsensitiveCompare(rhs.sortTitle) == .orderedAscending
             }
         }
     }
@@ -297,14 +490,25 @@ struct GameBrowserView: View {
     @State private var searchText = ""
     @State private var showingIconPicker = false
     @State private var showingSettings = false
-    /// Which game "View Game Options" was opened for - the sheet's own presence, not a
-    /// separate Bool, so there is no way for the sheet to open pointed at the wrong game.
-    @State private var gameOptionsTarget: GameMetadata?
-    /// Same pattern as gameOptionsTarget, for "Decrypt…" (DecryptROMView.swift).
+    /// Which game's page is open - the sheet's own presence, not a separate Bool, so there is
+    /// no way for the sheet to open pointed at the wrong game.
+    @State private var gamePageTarget: GameMetadata?
+    @AppStorage(LibraryTapAction.storageKey) private var tapActionRaw = LibraryTapAction.defaultValue.rawValue
+    /// Same pattern as gamePageTarget, for "Decrypt…" (DecryptROMView.swift).
     @State private var decryptTarget: GameMetadata?
     /// Same pattern again, for "Change Cover Art…" (CoverArtPickerView.swift).
     @State private var coverArtTarget: GameMetadata?
     @ObservedObject private var perGameSettings = PerGameSettingsStore.shared
+    @ObservedObject private var playStats = LibraryPlayStats.shared
+    @ObservedObject private var customNames = LibraryCustomNames.shared
+    @State private var renameTarget: GameMetadata?
+    @AppStorage(LibraryCardStyle.storageKey) private var cardStyleRaw = LibraryCardStyle.defaultValue.rawValue
+    @AppStorage(CoverStylePreference.storageKey) private var coverModeRaw = CoverStylePreference.defaultValue.rawValue
+    @AppStorage(LibraryGrouping.storageKey) private var groupingRaw = LibraryGrouping.defaultValue.rawValue
+    @AppStorage(LibraryFilter.storageKey) private var filterRaw = LibraryFilter.defaultValue.rawValue
+    @Environment(\.scenePhase) private var scenePhase
+    /// Set by "Remove game...". Deleting waits for the confirmation below.
+    @State private var pendingGameRemoval: GameMetadata?
     /// What the picker is being opened for.
     ///
     /// A document picker only lets you SELECT a directory when UTType.folder is among
@@ -326,6 +530,7 @@ struct GameBrowserView: View {
     /// that file for why the button did nothing when it was a SwiftUI modifier.
     private static let fileImportTypes: [UTType] = [.item]
     private static let folderImportTypes: [UTType] = [.folder]
+    private static let helpURL = URL(string: "https://muffinemu.github.io/MuffinEMU/docs/")!
 
     /// Persisted so the chosen order survives a relaunch, same reasoning as favorites.
     @AppStorage("muffin.library.sortOrder") private var sortOrderRaw = LibrarySortOrder.title.rawValue
@@ -337,11 +542,18 @@ struct GameBrowserView: View {
         nonmutating set { sortOrderRaw = newValue.rawValue }
     }
 
+    /// Settings > Wii U Menu. The Menu is a bar above the grid by default; these turn it
+    /// into a card in the grid, or take it out of the library (it stays installed).
+    @AppStorage(WiiUMenuSettings.showAsCardKey) private var menuAsCard = WiiUMenuSettings.defaultShowAsCard
+    @AppStorage(WiiUMenuSettings.hideKey) private var menuHidden = WiiUMenuSettings.defaultHidden
+    @ObservedObject private var menuStore = WiiUMenuStore.shared
+
     @State private var romImportErrorMessage: String?
     /// Answers GameManager.confirmOverwrite - see the .onAppear wiring below. A plain
     /// closure captured from the continuation rather than storing the continuation
     /// type directly, so the two alert buttons don't need to know anything about
     /// CheckedContinuation.
+    @StateObject private var loadCoordinator = LoadCoordinator()
     @State private var pendingOverwriteConfirmation: (name: String, resume: (Bool) -> Void)?
     /// Set while DlcUpdateImport.remove() is running in the background (see the
     /// "Remove content?" alert below) - shown as a LibraryActivityBanner, same as
@@ -371,14 +583,57 @@ struct GameBrowserView: View {
         let gamesToShow = showingFavorites ? gameManager.favorites : gameManager.games
         let searched = searchText.isEmpty
             ? gamesToShow
-            : gamesToShow.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
-        return sortOrder.sorted(searched)
+            : gamesToShow.filter {
+                $0.title.localizedCaseInsensitiveContains(searchText)
+                    || ($0.displayTitle?.localizedCaseInsensitiveContains(searchText) ?? false)
+                    || (customNames.name(for: $0.installKey)?.localizedCaseInsensitiveContains(searchText) ?? false)
+                    || ($0.installLabel?.localizedCaseInsensitiveContains(searchText) ?? false)
+            }
+        let filtered = (LibraryFilter(rawValue: filterRaw) ?? .all).apply(searched, stats: playStats)
+        return sortOrder.sorted(filtered, stats: playStats)
+    }
+
+    private var libraryCardStyle: LibraryCardStyle {
+        // Covers > 3D turns every card into a box; otherwise the chosen layout.
+        CoverStylePreference(stored: coverModeRaw) == .threeD ? .box3d : (LibraryCardStyle(rawValue: cardStyleRaw) ?? .standard)
+    }
+
+    private var librarySections: [LibrarySection] {
+        (LibraryGrouping(rawValue: groupingRaw) ?? .none).sections(for: filteredGames, stats: playStats)
+    }
+
+    /// The Menu is offered in the library at all: installed, not hidden, and not being
+    /// searched for or filtered to favourites.
+    private var menuOffered: Bool {
+        !menuHidden && menuStore.status.menuInstalled && searchText.isEmpty && !showingFavorites
+    }
+    private var showsMenuBar: Bool { menuOffered && !menuAsCard }
+    private var showsMenuCard: Bool { menuOffered && menuAsCard }
+
+    private func launchMenu(_ menu: GameMetadata) {
+        guard gameManager.emulationState == .idle else { return }
+        selectedGame = menu
+        gameManager.launchGame(menu)
+        showingGameBrowser = false
     }
 
     var body: some View {
         withAlerts(withSheets(
             libraryScreen
+            // Games dropped into Files > On My iPad > MuffinEMU > Roms while the app was in the background show up on return.
+            .onChange(of: scenePhase) { phase in
+                if phase == .active { Task { await gameManager.rescanIfIdle() } }
+            }
+            // The welcome guide (ContentView) can't present over the Settings sheet, so close it first.
+            .onReceive(NotificationCenter.default.publisher(for: .muffinReopenOnboarding)) { _ in
+                showingSettings = false
+            }
             .onAppear {
+                #if os(iOS)
+                // Back at the library with nothing running: take back any starting controls or screen
+                // layout a game's hints turned on, so Settings shows what the person chose (GameControlHints).
+                if gameManager.emulationState == .idle { GameControlHints.restoreGlobals() }
+                #endif
                 // Answers "a game/dump named `name` already exists - replace it?" for
                 // GameManager.importROM. Set here rather than left nil so declining to
                 // wire this up was never an option - importROM treats a nil closure as an
@@ -478,13 +733,13 @@ struct GameBrowserView: View {
                     }
                     .buttonStyle(MuffinSecondaryButtonStyle())
                     .frame(minWidth: 44, minHeight: 44)
-                    .accessibilityLabel(showingFavorites ? "Show all games" : "Show favorites only")
+                    .accessibilityLabel(showingFavorites ? "Show all games" : "Show favourites only")
 
                     Menu {
                         Button {
                             beginImport(contentTypes: Self.fileImportTypes)
                         } label: {
-                            Label("Game file (.wux, .wud, .wua, .iso, .rpx, .elf, .wuhb)", systemImage: "doc")
+                            Label("Game file", systemImage: "doc")
                         }
                         Button {
                             beginImport(contentTypes: Self.folderImportTypes)
@@ -495,7 +750,35 @@ struct GameBrowserView: View {
                             // layouts apart on its own regardless of which button was
                             // tapped), so there was nothing for a second entry to actually
                             // distinguish. This label just says what the one picker accepts.
-                            Label("Game folder (code/content/meta, or title.tmd + .app files)", systemImage: "folder")
+                            Label("Game folder", systemImage: "folder")
+                        }
+                        Button {
+                            beginKeysImport()
+                        } label: {
+                            Label("Keys (keys.txt)", systemImage: "key")
+                        }
+                        Divider()
+                        Button {
+                            loadCoordinator.begin(.folder)
+                        } label: {
+                            Label("Load from Folder\u{2026}", systemImage: "folder.badge.gearshape")
+                        }
+                        Button {
+                            loadCoordinator.begin(.file)
+                        } label: {
+                            Label("Load from File\u{2026}", systemImage: "doc.badge.gearshape")
+                        }
+                        Divider()
+                        // Played where they are: a USB drive or SD card, iCloud Drive, a server in Files. Nothing is copied.
+                        Button {
+                            beginLink(contentTypes: Self.folderImportTypes)
+                        } label: {
+                            Label("Link a folder\u{2026}", systemImage: "externaldrive.badge.plus")
+                        }
+                        Button {
+                            beginLink(contentTypes: Self.fileImportTypes)
+                        } label: {
+                            Label("Link a game file\u{2026}", systemImage: "link")
                         }
                         Divider()
                         Button {
@@ -507,6 +790,10 @@ struct GameBrowserView: View {
                             beginGeneralDlcUpdateImport(kind: .update)
                         } label: {
                             Label("Import Update\u{2026}", systemImage: "arrow.triangle.2.circlepath")
+                        }
+                        Divider()
+                        Link(destination: Self.helpURL) {
+                            Label("Help & troubleshooting", systemImage: "questionmark.circle")
                         }
                     } label: {
                         // Same bug and same colour as the two buttons above, but stated
@@ -570,66 +857,62 @@ struct GameBrowserView: View {
                         .frame(width: 44, height: 44)
                 }
                 .accessibilityLabel("Sort games")
+
+                LibraryViewMenu()
             }
             .padding(.horizontal, 16)
             .padding(.top, 16)
 
             // The Wii U Menu, when one is installed. Pinned above the grid, not part of it, so
             // sorting never moves it; it is hidden while searching or viewing favourites.
-            if searchText.isEmpty && !showingFavorites {
-                WiiUMenuTile { menu in
-                    selectedGame = menu
-                    gameManager.launchGame(menu)
-                    showingGameBrowser = false
-                }
+            // Settings can instead put it in the grid as a card, or hide it.
+            if showsMenuBar {
+                WiiUMenuTile(onLaunch: launchMenu)
             }
 
             if gameManager.isLoading {
                 LoadingView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if filteredGames.isEmpty {
-                EmptyGamesView(onImportTapped: { beginImport(contentTypes: Self.fileImportTypes) })
+            } else if filteredGames.isEmpty && !showsMenuCard {
+                EmptyGamesView(
+                    kind: !searchText.isEmpty ? .noSearchMatch(searchText) : (showingFavorites ? .noFavourites : .emptyLibrary),
+                    onImportTapped: { beginImport(contentTypes: Self.fileImportTypes) }
+                )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView(showsIndicators: false) {
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 140), spacing: 16)],
-                        spacing: 20
-                    ) {
-                        ForEach(filteredGames) { game in
-                            GameCardOptimized(
+                LibraryGameCollection(
+                    sections: librarySections,
+                    style: libraryCardStyle,
+                    lead: {
+                        if showsMenuCard {
+                            WiiUMenuCard(onLaunch: launchMenu)
+                        }
+                    },
+                    card: { game in
+                            LibraryCard(
                                 game: game,
+                                style: libraryCardStyle,
                                 onTap: {
-                                    selectedGame = game
-                                    gameManager.launchGame(game)
-                                    showingGameBrowser = false
+                                    if LibraryTapAction.current(raw: tapActionRaw) == .openPage {
+                                        gamePageTarget = game
+                                    } else {
+                                        playGame(game)
+                                    }
                                 },
                                 onFavoriteTap: {
                                     gameManager.toggleFavorite(game)
-                                }
+                                },
+                                onPlay: { playGame(game) },
+                                options: { gameMenu(for: game) }
                             )
                             // Same pattern as Manic: a long-press on the card
                             // offers a couple of fast toggles plus a way into the
                             // full screen, rather than making every per-game
-                            // setting a trip through Settings for one game.
-                            .contextMenu {
-                                GameContextMenu(
-                                    game: game,
-                                    store: perGameSettings,
-                                    gameManager: gameManager,
-                                    onViewOptions: { gameOptionsTarget = game },
-                                    onDecryptToFiles: { decryptTarget = game },
-                                    onImportDLC: { beginDlcUpdateImport(for: game, kind: .dlc) },
-                                    onImportUpdate: { beginDlcUpdateImport(for: game, kind: .update) },
-                                    onRemoveDLC: { pendingRemoval = (game: game, kind: .dlc) },
-                                    onRemoveUpdate: { pendingRemoval = (game: game, kind: .update) },
-                                    onChangeCoverArt: { coverArtTarget = game }
-                                )
-                            }
-                        }
+                            // setting a trip through Settings for one game. The
+                            // "..." button on the card opens the same menu.
+                            .contextMenu { gameMenu(for: game) }
                     }
-                    .padding(16)
-                }
+                )
             }
         }
         .frame(maxHeight: .infinity)
@@ -654,6 +937,58 @@ struct GameBrowserView: View {
         }
     }
 
+    /// The per-game menu: the long-press menu, and the "..." button on each card. Only the quick
+    /// actions live here; everything else is on the game's page.
+    @ViewBuilder private func gameMenu(for game: GameMetadata) -> some View {
+        GameContextMenu(
+            game: game,
+            gameManager: gameManager,
+            onPlay: { playGame(game) },
+            onOpenPage: { gamePageTarget = game },
+            onChangeCoverArt: { coverArtTarget = game },
+            onRename: { renameTarget = game }
+        )
+        Divider()
+        Button(role: .destructive) {
+            pendingGameRemoval = game
+        } label: {
+            DestructiveSettingsLabel(title: game.removeActionTitle, systemImage: "trash")
+        }
+    }
+
+    /// Starts a game from the library. A second tap while a launch is under way must not swap the
+    /// game the screen thinks it is showing.
+    private func playGame(_ game: GameMetadata) {
+        guard gameManager.emulationState == .idle else { return }
+        // A linked game first has its drive checked (off the main thread), so a missing drive is an alert here and
+        // not a boot failure screen.
+        if game.isExternal {
+            Task {
+                guard await gameManager.externalGameIsReady(game), gameManager.emulationState == .idle else { return }
+                selectedGame = game
+                gameManager.launchGame(game)
+                showingGameBrowser = false
+            }
+            return
+        }
+        selectedGame = game
+        gameManager.launchGame(game)
+        showingGameBrowser = false
+    }
+
+    private func removeGameNow(_ game: GameMetadata) {
+        pendingGameRemoval = nil
+        removingContentMessage = "Removing \"\(game.cardName.name)\"\u{2026}"
+        Task {
+            do {
+                try await gameManager.removeGame(game)
+            } catch {
+                dlcImportErrorMessage = error.localizedDescription
+            }
+            removingContentMessage = nil
+        }
+    }
+
     private func withSheets<Content: View>(_ content: Content) -> some View {
         content
             .sheet(isPresented: $showingIconPicker) {
@@ -662,8 +997,22 @@ struct GameBrowserView: View {
             .sheet(isPresented: $showingSettings) {
                 SettingsView(gameManager: gameManager)
             }
-            .sheet(item: $gameOptionsTarget) { game in
-                GameOptionsView(game: game, store: perGameSettings)
+            .sheet(item: $renameTarget) { game in
+                LibraryRenameSheet(game: game)
+            }
+            .sheet(item: $gamePageTarget) { game in
+                GamePageView(
+                    game: game,
+                    store: perGameSettings,
+                    gameManager: gameManager,
+                    onPlay: { playGame(game) },
+                    onDecrypt: { decryptTarget = game },
+                    onImportDLC: { beginDlcUpdateImport(for: game, kind: .dlc) },
+                    onImportUpdate: { beginDlcUpdateImport(for: game, kind: .update) },
+                    onRemoveDLC: { pendingRemoval = (game: game, kind: .dlc) },
+                    onRemoveUpdate: { pendingRemoval = (game: game, kind: .update) },
+                    onRemoveGame: { removeGameNow(game) }
+                )
             }
             .sheet(item: $decryptTarget) { game in
                 DecryptROMView(game: game)
@@ -683,26 +1032,31 @@ struct GameBrowserView: View {
             }
     }
 
+    private func dismissBinding(_ isPresented: Bool, clear: @escaping () -> Void) -> Binding<Bool> {
+        Binding<Bool>(get: { isPresented }, set: { if !$0 { clear() } })
+    }
+
     private func withAlerts<Content: View>(_ content: Content) -> some View {
         content
-            .alert("Added", isPresented: .constant(dlcUpdateSuccessMessage != nil), presenting: dlcUpdateSuccessMessage) { _ in
+            .modifier(AudioRecordingNoticeModifier())
+            .alert("Added", isPresented: dismissBinding(dlcUpdateSuccessMessage != nil, clear: { dlcUpdateSuccessMessage = nil }), presenting: dlcUpdateSuccessMessage) { _ in
                 Button("OK") { dlcUpdateSuccessMessage = nil }
             } message: { message in
                 Text(message)
             }
-            .alert("Couldn't import ROM", isPresented: .constant(romImportErrorMessage != nil), presenting: romImportErrorMessage) { _ in
+            .alert("Couldn't add that game", isPresented: dismissBinding(romImportErrorMessage != nil, clear: { romImportErrorMessage = nil }), presenting: romImportErrorMessage) { _ in
                 Button("OK") { romImportErrorMessage = nil }
             } message: { message in
                 Text(message)
             }
-            .alert("Couldn't import", isPresented: .constant(dlcImportErrorMessage != nil), presenting: dlcImportErrorMessage) { _ in
+            .alert("Couldn't import", isPresented: dismissBinding(dlcImportErrorMessage != nil, clear: { dlcImportErrorMessage = nil }), presenting: dlcImportErrorMessage) { _ in
                 Button("OK") { dlcImportErrorMessage = nil }
             } message: { message in
                 Text(message)
             }
             .alert(
                 "No automatic match",
-                isPresented: .constant(pendingManualMatchConfirmation != nil),
+                isPresented: dismissBinding(pendingManualMatchConfirmation != nil, clear: { pendingManualMatchConfirmation = nil }),
                 presenting: pendingManualMatchConfirmation
             ) { pending in
                 Button("Add to \"\(pending.game.title)\"") {
@@ -711,11 +1065,11 @@ struct GameBrowserView: View {
                 }
                 Button("Cancel", role: .cancel) { pendingManualMatchConfirmation = nil }
             } message: { pending in
-                Text("Couldn't automatically match this \(pending.kind.displayName) to a game already in your library. Add it to \"\(pending.game.title)\" - the game you long-pressed?")
+                Text("Couldn't automatically match this \(pending.kind.displayName) to a game already in your library. Add it to \"\(pending.game.title)\", the game you picked?")
             }
             .confirmationDialog(
                 "Remove content?",
-                isPresented: .constant(pendingRemoval != nil),
+                isPresented: dismissBinding(pendingRemoval != nil, clear: { pendingRemoval = nil }),
                 titleVisibility: .visible,
                 presenting: pendingRemoval
             ) { pending in
@@ -743,8 +1097,31 @@ struct GameBrowserView: View {
                 Text("Remove the \(pending.kind.displayName) installed for \"\(pending.game.title)\"? This can't be undone - you'll need to import it again.")
             }
             .confirmationDialog(
+                pendingGameRemoval?.removeConfirmTitle ?? "Remove this game?",
+                isPresented: dismissBinding(pendingGameRemoval != nil, clear: { pendingGameRemoval = nil }),
+                titleVisibility: .visible,
+                presenting: pendingGameRemoval
+            ) { pending in
+                Button(pending.removeConfirmButton, role: .destructive) {
+                    removeGameNow(pending)
+                }
+                Button("Cancel", role: .cancel) { pendingGameRemoval = nil }
+            } message: { pending in
+                Text(pending.removeConfirmMessage)
+            }
+            .alert("Connect the drive to play", isPresented: dismissBinding(gameManager.launchBlockedMessage != nil, clear: { gameManager.launchBlockedMessage = nil }), presenting: gameManager.launchBlockedMessage) { _ in
+                Button("Check again") {
+                    gameManager.launchBlockedMessage = nil
+                    Task { await gameManager.loadGames(showSpinner: false) }
+                }
+                Button("OK", role: .cancel) { gameManager.launchBlockedMessage = nil }
+            } message: { message in
+                Text(message)
+            }
+            .loadPrompts(loadCoordinator, gameManager: gameManager)
+            .confirmationDialog(
                 "Replace existing file?",
-                isPresented: .constant(pendingOverwriteConfirmation != nil),
+                isPresented: dismissBinding(pendingOverwriteConfirmation != nil, clear: { if let pending = pendingOverwriteConfirmation { pendingOverwriteConfirmation = nil; pending.resume(false) } }),
                 titleVisibility: .visible,
                 presenting: pendingOverwriteConfirmation
             ) { pending in
@@ -761,6 +1138,44 @@ struct GameBrowserView: View {
             } message: { pending in
                 Text("\"\(pending.name)\" already exists in your library. Replacing it can't be undone.")
             }
+    }
+
+    /// keys.txt from the same menu as games. .item for the same reason as the game picker: a keys.txt can carry no useful
+    /// type, and WiiUKeys.importKeys checks the contents.
+    private func beginKeysImport() {
+        DocumentImport.present(contentTypes: Self.fileImportTypes) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                do {
+                    let count = try WiiUKeys.importKeys(from: url)
+                    dlcUpdateSuccessMessage = "Added \(count) key\(count == 1 ? "" : "s"). Games use them the next time you start one. If you've already started a game since opening MuffinEMU, close and reopen MuffinEMU first."
+                } catch {
+                    dlcImportErrorMessage = error.localizedDescription
+                }
+            case .failure(let error):
+                dlcImportErrorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    /// "Link a folder" and "Link a game file": the picker hands back the original (not a copy), and only a bookmark is kept.
+    private func beginLink(contentTypes: [UTType]) {
+        DocumentImport.present(contentTypes: contentTypes) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                Task {
+                    do {
+                        try await gameManager.linkLocation(url)
+                    } catch {
+                        romImportErrorMessage = error.localizedDescription
+                    }
+                }
+            case .failure(let error):
+                romImportErrorMessage = error.localizedDescription
+            }
+        }
     }
 
     private func beginImport(contentTypes: [UTType]) {
@@ -924,10 +1339,25 @@ struct RoundedCorner: Shape {
     }
 }
 
-struct GameCardOptimized: View {
+struct GameCardOptimized<Options: View>: View {
     let game: GameMetadata
     let onTap: () -> Void
     let onFavoriteTap: () -> Void
+    /// What the card's own Play button does. Nil means the same as a tap on the card.
+    var onPlay: (() -> Void)?
+    /// The per-game menu behind the "..." button (the same one a long-press opens).
+    let options: Options
+
+    init(game: GameMetadata, onTap: @escaping () -> Void, onFavoriteTap: @escaping () -> Void,
+         onPlay: (() -> Void)? = nil, @ViewBuilder options: () -> Options) {
+        self.game = game
+        self.onTap = onTap
+        self.onFavoriteTap = onFavoriteTap
+        self.onPlay = onPlay
+        self.options = options()
+    }
+
+    private var cardName: (name: String, titleIdText: String?) { game.cardName }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -935,17 +1365,13 @@ struct GameCardOptimized: View {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(MuffinTheme.muffinTopGradient)
 
-                if let coverPath = game.coverPath,
-                   let uiImage = UIImage(contentsOfFile: coverPath) {
+                if let coverPath = game.coverPath {
                     // scaledToFit, not scaledToFill. A game's own icon is SQUARE and
                     // this well is 3:4, so filling it would crop the top and bottom
                     // quarter off every icon - which on a Wii U icon is usually the
                     // title text. Fitting leaves the muffin gradient showing around it
                     // instead, and box art that is already 3:4 fits exactly either way.
-                    Image(uiImage: uiImage)
-                        .resizable()
-                        .scaledToFit()
-                        .padding(10)
+                    CoverImage(path: coverPath, padding: 10)
                         .cornerRadius(16)
                 } else {
                     VStack {
@@ -957,6 +1383,21 @@ struct GameCardOptimized: View {
 
                 VStack {
                     HStack {
+                        // Everything long-press offers, where it can be found without knowing to long-press.
+                        Menu {
+                            options
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(MuffinTheme.sparkleCream)
+                                .frame(width: 32, height: 32)
+                                .background(Color.black.opacity(0.4))
+                                .cornerRadius(10)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .accessibilityLabel("More options for \(cardName.name)")
+                        .padding(8)
                         Spacer()
                         Button(action: onFavoriteTap) {
                             Image(systemName: game.isFavorite ? "heart.fill" : "heart")
@@ -973,7 +1414,7 @@ struct GameCardOptimized: View {
                                 .frame(width: 44, height: 44)
                                 .contentShape(Rectangle())
                         }
-                        .accessibilityLabel(game.isFavorite ? "Remove from favorites" : "Add to favorites")
+                        .accessibilityLabel(game.isFavorite ? "Remove from favourites" : "Add to favourites")
                         .padding(8)
                     }
                     Spacer()
@@ -982,7 +1423,7 @@ struct GameCardOptimized: View {
             .aspectRatio(3 / 4, contentMode: .fit)
 
             VStack(alignment: .leading, spacing: 8) {
-                Text(game.displayTitle ?? game.title)
+                Text(cardName.name)
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .lineLimit(2)
                     .foregroundColor(MuffinTheme.brownDarkest)
@@ -999,8 +1440,10 @@ struct GameCardOptimized: View {
                     }
                     Spacer()
                 }
+                if let label = game.installLabel { LibraryInstallLine(text: label, size: 11) }
+                LibraryExternalLine(game: game, size: 11)
 
-                Button(action: onTap) {
+                Button(action: onPlay ?? onTap) {
                     HStack(spacing: 6) {
                         Image(systemName: "play.fill")
                             .font(.system(size: 10, weight: .semibold))
@@ -1010,6 +1453,15 @@ struct GameCardOptimized: View {
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(MuffinPrimaryButtonStyle())
+
+                // The title ID, when the game's name had it in it (kept out of the name above).
+                if let titleIdText = cardName.titleIdText {
+                    Text(titleIdText)
+                        .font(.system(size: 10, weight: .regular, design: .monospaced))
+                        .foregroundColor(MuffinTheme.brownMid)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
             }
             .padding(12)
             .background(MuffinTheme.cream)
@@ -1021,6 +1473,10 @@ struct GameCardOptimized: View {
                 .stroke(MuffinTheme.wrapper, lineWidth: 1)
         )
         .shadow(color: MuffinTheme.shadow.opacity(0.15), radius: 8, x: 0, y: 4)
+        // The whole card starts the game, not only the Play button. The heart, the "..." button and Play keep
+        // their own taps (a child's gesture wins over this one), and VoiceOver still finds Play as a button.
+        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .onTapGesture(perform: onTap)
     }
 }
 
@@ -1086,44 +1542,83 @@ struct LoadingView: View {
 }
 
 struct EmptyGamesView: View {
+    enum Kind: Equatable {
+        case emptyLibrary
+        case noFavourites
+        case noSearchMatch(String)
+    }
+
+    let kind: Kind
     let onImportTapped: () -> Void
+
+    private var symbol: String {
+        switch kind {
+        case .emptyLibrary: return "doc.questionmark"
+        case .noFavourites: return "heart"
+        case .noSearchMatch: return "magnifyingglass"
+        }
+    }
+
+    private var heading: String {
+        switch kind {
+        case .emptyLibrary: return "No Games Yet"
+        case .noFavourites: return "No Favourites Yet"
+        case .noSearchMatch: return "No Matches"
+        }
+    }
+
+    private var lines: [String] {
+        switch kind {
+        case .emptyLibrary:
+            return ["Tap Import a Game, or put game files in Files > On My iPad > MuffinEMU > Roms.",
+                    "Games you add there show up when you come back to MuffinEMU."]
+        case .noFavourites:
+            return ["Tap the heart on a game to add it here."]
+        case .noSearchMatch(let text):
+            return ["Nothing matches \"\(text)\"."]
+        }
+    }
 
     var body: some View {
         VStack(spacing: 16) {
-            Image(systemName: "doc.questionmark")
+            Image(systemName: symbol)
                 .font(.system(size: 56, weight: .regular))
                 .foregroundColor(MuffinTheme.muffinTopDark.opacity(0.5))
+                .accessibilityHidden(true)
 
             VStack(spacing: 8) {
-                Text("No Games Found")
+                Text(heading)
                     .font(.system(size: 18, weight: .semibold, design: .rounded))
                     .foregroundColor(MuffinTheme.brownDarkest)
+                    .accessibilityAddTraits(.isHeader)
 
                 VStack(alignment: .center, spacing: 4) {
-                    Text("Add .wux, .wud, .wua, .rpx, .elf, .wuhb, or .iso files")
-                        .font(.system(size: 13, weight: .regular, design: .rounded))
-                        .foregroundColor(MuffinTheme.brownMid)
-
-                    Text("to Documents/Roms/ on your device")
-                        .font(.system(size: 13, weight: .regular, design: .rounded))
-                        .foregroundColor(MuffinTheme.brownMid)
+                    ForEach(lines, id: \.self) { line in
+                        Text(line)
+                            .font(.system(size: 13, weight: .regular, design: .rounded))
+                            .foregroundColor(MuffinTheme.brownMid)
+                            .multilineTextAlignment(.center)
+                    }
                 }
+                .padding(.horizontal, 24)
             }
 
             // Same import flow as the toolbar's menu (GameBrowserView.beginImport) -
             // an empty library used to have no way to start an import except that
             // small menu button up top, which is easy to miss on a screen whose whole
             // point is "there's nothing here yet."
-            Button(action: onImportTapped) {
-                HStack(spacing: 6) {
-                    Image(systemName: "doc.badge.plus")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text("Import a Game")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+            if kind == .emptyLibrary {
+                Button(action: onImportTapped) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "doc.badge.plus")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("Import a Game")
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    }
                 }
+                .buttonStyle(MuffinPrimaryButtonStyle())
+                .padding(.top, 4)
             }
-            .buttonStyle(MuffinPrimaryButtonStyle())
-            .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -1153,6 +1648,9 @@ struct EmulatorViewOptimized: View {
     // backgrounded, so this is not a nicety; see cemu_bridge_pause() in CemuBridge.mm
     // for the other half of what actually stops that.
     @Environment(\.scenePhase) private var scenePhase
+    // The launch intro is several seconds of animation; someone who asked the system to reduce motion gets the
+    // plain boot screen instead.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // MeloCafe's EmulationView reads this to pick its phone-portrait-only stacked
     // layout (screensSizeLayout) apart from the ordinary tablet/landscape composition -
     // see screenLayoutComposition below, which is the direct port of that view's body.
@@ -1162,16 +1660,27 @@ struct EmulatorViewOptimized: View {
     /// state, not AppStorage: nobody wants to come back to a game and find the controls
     /// still in edit mode because that is how they last left them.
     @State private var isEditingControlLayout = false
-    /// Asks before "Reset to default" in the move-controls panel throws away a layout
-    /// someone may have spent a while getting right.
-    @State private var showingResetControlsConfirmation = false
+    @AppStorage(ControllerLayoutSettings.pauseWhileEditingKey)
+    private var pauseWhileEditingLayout = ControllerLayoutSettings.defaultPauseWhileEditing
+    /// The pause in effect was made by starting to move the controls, so Done undoes it. Cleared by
+    /// any other pause or resume (togglePause), so a pause the player chose is never undone by Done.
+    @State private var pausedByLayoutEditing = false
     /// Local, not AppStorage - the same reasoning as isEditingControlLayout above:
     /// nobody wants to come back to a game and find the pad missing because that was
     /// how they last left it. For touching the GamePad screen's own touchscreen
     /// unobstructed, where the physical control overlay would otherwise sit on top of
     /// it and eat every touch before it reaches PadMetalViewIOS underneath.
     @State private var padControlsHidden = false
+    @State private var padHiddenByHomeMenu = false
+    @AppStorage(HiddenScreenSettings.hideControlsInHomeMenuKey) private var hideControlsInHomeMenu = false
     @State private var isPaused = false
+    /// The HOME menu is up (see HomeMenu.swift). The game is paused for as long as it is, through
+    /// the same togglePause() as the top bar's button.
+    @State private var showHomeMenu = false
+    /// padControlsHidden was set by a connected controller (Settings > On-screen Controls), not by
+    /// the top bar's hide button. Only a controller disconnecting takes the pad back from it, and
+    /// it survives the GamePad screen going off screen, which would otherwise un-hide the pad.
+    @State private var padHiddenByController = false
     /// True only when isPaused was set by leaving the foreground, not by the pause
     /// button below. Read on the way back to .active: the app should resume a title
     /// it paused on the way out, but must not resume one the person playing paused
@@ -1194,40 +1703,12 @@ struct EmulatorViewOptimized: View {
     /// runs - a serial queue, not a concurrent one, so a resume dispatched right behind a
     /// pause can never run first and unpause a title the pause never reached.
     private static let titlePauseQueue = DispatchQueue(label: "muffin.title.pause", qos: .userInitiated)
-    /// Visible only while the preview pad is on. Exists purely to answer one question
-    /// with certainty and without needing log.txt: does a tap on the preview pad even
-    /// reach this closure at all. If this counter never moves when you tap a button,
-    /// the break is in the SwiftUI gesture layer (PreviewControllerPad/HeldControl); if
-    /// it does move but the game still doesn't react, the break is further down, in the
-    /// bridge or the engine's input override path.
-    /// The same two keys the pad itself reads. Declared here as well so the in-game
-    /// sliders write to the thing being dragged, with no plumbing between them.
-    @AppStorage(ControllerLayoutSettings.scaleKey)
-    private var controlScale = ControllerLayoutSettings.defaultScale
-    @AppStorage(ControllerLayoutSettings.opacityKey)
-    private var controlOpacity = ControllerLayoutSettings.defaultOpacity
-    @AppStorage(ControllerLayoutSettings.stickSpacingKey)
-    private var stickSpacing = ControllerLayoutSettings.defaultStickSpacing
-    /// Same key the pad and SettingsView read. Offered in the move-controls panel as
-    /// well as in Settings because switching schemes is a thing you decide with a game
-    /// under you, exactly like the two sliders next to it.
-    @AppStorage(ControllerLayoutSettings.joystickKey)
-    private var joystickMode = ControllerLayoutSettings.defaultJoystick
-    /// Same key ControllerPad.swift reads to decide whether L/ZL/minus and R/ZR/plus are
-    /// drawn on the sticks or on the d-pad/A-B-X-Y clusters. Declared here for the same
-    /// reason joystickMode is: this is the panel you have a game under you to judge it
-    /// from.
-    @AppStorage(ControllerLayoutSettings.comfortControlsKey)
-    private var comfortControls = ControllerLayoutSettings.defaultComfortControls
-    /// Same key ControllerPad.swift reads to decide which gesture (if either) a
-    /// button/cluster gets. Declared here too so the segmented control below writes to
-    /// the thing actually being edited, same reasoning as the two sliders above it.
-    @AppStorage(ControllerLayoutSettings.individualEditModeKey)
-    private var individualEditMode = ControllerLayoutSettings.defaultIndividualEditMode
     /// Off by default - see the branch on this flag a few lines below for exactly what
     /// it swaps in and why the shipping path is otherwise untouched.
     @AppStorage(PreviewPadStore.enabledKey) private var previewPadEnabled = PreviewPadStore.defaultEnabled
     @AppStorage(MeloControlsSetting.storageKey) private var useMeloControls = MeloControlsSetting.defaultValue
+    /// Read only to size the portrait pad's area (belowPicture). Same key and default as the pad's.
+    @AppStorage(ControllerLayoutSettings.joystickKey) private var joystickMode = ControllerLayoutSettings.defaultJoystick
     /// The optional TouchLab control style ("" = MuffinEMU's own pad). See TouchLabPads.swift.
     @AppStorage(TouchLabSettings.schemeKey) private var touchLabScheme = TouchLabSettings.defaultScheme
     /// Where the TV / GamePad views are on screen, reported by the screen views themselves.
@@ -1235,10 +1716,16 @@ struct EmulatorViewOptimized: View {
     @State private var touchLabScreens = TouchLabScreenState()
     /// Bottom edge of the top bar, so TouchLab's controls stay clear of Back / pause.
     @State private var topBarHeight: CGFloat = 0
-    /// The slider in this view's own edit-layout panel writes here directly, the same
-    /// "declared where it's edited, read where it's drawn" pattern controlScale already
-    /// uses for MuffinEMU's own pad - MeloControlsOverlay reads the same key itself.
-    @AppStorage(MeloControlsSetting.scaleKey) private var meloControlsScale = MeloControlsSetting.defaultScale
+    /// Settings > On-screen Controls > "Hide the top bar while playing". 0 follows the
+    /// device default (on); see TopBarAutoHide.
+    @AppStorage(TopBarAutoHide.overrideKey) private var topBarAutoHideOverride = TopBarAutoHide.followDevice
+    /// The bar is faded out and slid away. `topBarHeight` deliberately keeps its last
+    /// measured value while this is true, so the pads, which reserve that band, never move.
+    @State private var topBarHidden = false
+    /// True while a finger is on the bar. A GestureState, so it also resets if the touch is
+    /// cancelled (a scroll takeover, an app switch) and can never leave the bar pinned.
+    @GestureState private var topBarTouched = false
+    @State private var voiceOverRunning = UIAccessibility.isVoiceOverRunning
     @ObservedObject private var previewPad = PreviewPadStore.shared
     /// Same key Settings > External Display reads. Declared here too, rather than read
     /// once at boot, so turning it off takes effect on the button already on screen
@@ -1262,18 +1749,8 @@ struct EmulatorViewOptimized: View {
     /// two screens Single Screen mode currently shows resets to TV each fresh launch
     /// rather than being remembered, the same way MeloCafe never persisted it either.
     @State private var localSwapped = false
-    // The two feel settings, offered here as well as in Settings for the same reason the
-    // toggle is: a deadzone is not something you can judge from a settings screen with no
-    // game under it. This is the panel you have open while steering.
-    @AppStorage(ControllerLayoutSettings.deadzoneKey)
-    private var stickDeadzone = ControllerLayoutSettings.defaultDeadzone
-    @AppStorage(ControllerLayoutSettings.stickCurveKey)
-    private var stickCurve = ControllerLayoutSettings.defaultStickCurve
-    // The gate belongs here more than either slider does: it is the one setting you
-    // judge by pushing the stick to a corner and seeing whether the game turns as hard
-    // as you meant it to.
-    @AppStorage(ControllerLayoutSettings.stickGateKey)
-    private var stickGateRaw = ControllerLayoutSettings.defaultStickGateRaw
+    @AppStorage(HiddenScreenSettings.pauseHiddenTVKey) private var pauseHiddenTV = false
+    @AppStorage(HiddenScreenSettings.pauseHiddenPadKey) private var pauseHiddenPad = false
     // Defaults ON, and must keep matching SettingsView's declaration of the same key -
     // two @AppStorage defaults for one key that disagree means the toggle and the
     // emulator disagree about what is on. See SettingsView for why this flipped.
@@ -1351,8 +1828,14 @@ struct EmulatorViewOptimized: View {
     @AppStorage(EmulatedDevicesSettings.infinityBaseKey) private var infinityBaseEnabled = EmulatedDevicesSettings.defaultEnabled
     @AppStorage(EmulatedDevicesSettings.dimensionsToypadKey) private var dimensionsToypadEnabled = EmulatedDevicesSettings.defaultEnabled
     @State private var showEmulatedDevices = false
+    @State private var showAmiibo = false
     private var anyEmulatedDeviceEnabled: Bool {
         skylanderPortalEnabled || infinityBaseEnabled || dimensionsToypadEnabled
+    }
+
+    /// What the pad button switches back to when Melo-Controller is on.
+    private var otherPadName: String {
+        TouchLabSettings.isTouchLab(touchLabScheme) ? "the \(TouchLabSettings.name(touchLabScheme)) controls" : "MuffinEMU's controls"
     }
 
     /// Which control system is live. One decision, made once.
@@ -1378,7 +1861,7 @@ struct EmulatorViewOptimized: View {
     private var padSystem: PadSystem {
         // Melo-Controller wins outright when chosen - it replaces both of MuffinEMU's own
         // pads, exactly as it did before this enum existed.
-        if useMeloControls { return .melo }
+        if useMeloControls && MeloControlsSetting.isAvailable { return .melo }
         // A TouchLab style is an explicit choice, so it beats the experimental preview pad.
         // An empty or unknown stored id is not a TouchLab style and falls through, so a bad
         // value can never leave the player without a pad.
@@ -1399,6 +1882,247 @@ struct EmulatorViewOptimized: View {
         // ever called onInput, and were themselves the reason it looked like it did not.
         if previewPadEnabled { return .preview }
         return .muffin
+    }
+
+    /// An iPhone held upright. Same test as screenLayoutComposition's, which this has to agree
+    /// with: the picture is stacked along the top exactly when this is true. On iPhone the
+    /// vertical size class is regular only in portrait.
+    private var isPhonePortrait: Bool {
+        UIDevice.current.userInterfaceIdiom == .phone && verticalSizeClass == .regular
+    }
+
+    /// Lays a pad out over the whole screen, or - held upright on an iPhone - over just the
+    /// area under the picture, so no control sits on it. The area runs from the bottom of the
+    /// stacked screens (screensSizeLayout) to the bottom of the safe area, and is never shorter
+    /// than the pad needs: with both screens stacked on a small phone, after the GamePad screen
+    /// has shrunk as far as it will (portraitScreenHeight), the pad is allowed to cover the
+    /// bottom of it rather than shrink to nothing (the "hide controls" button in the top bar
+    /// uncovers it). Laid out with a frame, not an offset or a position, so what
+    /// is drawn is also what takes touches.
+    @ViewBuilder private func belowPicture<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        let built = content()
+        if isPhonePortrait {
+            GeometryReader { geometry in
+                let pictures = visibleScreens.reduce(CGFloat(0)) { $0 + portraitScreenHeight(main: $1, in: geometry.size) }
+                let needed = ControllerGeometry.Portrait.minimumHeight(joystick: joystickMode)
+                let height = min(geometry.size.height, max(geometry.size.height - pictures, needed))
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    built
+                        .frame(height: height)
+                }
+            }
+        } else {
+            built
+        }
+    }
+
+    /// True while a title is booting, running or paused and the TV screen is on this device.
+    private var nativeOverlayActive: Bool {
+        switch gameManager.emulationState {
+        case .loading, .running, .paused: return displayRouter.placement != .dualScreen
+        case .idle, .error: return false
+        }
+    }
+
+    /// The name the library card shows. `title` is the dump's file name, which can be a bare
+    /// product code, and it used to leak into the top bar and the quit prompt.
+    private var gameName: String { game.displayTitle ?? game.title }
+
+    /// Pauses or resumes the title and keeps the screen's idea of "paused" in step with it.
+    /// Also lets go of every held button and stick: touches made while paused (the Melo pad
+    /// stays live) would otherwise arrive at the game the instant it resumes.
+    private func togglePause() {
+        isPaused.toggle()
+        pausedByLifecycle = false
+        pausedByLayoutEditing = false
+        cemu_bridge_release_all_buttons()
+        setTitlePaused(isPaused)
+    }
+
+    /// Sends the pause or resume to the bridge off the main thread. While a save state or
+    /// a load is running it goes onto that operation's own queue instead: the operation
+    /// pauses and resumes the title itself, so a resume sent from here would let the game
+    /// run in the middle of the memory dump (a corrupt save), and a pause would be undone
+    /// when the operation finishes and resumes (the game running in the background).
+    /// Queued behind it, either lands afterwards, in the right order.
+    private func setTitlePaused(_ pause: Bool) {
+        let queue = saveStateBusySlot == nil ? Self.titlePauseQueue : Self.saveStateQueue
+        queue.async {
+            if pause {
+                cemu_bridge_pause()
+            } else {
+                cemu_bridge_resume()
+            }
+        }
+    }
+
+    /// The move-controls panel for whichever pad is live (see LayoutPanels.swift).
+    @ViewBuilder private var layoutPanel: some View {
+        let gameID = gameManager.currentGame?.settingsKey
+        switch padSystem {
+        case .melo:
+            MeloLayoutPanel(gameID: gameID, onDone: finishEditingLayout)
+        case .touchLab:
+            TouchLabLayoutPanel(gameID: gameID, onDone: finishEditingLayout)
+        case .preview:
+            PreviewLayoutPanel(onDone: finishEditingLayout)
+        case .muffin:
+            MuffinPadLayoutPanel(onDone: finishEditingLayout)
+        }
+    }
+
+    private func finishEditingLayout() {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            isEditingControlLayout = false
+        }
+    }
+
+    /// Pauses the game when moving the controls starts (Settings > On-screen Controls > Pause while
+    /// moving the controls) and resumes it at Done, unless the game was already paused some other way.
+    private func layoutEditingChanged(_ editing: Bool) {
+        if editing {
+            guard pauseWhileEditingLayout, gameManager.emulationState == .running, !isPaused else { return }
+            togglePause()
+            pausedByLayoutEditing = true
+        } else if pausedByLayoutEditing {
+            pausedByLayoutEditing = false
+            if isPaused && gameManager.emulationState == .running { togglePause() }
+        }
+    }
+
+    // MARK: Controller auto-hide
+
+    /// Hides or shows the on-screen pad because a controller came or went (the setting is checked
+    /// by ControllerAutoHideModifier). Reuses padControlsHidden, so only the pad overlay goes: the
+    /// GamePad's picture and its touchscreen are not part of it. Says so with the usual notice
+    /// banner, but only when something actually changed, and not over another notice at launch.
+    private func setPadHiddenByController(_ hide: Bool, atStart: Bool) {
+        if hide {
+            guard !padHiddenByController else { return }
+            padHiddenByController = true
+            if !padControlsHidden {
+                padControlsHidden = true
+                // A button the pad stops drawing cannot report its own release.
+                cemu_bridge_release_all_buttons()
+            }
+        } else {
+            guard padHiddenByController else { return }
+            padHiddenByController = false
+            padControlsHidden = false
+        }
+        if atStart && gameManager.launchNotice != nil { return }
+        gameManager.showLaunchNotice(hide
+            ? "Controller connected. On-screen controls hidden. Press HOME for the menu."
+            : "Controller disconnected. On-screen controls shown.")
+    }
+
+    // MARK: HOME menu
+
+    /// Opens the slot sheet. Shared by the top bar's button and the HOME menu.
+    private func openSaveStates() {
+        saveStateSlots = SaveStateStore.slots(for: game.id)
+        saveStateStatus = nil
+        showSaveStates = true
+    }
+
+    /// Pauses the game and opens the HOME menu. Ignored while the title is not running (there is
+    /// nothing to pause while it boots, and a pause sent then is dropped) and while the pad is
+    /// being moved.
+    private func openHomeMenu() {
+        guard gameManager.emulationState == .running, !showHomeMenu, !isEditingControlLayout else { return }
+        if isPaused {
+            // Already paused by the pause button or by leaving the foreground. The menu keeps it
+            // paused, and a lifecycle pause must not be undone by the app coming back to the front.
+            pausedByLifecycle = false
+            cemu_bridge_release_all_buttons()
+        } else {
+            // The one pause path: togglePause() queues behind a save that is running.
+            togglePause()
+        }
+        withAnimation(.easeInOut(duration: 0.15)) { showHomeMenu = true }
+    }
+
+    /// Closes the menu and lets the game run again.
+    private func closeHomeMenu() {
+        withAnimation(.easeInOut(duration: 0.15)) { showHomeMenu = false }
+        if isPaused { togglePause() }
+    }
+
+    /// Edit mode is only useful with the game running under the pad, so the menu closes first.
+    private func moveControlsFromHomeMenu() {
+        if pauseWhileEditingLayout && isPaused {
+            // Already paused by the menu: keep it paused for the editing instead of resuming for a
+            // moment in between. Done resumes it.
+            withAnimation(.easeInOut(duration: 0.15)) { showHomeMenu = false }
+            pausedByLayoutEditing = true
+        } else {
+            closeHomeMenu()
+        }
+        padControlsHidden = false
+        padHiddenByController = false
+        withAnimation(.easeInOut(duration: 0.2)) { isEditingControlLayout = true }
+        cemu_bridge_release_all_buttons()
+    }
+
+    private func swapScreensFromHomeMenu() {
+        if displayRouter.placement == .dualScreen {
+            DisplayRouter.shared.toggleScreenLayoutFromSwapButton()
+        } else {
+            localSwapped.toggle()
+        }
+    }
+
+    /// HOME toggles the menu; B (a controller) backs out of the save-state sheet. Up, down, A and
+    /// B inside the menu itself are handled by HomeMenuOverlay. While the controls are being moved,
+    /// HOME and B both finish that (a controller has no way to tap Done).
+    private func handleHomeMenuEvent(_ event: HomeMenuEvent) {
+        if isEditingControlLayout {
+            if event == .homeButton || event == .back { finishEditingLayout() }
+            return
+        }
+        switch event {
+        case .homeButton:
+            if showSaveStates {
+                showSaveStates = false
+            } else if showEmulatedDevices {
+                showEmulatedDevices = false
+            } else if showAmiibo {
+                showAmiibo = false
+            } else if showHomeMenu {
+                if !showingBackConfirmation { closeHomeMenu() }
+            } else {
+                openHomeMenu()
+            }
+        case .back:
+            if showSaveStates { showSaveStates = false }
+        case .up, .down, .confirm:
+            break
+        }
+    }
+
+    @ViewBuilder private var homeMenuLayer: some View {
+        HomeMenuOverlay(
+            gameName: gameName,
+            isActive: !showSaveStates && !showingBackConfirmation && !showEmulatedDevices && !showAmiibo,
+            screenLayout: $screenLayout,
+            isDualScreen: displayRouter.placement == .dualScreen,
+            canQuit: saveStateBusySlot == nil,
+            actions: HomeMenuActions(
+                resume: closeHomeMenu,
+                saveStates: openSaveStates,
+                moveControls: moveControlsFromHomeMenu,
+                // Already confirmed, on the menu's own "Quit game?" page.
+                quit: {
+                    gameManager.stopEmulation()
+                    isRunning = true
+                },
+                swapScreens: swapScreensFromHomeMenu,
+                toggleRecording: { AudioRecorder.shared.toggle(gameName: gameName) },
+                toggleScreenRecording: { ScreenRecorder.shared.toggle(gameName: gameName) },
+                scanAmiibo: { showAmiibo = true }
+            )
+        )
     }
 
     var body: some View {
@@ -1427,52 +2151,58 @@ struct EmulatorViewOptimized: View {
                                           height: full.height - insets.top - insets.bottom)
                     let resolved = previewPad.resolve(container: proxy.size, safeArea: safeArea,
                                                       pointsPerInch: DeviceMetrics.current().pointsPerInch)
+                    // Upright on an iPhone that is always Native (see effectiveDisplayMode).
+                    let native = previewPad.effectiveDisplayMode(container: proxy.size) == .native
                     ZStack(alignment: .topLeading) {
                         MetalViewIOS(gameManager: gameManager)
                     }
-                    .frame(width: previewPad.displayMode == .native ? resolved.video.width : proxy.size.width,
-                          height: previewPad.displayMode == .native ? resolved.video.height : proxy.size.height)
-                    .position(x: previewPad.displayMode == .native ? resolved.video.midX : proxy.size.width / 2,
-                             y: previewPad.displayMode == .native ? resolved.video.midY : proxy.size.height / 2)
+                    .frame(width: native ? resolved.video.width : proxy.size.width,
+                          height: native ? resolved.video.height : proxy.size.height)
+                    .position(x: native ? resolved.video.midX : proxy.size.width / 2,
+                             y: native ? resolved.video.midY : proxy.size.height / 2)
                     .clipped()
 
-                    PreviewControllerPad(
-                        store: previewPad,
-                        // Recorded through PadDiagnostics, NOT into @State here, and that
-                        // is the whole reason this pad never worked.
-                        //
-                        // These closures used to bump two @State properties of this view
-                        // on every single input. The preview pad is rendered INSIDE this
-                        // view, so every press rebuilt the pad being pressed - which tore
-                        // the control out from under the finger and released it again
-                        // before the press could mean anything. The same shape as the bug
-                        // in MuffinEMU's own pad, except guaranteed on every event rather
-                        // than occasional, which is why this one never worked at all
-                        // while the other worked intermittently.
-                        //
-                        // PadDiagnostics is an ObservableObject that only its own overlay
-                        // observes, so recording an input invalidates that overlay and
-                        // nothing else. It is also where the real pad already reports, so
-                        // both pads now show up in the same readout.
-                        onInput: { label, pressed in
-                            PadDiagnostics.shared.recordInput(label, pressed)
-                            cemu_bridge_set_button_state(cemuBridgeButton(forLabel: label), pressed)
-                        },
-                        onStick: { stick, position in
-                            PadDiagnostics.shared.recordStick(stick, position)
-                            cemu_bridge_set_stick_axis(
-                                stick == 0 ? CEMU_BRIDGE_STICK_LEFT : CEMU_BRIDGE_STICK_RIGHT,
-                                Float(position.x), Float(position.y)
-                            )
-                        },
-                        isEditingLayout: $isEditingControlLayout
-                    )
-                    .onAppear { PadDiagnostics.shared.report(activePad: .preview) }
-                    // The stuck-button net, at the level where disappearing is a real
-                    // event. HeldControl no longer releases per control - see its own
-                    // comment for why that had to go - so the pad as a whole owns it,
-                    // exactly as OptimizedControlPanel does.
-                    .onDisappear { cemu_bridge_release_all_buttons() }
+                    // Hidden with the rest of the on-screen pad (the top bar's hide button, or a connected
+                    // controller with Settings > On-screen Controls > Hide on-screen controls on). The video
+                    // above stays.
+                    if !padControlsHidden {
+                        PreviewControllerPad(
+                            store: previewPad,
+                            // Recorded through PadDiagnostics, NOT into @State here, and that
+                            // is the whole reason this pad never worked.
+                            //
+                            // These closures used to bump two @State properties of this view
+                            // on every single input. The preview pad is rendered INSIDE this
+                            // view, so every press rebuilt the pad being pressed - which tore
+                            // the control out from under the finger and released it again
+                            // before the press could mean anything. The same shape as the bug
+                            // in MuffinEMU's own pad, except guaranteed on every event rather
+                            // than occasional, which is why this one never worked at all
+                            // while the other worked intermittently.
+                            //
+                            // PadDiagnostics is an ObservableObject that only its own overlay
+                            // observes, so recording an input invalidates that overlay and
+                            // nothing else. It is also where the real pad already reports, so
+                            // both pads now show up in the same readout.
+                            onInput: { label, pressed in
+                                sendPadButton(label, pressed)
+                            },
+                            onStick: { stick, position in
+                                PadDiagnostics.shared.recordStick(stick, position)
+                                cemu_bridge_set_stick_axis(
+                                    stick == 0 ? CEMU_BRIDGE_STICK_LEFT : CEMU_BRIDGE_STICK_RIGHT,
+                                    Float(position.x), Float(position.y)
+                                )
+                            },
+                            isEditingLayout: $isEditingControlLayout
+                        )
+                        .onAppear { PadDiagnostics.shared.report(activePad: .preview) }
+                        // The stuck-button net, at the level where disappearing is a real
+                        // event. HeldControl no longer releases per control - see its own
+                        // comment for why that had to go - so the pad as a whole owns it,
+                        // exactly as OptimizedControlPanel does.
+                        .onDisappear { cemu_bridge_release_all_buttons() }
+                    }
 
                     #if DEBUG
                     // Debug HUD: proves whether SwiftUI ever calls onInput/onStick at
@@ -1496,6 +2226,16 @@ struct EmulatorViewOptimized: View {
                 screenLayoutComposition
             }
 
+            // The core's FPS readout and notifications, drawn here at full screen resolution
+            // instead of by ImGui inside the (reduced-scale) game surface. Above the video,
+            // below the controls; no layout, no touches. In dual-screen the TV is on another
+            // display this layer cannot reach, so it hands back to the core's own drawing.
+            NativeCoreOverlayView(active: nativeOverlayActive, topInset: overlayTopInset)
+
+            // The shader and pipeline cache loading screen: title, progress bar and counter, drawn
+            // here instead of by the core. The core still draws the game's boot image behind it.
+            NativeCacheLoadingView(active: nativeOverlayActive, tvFrame: touchLabScreens.tvFrame)
+
             VStack(spacing: 0) {
                 HStack(alignment: .center, spacing: 12) {
                     Button(action: {
@@ -1513,11 +2253,15 @@ struct EmulatorViewOptimized: View {
                                 .font(.system(size: 14, weight: .semibold, design: .rounded))
                         }
                     }
-                    .buttonStyle(MuffinSecondaryButtonStyle())
-                    .confirmationDialog(
-                        "Quit \(game.title)?",
-                        isPresented: $showingBackConfirmation,
-                        titleVisibility: .visible
+                    .buttonStyle(MuffinBarButtonStyle())
+                    // Quitting while a save state is being written would tear the title down under the write.
+                    .disabled(saveStateBusySlot != nil)
+                    // An alert, not a confirmationDialog: on iPad a confirmationDialog is a popover anchored
+                    // to this button, and from the in-game top bar it could fail to appear, leaving Back
+                    // doing nothing. An alert always presents.
+                    .alert(
+                        "Quit \(gameName)?",
+                        isPresented: $showingBackConfirmation
                     ) {
                         Button("Quit", role: .destructive) {
                             gameManager.stopEmulation()
@@ -1525,31 +2269,31 @@ struct EmulatorViewOptimized: View {
                         }
                         Button("Cancel", role: .cancel) {}
                     } message: {
-                        Text("Any progress the game itself hasn't saved will be lost.")
+                        Text("Any progress the game itself hasn't saved will be lost. Save states can't be loaded after you quit.")
                     }
 
-                    VStack(alignment: .center, spacing: 2) {
-                        Text(game.title)
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundColor(.white)
-                            .lineLimit(1)
-
-                        // accentOnDark: the bar is always dark, and several light-mode
-                        // accents (Blueberry, Equality, Galaxy, Neon) were navy on it.
-                        Text(controllerSkin.name)
-                            .font(.system(size: 9, weight: .regular, design: .rounded))
-                            .foregroundColor(MuffinTheme.accentOnDark)
+                    // Upright there is no room for the name beside the buttons.
+                    // The skin's name used to sit under this at 9pt, too small to read; the skin picker shows it.
+                    if !isPhonePortrait {
+                    Text(gameName)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity)
                     }
-                    .frame(maxWidth: .infinity)
 
                     TopBarOverflowScroll {
-                    HStack(spacing: 8) {
-                        Button(action: { showSkinSelector.toggle() }) {
-                            Image(systemName: "gamecontroller.fill")
-                                .font(.system(size: 12, weight: .semibold))
+                    // 2 point gaps: each button is a 44 point target around a smaller visible one.
+                    HStack(spacing: 2) {
+                        // Skins colour MuffinEMU's own pad only, so the button is there only while that pad is in use.
+                        if padSystem == .muffin {
+                            Button(action: { showSkinSelector.toggle() }) {
+                                Image(systemName: "gamecontroller.fill")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                            .buttonStyle(MuffinBarButtonStyle())
+                            .accessibilityLabel("Choose Controller Skin")
                         }
-                        .buttonStyle(MuffinSecondaryButtonStyle())
-                        .accessibilityLabel("Choose Controller Skin")
 
                         // Settings > On-Screen Controls already has this toggle;
                         // repeated here for the same reason as the save-state and
@@ -1560,15 +2304,17 @@ struct EmulatorViewOptimized: View {
                         // overlay it was held on disappears cannot report its own
                         // release any more, and the other pad's own buttons don't
                         // know a press exists that they never started.
-                        Button(action: {
-                            useMeloControls.toggle()
-                            cemu_bridge_release_all_buttons()
-                        }) {
-                            Image(systemName: useMeloControls ? "checkmark.rectangle.stack.fill" : "rectangle.stack")
-                                .font(.system(size: 12, weight: .semibold))
+                        if MeloControlsSetting.isAvailable {
+                            Button(action: {
+                                useMeloControls.toggle()
+                                cemu_bridge_release_all_buttons()
+                            }) {
+                                Image(systemName: useMeloControls ? "checkmark.rectangle.stack.fill" : "rectangle.stack")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                            .buttonStyle(MuffinBarButtonStyle())
+                            .accessibilityLabel(useMeloControls ? "Switch to \(otherPadName)" : "Switch to Melo-Controller")
                         }
-                        .buttonStyle(MuffinSecondaryButtonStyle())
-                        .accessibilityLabel(useMeloControls ? "Switch to MuffinEMU's controls" : "Switch to Melo-Controller")
 
                         // Reachable without leaving the game, same reasoning as the
                         // move-controls and pad-hide buttons around it: reachable
@@ -1576,15 +2322,11 @@ struct EmulatorViewOptimized: View {
                         // .loading/.error instead of merely disabled: there is no
                         // running session yet for a slot to match against.
                         if gameManager.emulationState == .running {
-                            Button(action: {
-                                saveStateSlots = SaveStateStore.slots(for: game.id)
-                                saveStateStatus = nil
-                                showSaveStates = true
-                            }) {
+                            Button(action: openSaveStates) {
                                 Image(systemName: "bookmark.fill")
                                     .font(.system(size: 12, weight: .semibold))
                             }
-                            .buttonStyle(MuffinSecondaryButtonStyle())
+                            .buttonStyle(MuffinBarButtonStyle())
                             .accessibilityLabel("Save States")
                         }
 
@@ -1606,7 +2348,7 @@ struct EmulatorViewOptimized: View {
                                 Image(systemName: "externaldrive.connected.to.line.below")
                                     .font(.system(size: 12, weight: .semibold))
                             }
-                            .buttonStyle(MuffinSecondaryButtonStyle())
+                            .buttonStyle(MuffinBarButtonStyle())
                             .accessibilityLabel("Emulated Devices")
                         }
 
@@ -1623,8 +2365,22 @@ struct EmulatorViewOptimized: View {
                                 Image(systemName: "rectangle.2.swap")
                                     .font(.system(size: 12, weight: .semibold))
                             }
-                            .buttonStyle(MuffinSecondaryButtonStyle())
+                            .buttonStyle(MuffinBarButtonStyle())
                             .accessibilityLabel("Swap TV and GamePad")
+                        .accessibilityValue(localSwapped ? "Showing the GamePad screen" : "Showing the TV screen")
+                        }
+
+                        // Dual screen: which Wii U screen is on the external display. Lives
+                        // in the bar with the other in-game buttons. It used to float in the
+                        // top-right corner, which is exactly where the bar's last button and
+                        // the frame rate are, so it sat on top of them.
+                        if showSwapButton, displayRouter.placement == .dualScreen {
+                            Button(action: { DisplayRouter.shared.toggleScreenLayoutFromSwapButton() }) {
+                                Image(systemName: "rectangle.2.swap")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                            .buttonStyle(MuffinBarButtonStyle())
+                            .accessibilityLabel("Swap TV and GamePad screens")
                         }
 
                         // Only worth showing while the GamePad's own screen is actually
@@ -1638,6 +2394,8 @@ struct EmulatorViewOptimized: View {
                         if isPadViewVisible {
                             Button(action: {
                                 padControlsHidden.toggle()
+                                // The player's own choice now, whatever a controller did before.
+                                padHiddenByController = false
                                 if padControlsHidden {
                                     cemu_bridge_release_all_buttons()
                                 }
@@ -1645,10 +2403,20 @@ struct EmulatorViewOptimized: View {
                                 Image(systemName: padControlsHidden ? "hand.raised.slash.fill" : "hand.raised.fill")
                                     .font(.system(size: 12, weight: .semibold))
                             }
-                            .buttonStyle(MuffinSecondaryButtonStyle())
+                            .buttonStyle(MuffinBarButtonStyle())
                             .accessibilityLabel(padControlsHidden ? "Show controls" : "Hide controls to touch the GamePad screen")
                         }
                         #endif
+
+                        // The HOME menu, for the pads that have no HOME button of their own (MuffinEMU's
+                        // measured layout is the GamePad's, and the console's HOME is not on it).
+                        Button(action: openHomeMenu) {
+                            Image(systemName: "house.fill")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .buttonStyle(MuffinBarButtonStyle())
+                        .disabled(gameManager.emulationState != .running || showHomeMenu || isEditingControlLayout)
+                        .accessibilityLabel("HOME menu")
 
                         // cemu_bridge_pause/resume wrap CafeSystem::PauseTitle()/
                         // ResumeTitle() (and, since the app-lifecycle work, also the
@@ -1658,21 +2426,15 @@ struct EmulatorViewOptimized: View {
                         // this button and the .onChange(of: scenePhase) below - so it is
                         // pausedByLifecycle, not isPaused itself, that keeps the two from
                         // fighting over what a return to .active should do.
-                        Button(action: {
-                            isPaused.toggle()
-                            let shouldPause = isPaused
-                            Self.titlePauseQueue.async {
-                                if shouldPause {
-                                    cemu_bridge_pause()
-                                } else {
-                                    cemu_bridge_resume()
-                                }
-                            }
-                        }) {
+                        Button(action: togglePause) {
                             Image(systemName: isPaused ? "play.fill" : "pause.fill")
                                 .font(.system(size: 12, weight: .semibold))
                         }
-                        .buttonStyle(MuffinSecondaryButtonStyle())
+                        .buttonStyle(MuffinBarButtonStyle())
+                        // There is nothing to pause until the title is running, and a pause sent
+                        // while it boots is dropped, which left the screen saying PAUSED over a game
+                        // that was running.
+                        .disabled(gameManager.emulationState != .running)
                         .accessibilityLabel(isPaused ? "Resume" : "Pause")
 
                         // Reachable without leaving the game, because the only way to
@@ -1681,6 +2443,11 @@ struct EmulatorViewOptimized: View {
                         Button(action: {
                             withAnimation(.easeInOut(duration: 0.2)) {
                                 isEditingControlLayout.toggle()
+                            }
+                            // There is nothing to move while the pad is hidden.
+                            if isEditingControlLayout {
+                                padControlsHidden = false
+                                padHiddenByController = false
                             }
                             // Editing disables the buttons, and a button held at the
                             // moment it stops being able to report its own release
@@ -1692,51 +2459,38 @@ struct EmulatorViewOptimized: View {
                                   : "arrow.up.and.down.and.arrow.left.and.right")
                                 .font(.system(size: 12, weight: .semibold))
                         }
-                        .buttonStyle(MuffinSecondaryButtonStyle())
+                        .buttonStyle(MuffinBarButtonStyle())
                         .accessibilityLabel(isEditingControlLayout ? "Done moving controls" : "Move controls")
 
-                        // Reads the @Published frameRate directly rather than calling
-                        // getFrameRate(): a plain method call cannot invalidate this
-                        // view, so even once the value became real the HUD would only
-                        // update when something else happened to redraw it. Until
-                        // the emulator reports its first measurement this shows "--",
-                        // not "0" - "0 FPS" reads as a measured stall, which is a
-                        // different and much more alarming claim than "no reading yet".
-                        //
-                        // The string comes from EmulatorProgress rather than from
-                        // frameRate alone because whole frames per second is the wrong
-                        // unit for this port. Every rate the interpreter has actually
-                        // produced rounds to zero there, so a title rendering slowly and
-                        // a title that has stopped dead both read "-- FPS" - the one
-                        // distinction anybody looking at this HUD needs. hudText() keeps
-                        // frameRate in charge whenever it is non-zero, so a build that
-                        // reaches a normal rate reads exactly as it always did, and only
-                        // falls back to the engine's own counters below that.
-                        HStack(spacing: 6) {
-                            Image(systemName: "speedometer")
-                                .font(.system(size: 12, weight: .semibold))
-                            Text(gameManager.progress.hudText(wholeFramesPerSecond: gameManager.frameRate))
-                                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                .lineLimit(1)
-                        }
-                        .foregroundColor(gameManager.frameRate >= 20 ? Color.green : MuffinTheme.alertOnDark)
-                        .frame(height: 40)
-                        .padding(.horizontal, 12)
-                        .background(Color.white.opacity(0.08))
-                        .cornerRadius(10)
+                        frameRatePill
                     }
                     }
                 }
-                .padding(12)
+                // Sideways it keeps clear of an iPhone's notch side and rounded corners; the
+                // game view ignores the safe area, so the window is asked directly.
+                .padding(WindowSafeArea.padding(minimum: 12))
                 .background(Color.black.opacity(0.5))
                 .borderBottom(width: 0.5, color: Color.white.opacity(0.1))
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 0).updating($topBarTouched) { _, touched, _ in touched = true }
+                )
+                // Before the measurement, never after it: see TopBarHidingEffect.
+                .topBarAutoHideEffect(hidden: topBarHidden, slideDistance: topBarHeight, slides: !reduceMotion)
                 .reportTopBarBottom()
+                // The bar and the pads are laid out against measured sizes, so they stop growing at Extra Large.
+                .dynamicTypeSize(...DynamicTypeSize.xLarge)
 
-                if showSkinSelector {
-                    OrganizedControllerSkinSelector(selectedSkin: $controllerSkin)
-                        .padding(12)
-                        .background(Color.black.opacity(0.7))
-                        .transition(.move(edge: .top).combined(with: .opacity))
+                if showSkinSelector && padSystem == .muffin {
+                    VStack(spacing: 6) {
+                        OrganizedControllerSkinSelector(selectedSkin: $controllerSkin)
+                        Text("The skin applies to every game.")
+                            .font(.system(size: 11, design: .rounded))
+                            .foregroundColor(.white.opacity(0.65))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(12)
+                    .background(Color.black.opacity(0.7))
+                    .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
             // Pinned to the top rather than left to fill the ZStack the way a VStack's
@@ -1745,7 +2499,19 @@ struct EmulatorViewOptimized: View {
             // whatever drops down from it, sized to its own content and nothing more.
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .onPreferenceChange(TopBarBottomKey.self) { bottom in
-                if bottom != topBarHeight { topBarHeight = bottom }
+                // Not while hidden: the bar's height is what the pads reserve, and it is
+                // only worth re-measuring when the bar is actually there.
+                if !topBarHidden, bottom != topBarHeight { topBarHeight = bottom }
+            }
+            .overlay(alignment: .top) { topBarRevealHandle }
+            .overlay(alignment: .topTrailing) { floatingFrameRate }
+            .onChange(of: isPaused) { paused in
+                // Pausing always brings the bar back, whatever hid it.
+                if paused, topBarHidden { setTopBarHidden(false) }
+            }
+            .task(id: topBarHideKey) { await runTopBarAutoHide(topBarHideKey) }
+            .onReceive(NotificationCenter.default.publisher(for: UIAccessibility.voiceOverStatusDidChangeNotification)) { _ in
+                voiceOverRunning = UIAccessibility.isVoiceOverRunning
             }
 
             // Unconditional: no showControls state, no tap-to-toggle, no transition.
@@ -1774,22 +2540,29 @@ struct EmulatorViewOptimized: View {
             // renders when that flag is off, which is also its default.
             // Melo-Controller's pad, when chosen, takes the place of both of MuffinEMU's.
             if !padControlsHidden {
-                if useMeloControls {
-                    MeloControlsOverlay(
-                        gameID: gameManager.currentGame?.id,
-                        isEditing: isEditingControlLayout
-                    )
-                    .onAppear { PadDiagnostics.shared.report(activePad: .melo) }
+                Group {
+                if useMeloControls && MeloControlsSetting.isAvailable {
+                    // Upright, Melo-Controller gets only the area under the picture; it lays its
+                    // buttons out itself, so that is all that can be done for it.
+                    belowPicture {
+                        MeloControlsOverlay(
+                            gameID: gameManager.currentGame?.settingsKey,
+                            isEditing: isEditingControlLayout
+                        )
+                        .onAppear { PadDiagnostics.shared.report(activePad: .melo) }
+                    }
                 } else if padSystem == .touchLab {
                     TouchLabPadOverlay(
                         schemeID: touchLabScheme,
-                        gameID: gameManager.currentGame?.id,
+                        gameID: gameManager.currentGame?.settingsKey,
                         screens: touchLabScreens,
                         enabled: !isPaused && !isEditingControlLayout,
-                        topInset: topBarHeight
+                        // Upright the picture is along the top and the controls go under it.
+                        topInset: isPhonePortrait ? 0 : topBarHeight
                     )
                     .onAppear { PadDiagnostics.shared.report(activePad: .touchLab) }
                 } else if padSystem == .muffin {
+                    belowPicture {
                     OptimizedControlPanel(
                         skin: controllerSkin,
                         onInput: { label, pressed in
@@ -1797,8 +2570,7 @@ struct EmulatorViewOptimized: View {
                             // the overlay can tell "no touch reached the pad" apart from
                             // "the pad fired and the bridge did nothing" - two completely
                             // different bugs that were indistinguishable all day.
-                            PadDiagnostics.shared.recordInput(label, pressed)
-                            cemu_bridge_set_button_state(cemuBridgeButton(forLabel: label), pressed)
+                            sendPadButton(label, pressed)
                         },
                         // The axis path. Deliberately not routed through the button call above:
                         // the bridge keeps sticks and buttons apart because the engine does, and
@@ -1813,10 +2585,16 @@ struct EmulatorViewOptimized: View {
                             )
                         },
                         isEditingLayout: $isEditingControlLayout,
-                        isPaused: isPaused
+                        isPaused: isPaused,
+                        // Upright, the pad starts under the picture, clear of the bar.
+                        topInset: isPhonePortrait ? 0 : topBarHeight,
+                        portrait: isPhonePortrait
                     )
                     .onAppear { PadDiagnostics.shared.report(activePad: .muffin) }
+                    }
                 }
+                }
+                .dynamicTypeSize(...DynamicTypeSize.xLarge)
             }
 
             // Last thing added to this ZStack, so it draws over every control and over the
@@ -1841,47 +2619,33 @@ struct EmulatorViewOptimized: View {
                 .allowsHitTesting(false)
             }
 
-            // Settings > External Display > "Show swap button (TV <-> Pad)". Only ever
-            // visible in .dualScreen - the only placement where there are two physical
-            // screens to swap between at all - so it can't appear and do nothing on a
-            // plain iPad. Top-trailing, out of the pad's own footprint regardless of
-            // skin or comfort-controls layout.
-            if showSwapButton, displayRouter.placement == .dualScreen {
-                VStack {
-                    HStack {
-                        Spacer()
-                        Button {
-                            DisplayRouter.shared.toggleScreenLayoutFromSwapButton()
-                        } label: {
-                            Image(systemName: "rectangle.2.swap")
-                                .font(.system(size: 18, weight: .semibold))
-                        }
-                        .buttonStyle(MuffinSecondaryButtonStyle())
-                        .accessibilityLabel("Swap TV and GamePad screens")
-                        .padding(.top, 8)
-                        .padding(.trailing, 12)
-                    }
-                    Spacer()
-                }
-            }
-
             // Above the pad (which stays on screen and interactive-looking underneath
             // it) so there is no ambiguity about whether input is actually reaching a
             // paused title - the label is the whole point, not just the pause itself.
-            if isPaused {
+            // Not while the controls are being moved: that pause ends at Done, and the label would sit
+            // over the controls and the panel.
+            if isPaused && !showHomeMenu && !isEditingControlLayout {
                 VStack(spacing: 10) {
                     Image(systemName: "pause.circle.fill")
                         .font(.system(size: 40))
+                        .accessibilityHidden(true)
                     Text("PAUSED")
                         .font(.system(size: 22, weight: .bold, design: .rounded))
                         .tracking(2)
+                    Text("Tap to resume")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .opacity(0.85)
                 }
                 .foregroundColor(.white)
                 .padding(28)
                 .background(Color.black.opacity(0.6))
                 .cornerRadius(20)
                 .transition(.opacity)
-                .allowsHitTesting(false)
+                // Tappable, so a paused game can always be resumed even when the top bar is out of reach.
+                .contentShape(RoundedRectangle(cornerRadius: 20))
+                .onTapGesture { togglePause() }
+                .accessibilityAddTraits(.isButton)
+                .accessibilityLabel("Paused. Resume")
             }
 
             // The Metal view above must mount (so it can register the render
@@ -1892,9 +2656,11 @@ struct EmulatorViewOptimized: View {
                 VStack(spacing: 12) {
                     ProgressView()
                         .tint(.white)
-                    Text("Booting…")
+                    Text("Starting \(gameName)…")
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
                         .foregroundColor(.white.opacity(0.8))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
 
                     if showLaunchLog {
                         LaunchLogView(store: launchLog)
@@ -1911,18 +2677,28 @@ struct EmulatorViewOptimized: View {
             // exactly the pace it always did - the intro adds no wait of its own, it
             // occupies a wait that was already there and was previously a spinner.
             //
-            // It clears itself when finished. It does NOT gate .running: the engine
-            // flips that on its own schedule and the intro fading out reveals whatever
-            // state the emulator has genuinely reached, which keeps the animation
-            // honest about the boot instead of pretending to drive it.
+            // It clears itself when finished, and can be skipped by tap or controller. It
+            // does NOT gate .running: the engine flips that on its own schedule and the
+            // intro fading out reveals whatever state the emulator has genuinely reached.
+            // The one link the other way is that a running game ends the intro early, once
+            // it has played about two seconds, so a fast boot isn't held behind it.
             //
             // Hidden while the launch log is up. Someone who has turned that on is
             // diagnosing a boot, and covering the log with an animation would be
             // exactly the wrong call.
-            if showLaunchIntro && launchIntroEnabled && !showLaunchLog {
-                LaunchIntroView { showLaunchIntro = false }
+            if launchIntroVisible {
+                LaunchIntroView(isGameRunning: gameManager.emulationState == .running) { showLaunchIntro = false }
                     .transition(.opacity)
                     .zIndex(10)
+            }
+
+            // The cover and the intro hide the top bar, so a launch that never finishes needs its own way out.
+            if gameManager.emulationState == .loading {
+                BootBackButton {
+                    gameManager.stopEmulation()
+                    isRunning = true
+                }
+                .zIndex(11)
             }
 
             // Deliberately outlives .loading. emulationState flips to .running the
@@ -1954,225 +2730,16 @@ struct EmulatorViewOptimized: View {
 
             // Last in the ZStack so it sits above the pad it is adjusting - a size
             // slider you have to hunt for behind a button is not an adjustment anyone
-            // makes twice. Everything here writes to the same AppStorage keys the pad
-            // reads, so the change is under the finger as the slider moves.
-            if isEditingControlLayout, useMeloControls {
-                // Melo-Controller's own layout editor (drag/pinch individual buttons -
-                // see MeloControlsOverlay's isEditing) resizes one button at a time;
-                // this slider resizes all of them at once, by writing the package's own
-                // "On-ScreenControllerScale". That key scales each button's FRAME, not
-                // the coordinate system, so the buttons grow in place: the gaps between
-                // them are fixed stack spacings and do not open up, and the clusters
-                // grow inward from the screen edges they are pinned to rather than off
-                // them. None of the grouped/individual/joystick/comfort/stick-gate
-                // controls below apply to it - those are MuffinEMU's own pad's settings.
-                VStack {
-                    VStack(spacing: 10) {
-                        Text("Melo-Controller size")
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                            .foregroundColor(.white.opacity(0.85))
+            // makes twice. Everything in these panels writes to the same stored values the
+            // pad reads, so the change is under the finger as the slider moves.
+            if isEditingControlLayout {
+                layoutPanel
+            }
 
-                        HStack(spacing: 10) {
-                            Image(systemName: "minus.magnifyingglass")
-                                .font(.system(size: 12))
-                                .foregroundColor(.white.opacity(0.7))
-                            Slider(
-                                value: $meloControlsScale,
-                                in: MeloControlsSetting.minScale...MeloControlsSetting.maxScale
-                            )
-                            Image(systemName: "plus.magnifyingglass")
-                                .font(.system(size: 12))
-                                .foregroundColor(.white.opacity(0.7))
-                        }
-
-                        HStack(spacing: 12) {
-                            Button("Reset to default") { showingResetControlsConfirmation = true }
-                                .buttonStyle(MuffinSecondaryButtonStyle())
-                                .confirmationDialog("Reset controls to default?", isPresented: $showingResetControlsConfirmation, titleVisibility: .visible) {
-                                    Button("Reset to default", role: .destructive) {
-                                        MeloControlsSetting.resetLayout(gameID: gameManager.currentGame?.id)
-                                    }
-                                    Button("Cancel", role: .cancel) { }
-                                } message: {
-                                    Text("Melo-Controller's size and the buttons you've moved in this game go back to how it ships.")
-                                }
-
-                            Button("Done") {
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    isEditingControlLayout = false
-                                }
-                            }
-                            .buttonStyle(MuffinSecondaryButtonStyle())
-                        }
-                    }
-                    .padding(14)
-                    .frame(maxWidth: 420)
-                    .background(Color.black.opacity(0.82))
-                    .cornerRadius(14)
-                    .padding(.top, 12)
-
-                    Spacer()
-                }
-                .transition(.opacity)
-            } else if isEditingControlLayout, padSystem == .touchLab {
-                // TouchLab styles: size, opacity and style only - no per-button dragging.
-                TouchLabLayoutPanel(gameID: gameManager.currentGame?.id) {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        isEditingControlLayout = false
-                    }
-                }
-            } else if isEditingControlLayout {
-                VStack {
-                    VStack(spacing: 10) {
-                        Picker("Edit mode", selection: $individualEditMode) {
-                            Text("Grouped").tag(false)
-                            Text("Individual").tag(true)
-                        }
-                        .pickerStyle(.segmented)
-
-                        Text(individualEditMode
-                             ? "Drag any button to move it on its own, or pinch it to resize. L and ZL move together, and so do R and ZR. Nothing here reaches the game."
-                             : "Drag the empty space inside a dashed box to move that whole half - L/ZL and the rest of the left side together, R/ZR and the right side together. Nothing here reaches the game.")
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                            .foregroundColor(.white.opacity(0.85))
-                            .multilineTextAlignment(.center)
-
-                        HStack(spacing: 10) {
-                            Image(systemName: "minus.magnifyingglass")
-                                .font(.system(size: 12))
-                                .foregroundColor(.white.opacity(0.7))
-                            Slider(
-                                value: $controlScale,
-                                in: ControllerLayoutSettings.minScale...ControllerLayoutSettings.maxScale
-                            )
-                            Image(systemName: "plus.magnifyingglass")
-                                .font(.system(size: 12))
-                                .foregroundColor(.white.opacity(0.7))
-                        }
-
-                        HStack(spacing: 10) {
-                            Image(systemName: "circle.lefthalf.filled")
-                                .font(.system(size: 12))
-                                .foregroundColor(.white.opacity(0.7))
-                            Slider(value: $controlOpacity, in: 0.2...1.0)
-                            Image(systemName: "circle.fill")
-                                .font(.system(size: 12))
-                                .foregroundColor(.white.opacity(0.7))
-                        }
-
-                        Toggle(isOn: $joystickMode) {
-                            Text("Joystick instead of d-pad")
-                                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                .foregroundColor(.white.opacity(0.85))
-                        }
-                        .tint(MuffinTheme.pixelBlue)
-
-                        if joystickMode {
-                            Toggle(isOn: $comfortControls) {
-                                Text("Comfort controls")
-                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                    .foregroundColor(.white.opacity(0.85))
-                            }
-                            .tint(MuffinTheme.pixelBlue)
-
-                            Text(comfortControls
-                                 ? "L, ZL and minus sit on the left stick; R, ZR and plus sit on the right stick."
-                                 : "L, ZL and minus stay on the d-pad; R, ZR and plus stay on A/B/X/Y.")
-                                .font(.system(size: 11))
-                                .foregroundColor(.white.opacity(0.65))
-
-                            Picker("Gate", selection: $stickGateRaw) {
-                                ForEach(ControllerGeometry.StickGate.allCases) { gate in
-                                    Text(gate.title).tag(gate.rawValue)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-
-                            HStack(spacing: 10) {
-                                Text("Deadzone")
-                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                    .foregroundColor(.white.opacity(0.85))
-                                Slider(
-                                    value: $stickDeadzone,
-                                    in: ControllerLayoutSettings.minDeadzone...ControllerLayoutSettings.maxDeadzone
-                                )
-                                // Fixed width, so dragging the slider does not make the
-                                // slider itself change size under the finger as the
-                                // number beside it gets wider.
-                                Text(stickDeadzone <= 0.0005
-                                     ? "off"
-                                     : "\(Int((stickDeadzone * 100).rounded()))%")
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(.white.opacity(0.7))
-                                    .frame(width: 34, alignment: .trailing)
-                            }
-
-                            HStack(spacing: 10) {
-                                Text("Fine")
-                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                    .foregroundColor(.white.opacity(0.85))
-                                Slider(
-                                    value: $stickCurve,
-                                    in: ControllerLayoutSettings.minStickCurve...ControllerLayoutSettings.maxStickCurve
-                                )
-                                Text(stickCurve <= ControllerLayoutSettings.minStickCurve + 0.005
-                                     ? "lin"
-                                     : String(format: "%.1fx", stickCurve))
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(.white.opacity(0.7))
-                                    .frame(width: 34, alignment: .trailing)
-                            }
-
-                            // Hand size: both sticks move together, apart or closer.
-                            HStack(spacing: 10) {
-                                Text("Sticks")
-                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                    .foregroundColor(.white.opacity(0.85))
-                                Image(systemName: "arrow.right.and.line.vertical.and.arrow.left")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(.white.opacity(0.7))
-                                    .accessibilityHidden(true)
-                                Slider(
-                                    value: $stickSpacing,
-                                    in: ControllerLayoutSettings.minStickSpacing...ControllerLayoutSettings.maxStickSpacing,
-                                    step: ControllerLayoutSettings.stickSpacingStep
-                                )
-                                .accessibilityLabel("Stick spacing")
-                                .accessibilityValue(ControllerLayoutSettings.stickSpacingLabel(stickSpacing))
-                                Image(systemName: "arrow.left.and.line.vertical.and.arrow.right")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(.white.opacity(0.7))
-                                    .accessibilityHidden(true)
-                            }
-                        }
-
-                        HStack(spacing: 12) {
-                            Button("Reset to default") { showingResetControlsConfirmation = true }
-                                .buttonStyle(MuffinSecondaryButtonStyle())
-                                .confirmationDialog("Reset controls to default?", isPresented: $showingResetControlsConfirmation, titleVisibility: .visible) {
-                                    Button("Reset to default", role: .destructive) { ControllerLayoutSettings.reset() }
-                                    Button("Cancel", role: .cancel) { }
-                                } message: {
-                                    Text("Button size, opacity, stick spacing and every button you've moved go back to how MuffinEMU ships.")
-                                }
-
-                            Button("Done") {
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    isEditingControlLayout = false
-                                }
-                            }
-                            .buttonStyle(MuffinSecondaryButtonStyle())
-                        }
-                    }
-                    .padding(14)
-                    .frame(maxWidth: 420)
-                    .background(Color.black.opacity(0.82))
-                    .cornerRadius(14)
-                    .padding(.top, 12)
-
-                    Spacer()
-                }
-                .transition(.opacity)
+            // Above everything, the launch intro included.
+            if showHomeMenu {
+                homeMenuLayer
+                    .zIndex(20)
             }
         }
         // No full-screen tap gesture. There used to be one here toggling showControls,
@@ -2183,9 +2750,16 @@ struct EmulatorViewOptimized: View {
         // Tied to this view's lifetime, not the store's: no launch log on screen means
         // nothing draining, and the C ring keeps filling either way so switching the
         // setting on mid-boot still catches up on everything already logged.
-        .onAppear { if showLaunchLog { launchLog.start() } }
+        .onAppear {
+            if showLaunchLog { launchLog.start() }
+            // An iPhone may turn upright for as long as a game is on screen.
+            OrientationPolicy.setInGame(true)
+        }
         .onDisappear {
             launchLog.stop()
+            AudioRecorder.shared.stop()
+            ScreenRecorder.shared.stop()
+            OrientationPolicy.setInGame(false)
             // The pad can no longer vanish mid-press while a title runs, so the only
             // way out from under a held finger is leaving the emulator entirely. Each
             // button releases itself on disappear; this sweeps anyway, because a button
@@ -2222,11 +2796,15 @@ struct EmulatorViewOptimized: View {
         // the GPU gate above gets closed, not widen any safety margin.
         .onChange(of: scenePhase) { newPhase in
             if newPhase == .active {
+                if gameManager.emulationState == .running { AudioRecorder.shared.autoStartIfEnabled(gameName: gameName) }
                 guard pausedByLifecycle else { return }
                 pausedByLifecycle = false
                 isPaused = false
-                Self.titlePauseQueue.async { cemu_bridge_resume() }
+                setTitlePaused(false)
             } else {
+                // A recording ends when the app leaves the foreground, finished properly.
+                AudioRecorder.shared.stop()
+                ScreenRecorder.shared.stop()
                 // Released on every trip out of .active, paused or not. A touch in
                 // progress when the app resigns active is cancelled by UIKit, which does
                 // not reliably deliver the gesture's end, so without this a held button or
@@ -2235,11 +2813,27 @@ struct EmulatorViewOptimized: View {
                 // the guest scheduler lock cemu_bridge_pause/resume take, so it carries
                 // none of the main-thread deadlock risk that sends those two there.
                 cemu_bridge_release_all_buttons()
+                // The GamePad's touchscreen is the same: a cancelled touch never reports its end.
+                cemu_bridge_set_pad_touch(0, 0, false)
                 guard !isPaused else { return }
                 isPaused = true
                 pausedByLifecycle = true
-                Self.titlePauseQueue.async { cemu_bridge_pause() }
+                setTitlePaused(true)
             }
+        }
+        // A title that finishes booting while the app is away (or that was asked to pause
+        // before it existed - there is nothing to suspend while it boots) must still end
+        // up paused, or it runs on in the background.
+        .onChange(of: gameManager.emulationState) { state in
+            guard state == .running else { return }
+            if scenePhase == .active { AudioRecorder.shared.autoStartIfEnabled(gameName: gameName) }
+            // After the launch intro has had its moment.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { showGamePadHintIfNeeded() }
+            if scenePhase != .active && !isPaused {
+                isPaused = true
+                pausedByLifecycle = true
+            }
+            if isPaused { setTitlePaused(true) }
         }
         // Scoped to actually looking at the GamePad screen, not a standing setting:
         // hiding the controls to touch it and then swapping back to the TV (or to a
@@ -2247,16 +2841,42 @@ struct EmulatorViewOptimized: View {
         // or a player who forgot the button exists would have no way to control the
         // TV-side game at all until they remembered to look for it again.
         .onChange(of: isPadViewVisible) { visible in
-            if !visible { padControlsHidden = false }
+            if !visible && !padHiddenByController { padControlsHidden = false }
+            if visible { showGamePadHintIfNeeded() }
         }
         // Keeps the home indicator (and the system's own edge-swipe gestures) from
         // popping up mid-game - a stray swipe near the bottom edge no longer competes
         // with on-screen controls sitting right where it appears.
         .hidingSystemOverlaysDuringPlay()
+        .modifier(HeatNoticeModifier { gameManager.showLaunchNotice($0) })
+        // Red "Recording 0:42" while Record audio or Record screen (HOME menu) is on. It is a SwiftUI overlay, so the
+        // screen recording, which is taken from the game's own picture, never contains it.
         .overlay(alignment: .top) {
-            if (gameManager.videoStalled || (stallSaveRequested && saveStateBusySlot != nil)) && !stallCardDismissed && gameManager.emulationState == .running {
+            RecordingIndicator()
+                .padding(.top, overlayTopInset + 8)
+        }
+        // The title's software keyboard and error viewer, as native cards instead of ImGui in the game surface.
+        .overlay { NativeDialogView(active: nativeOverlayActive) }
+        // Also on while the controls are being moved: a controller's B only reaches the app while it is captured.
+        .modifier(HomeMenuEventsModifier(isOpen: showHomeMenu || isEditingControlLayout, onEvent: handleHomeMenuEvent))
+        .onChange(of: isEditingControlLayout) { layoutEditingChanged($0) }
+        .modifier(ControllerAutoHideModifier(apply: setPadHiddenByController))
+        .onChange(of: showHomeMenu) { open in
+            if open {
+                guard hideControlsInHomeMenu, !padControlsHidden else { return }
+                padHiddenByHomeMenu = true
+                padControlsHidden = true
+                cemu_bridge_release_all_buttons()
+            } else if padHiddenByHomeMenu {
+                padHiddenByHomeMenu = false
+                if !padHiddenByController { padControlsHidden = false }
+            }
+        }
+        .overlay(alignment: .top) {
+            if showsStallCard {
                 videoStalledCard
-                    .padding(.top, 12)
+                    // Below the top bar, not on top of Back and the button row.
+                    .padding(.top, overlayTopInset + 8)
                     .padding(.horizontal, 16)
                     .transition(.opacity)
             }
@@ -2267,9 +2887,21 @@ struct EmulatorViewOptimized: View {
                 stallCardDismissed = false
             }
         }
+        .onChange(of: gameManager.videoStallKind) { kind in
+            // A new or worse problem is shown even if an earlier card was dismissed.
+            if kind != 0 { stallCardDismissed = false }
+        }
+        .onChange(of: saveStateBusySlot) { slot in
+            // After a save from the card, leave the result up for a few seconds, then let it go
+            // if the picture is fine again.
+            guard slot == nil, stallSaveRequested, !gameManager.videoStalled else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+                if saveStateBusySlot == nil && !gameManager.videoStalled { stallSaveRequested = false }
+            }
+        }
         .sheet(isPresented: $showSaveStates) {
             SaveStateSheet(
-                gameTitle: game.title,
+                gameTitle: gameName,
                 slots: saveStateSlots,
                 busySlot: saveStateBusySlot,
                 status: saveStateStatus,
@@ -2280,6 +2912,14 @@ struct EmulatorViewOptimized: View {
         }
         .sheet(isPresented: $showEmulatedDevices) {
             EmulatedDevicesView()
+        }
+        .sheet(isPresented: $showAmiibo) {
+            AmiiboSheet { message in
+                // The game has to be running for the reader to hand the tag over.
+                showAmiibo = false
+                closeHomeMenu()
+                gameManager.showLaunchNotice(message)
+            }
         }
     }
 
@@ -2294,21 +2934,22 @@ struct EmulatorViewOptimized: View {
         saveStateBusySlot = slot
         Self.saveStateQueue.async {
             let ok = path.withCString { cemu_bridge_save_state($0) }
+            // Read here, on the queue that made the call and before anything else can: the text belongs to the latest save or load.
+            let reason = ok ? "" : String(cString: cemu_bridge_save_state_last_error())
             DispatchQueue.main.async {
                 saveStateBusySlot = nil
                 saveStateSlots = SaveStateStore.slots(for: gameID)
-                saveStateStatus = ok
+                reportSaveState(ok
                     ? SaveStateStatus(message: "Slot \(slot) saved.", isWarning: false)
-                    : SaveStateStatus(message: "Couldn't save Slot \(slot). Make sure the game is actually running and try again.", isWarning: true)
+                    : SaveStateStatus(message: Self.saveStateFailureMessage("save", slot: slot, reason: reason), isWarning: true))
             }
         }
     }
 
     /// Loads `slot` back into the CURRENTLY running instance only - see
-    /// cemu_bridge_load_state's doc comment in CemuBridge.h. A refusal here almost
-    /// always means the save is from a different session (the game was quit/relaunched,
-    /// or the app itself restarted, since the save was taken) rather than a real error,
-    /// which is exactly why the failure message below says so instead of just "failed".
+    /// cemu_bridge_load_state's doc comment in CemuBridge.h. A save from another launch
+    /// is not offered for loading at all (the sheet shows it as "From an earlier session");
+    /// a refusal that still gets here carries the bridge's own reason.
     private func performLoadState(slot: Int) {
         guard saveStateBusySlot == nil, gameManager.emulationState == .running else { return }
         let gameID = game.id
@@ -2317,13 +2958,218 @@ struct EmulatorViewOptimized: View {
         saveStateBusySlot = slot
         Self.saveStateQueue.async {
             let ok = path.withCString { cemu_bridge_load_state($0) }
+            let reason = ok ? "" : String(cString: cemu_bridge_save_state_last_error())
             DispatchQueue.main.async {
                 saveStateBusySlot = nil
-                saveStateStatus = ok
-                    ? SaveStateStatus(message: "Slot \(slot) loaded. If a texture or effect looks briefly wrong, that clears itself on the next frame the game redraws it.", isWarning: false)
-                    : SaveStateStatus(message: "Couldn't load Slot \(slot) - most likely it doesn't match this game's current run (quitting or relaunching the game breaks that match). That's expected, not a bug.", isWarning: true)
+                saveStateSlots = SaveStateStore.slots(for: gameID)
+                reportSaveState(ok
+                    ? SaveStateStatus(message: "Slot \(slot) loaded. Some textures may look wrong for a moment.", isWarning: false)
+                    : SaveStateStatus(message: Self.saveStateFailureMessage("load", slot: slot, reason: reason), isWarning: true))
             }
         }
+    }
+
+    // MARK: Top bar auto-hide
+
+    private var launchIntroVisible: Bool {
+        showLaunchIntro && launchIntroEnabled && !showLaunchLog && !reduceMotion
+    }
+
+    /// Where the core's FPS readout and notifications, and the picture-stopped card, start.
+    /// They are informational and don't touch input, so they take the freed space. The pads
+    /// do not use this: they keep reserving the bar's full height (see TopBarAutoHide.swift).
+    /// Kept at the bar's height while the bar is hidden as well: the handle that brings it back
+    /// sits up there, and the bar slides back over the same strip, so alerts that moved up into
+    /// it were covered either way.
+    private var overlayTopInset: CGFloat { topBarHeight }
+
+    /// The bar may go away only while nothing needs it and nothing is covering it: the game
+    /// is running and not paused, no menu, sheet, dialog or card is up, the layout isn't
+    /// being edited, no finger is on the bar, and VoiceOver is off (it can't find a handle
+    /// that isn't there to be found).
+    private var topBarMayHide: Bool {
+        TopBarAutoHide.isOn(override: topBarAutoHideOverride)
+            && !voiceOverRunning
+            && gameManager.emulationState == .running
+            && !launchIntroVisible
+            && !isPaused
+            && !showHomeMenu
+            && !isEditingControlLayout
+            && !showSkinSelector
+            && !showSaveStates
+            && !showEmulatedDevices
+            && !showAmiibo
+            && !showingBackConfirmation
+            && !showsStallCard
+            && saveStateBusySlot == nil
+            && !topBarTouched
+    }
+
+    private struct TopBarHideKey: Equatable {
+        var mayHide: Bool
+        var hidden: Bool
+    }
+
+    private var topBarHideKey: TopBarHideKey {
+        TopBarHideKey(mayHide: topBarMayHide, hidden: topBarHidden)
+    }
+
+    /// Re-run whenever the key changes, and cancelled when it does, which is what restarts
+    /// the four-second wait after a touch, a reveal or a dialog closing.
+    private func runTopBarAutoHide(_ key: TopBarHideKey) async {
+        guard key.mayHide else {
+            if key.hidden { setTopBarHidden(false) }
+            return
+        }
+        guard !key.hidden else { return }
+        try? await Task.sleep(nanoseconds: TopBarAutoHide.hideDelayNanoseconds)
+        guard !Task.isCancelled else { return }
+        setTopBarHidden(true)
+        showHintOnce(Self.topBarHintKey, "Tap the top edge to bring the bar back.")
+    }
+
+    // MARK: One-time hints
+
+    private static let topBarHintKey = "muffin.hint.topBarReveal"
+    private static let gamePadHintKey = "muffin.hint.gamePadTouch"
+
+    /// Says `text` as a notice the first time only (the key is remembered), and not on top of another notice: if one is
+    /// up, it tries again a few seconds later, a few times. `ready` is checked again then.
+    private func showHintOnce(_ key: String, _ text: String, attempts: Int = 3, ready: @escaping () -> Bool = { true }) {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: key), ready() else { return }
+        if gameManager.launchNotice != nil {
+            guard attempts > 0 else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+                showHintOnce(key, text, attempts: attempts - 1, ready: ready)
+            }
+            return
+        }
+        defaults.set(true, forKey: key)
+        gameManager.showLaunchNotice(text)
+    }
+
+    /// The first time a GamePad screen is on this device during a running game.
+    private func showGamePadHintIfNeeded() {
+        #if os(iOS)
+        showHintOnce(Self.gamePadHintKey, "Tap the GamePad screen to use it in the game.", ready: {
+            gameManager.emulationState == .running && (isPadViewVisible || padIsOnDeviceInDualScreen)
+        })
+        #endif
+    }
+
+    private func setTopBarHidden(_ hidden: Bool) {
+        withAnimation(.easeInOut(duration: 0.25)) { topBarHidden = hidden }
+    }
+
+    /// Reads the @Published frameRate directly rather than calling
+    /// getFrameRate(): a plain method call cannot invalidate this
+    /// view, so even once the value became real the HUD would only
+    /// update when something else happened to redraw it. Until
+    /// the emulator reports its first measurement this shows "--",
+    /// not "0" - "0 FPS" reads as a measured stall, which is a
+    /// different and much more alarming claim than "no reading yet".
+    ///
+    /// The string comes from EmulatorProgress rather than from
+    /// frameRate alone because whole frames per second is the wrong
+    /// unit for this port. Every rate the interpreter has actually
+    /// produced rounds to zero there, so a title rendering slowly and
+    /// a title that has stopped dead both read "-- FPS" - the one
+    /// distinction anybody looking at this HUD needs. hudText() keeps
+    /// frameRate in charge whenever it is non-zero, so a build that
+    /// reaches a normal rate reads exactly as it always did, and only
+    /// falls back to the engine's own counters below that.
+    private var frameRatePill: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "speedometer")
+                .font(.system(size: 12, weight: .semibold))
+            Text(gameManager.progress.hudText(wholeFramesPerSecond: gameManager.frameRate))
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .lineLimit(1)
+        }
+        .foregroundColor(gameManager.frameRate >= 20 ? Color.green : MuffinTheme.alertOnDark)
+        .frame(height: 40)
+        .padding(.horizontal, 12)
+        .background(Color.white.opacity(0.08))
+        .cornerRadius(10)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Frame rate")
+        .accessibilityValue(gameManager.progress.hudText(wholeFramesPerSecond: gameManager.frameRate))
+    }
+
+    /// The frame rate stays on screen while the bar is hidden: the same pill, in the same corner, over a dark
+    /// backing of its own because the bar's is gone. It takes no touches, so the game under it still gets them.
+    @ViewBuilder private var floatingFrameRate: some View {
+        if topBarHidden {
+            frameRatePill
+                .background(Color.black.opacity(0.5).cornerRadius(10))
+                .padding(WindowSafeArea.padding(minimum: 12))
+                .allowsHitTesting(false)
+                .dynamicTypeSize(...DynamicTypeSize.xLarge)
+                .transition(.opacity)
+        }
+    }
+
+    @ViewBuilder private var topBarRevealHandle: some View {
+        if topBarHidden {
+            // Over a visible GamePad screen the big handle would sit on the part of the touchscreen a game may use,
+            // so a compact one takes its place there.
+            #if os(iOS)
+            if isPadViewVisible || padIsOnDeviceInDualScreen {
+                CompactTopBarRevealHandle { setTopBarHidden(false) }
+                    .transition(.opacity)
+            } else {
+                TopBarRevealHandle { setTopBarHidden(false) }
+                    .transition(.opacity)
+            }
+            #else
+            TopBarRevealHandle { setTopBarHidden(false) }
+                .transition(.opacity)
+            #endif
+        }
+    }
+
+    /// "Couldn't save Slot 2. <the bridge's own reason>". The reason is a full sentence from the bridge (IOSSaveState.cpp:
+    /// out of storage, the game still loading, a save from an earlier session ...), so what the player reads is what went
+    /// wrong, not a guess that covers every case. A bridge that gave none still gets a plain line.
+    private static func saveStateFailureMessage(_ action: String, slot: Int, reason: String) -> String {
+        let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "Couldn't \(action) Slot \(slot)." }
+        return "Couldn't \(action) Slot \(slot). \(trimmed)"
+    }
+
+    /// Whether the picture-stopped card is up: while the watchdog says the picture has stopped, and
+    /// after a save started from the card, so the result of that save is always seen.
+    private var showsStallCard: Bool {
+        guard gameManager.emulationState == .running, !stallCardDismissed else { return false }
+        return gameManager.videoStalled || stallSaveRequested
+    }
+
+    private var stallTitle: String {
+        switch gameManager.videoStallKind {
+        case 0: return saveStateBusySlot != nil ? "Saving the game" : (saveStateStatus?.isWarning == true ? "Couldn't save" : "Saved")
+        case 2: return "Graphics stopped working"
+        case 3: return "Out of memory for the picture"
+        case 4: return "Memory is running low"
+        case 5: return "The screen stopped updating"
+        default: return "The picture froze"
+        }
+    }
+
+    private var stallAdvice: String {
+        switch gameManager.videoStallKind {
+        case 2: return "iOS stopped running this game's graphics. Tap Quit Game. MuffinEMU will then ask you to close and reopen it before the next game."
+        case 3: return "Tap Quit Game and reopen MuffinEMU. After you quit, a lower Resolution (in Settings, Graphics) uses less memory."
+        case 4: return "iOS may close MuffinEMU soon. Save in the game now if you can. After you quit, a lower Resolution (in Settings, Graphics) uses less memory."
+        case 5: return "The game is still running but the screen isn't taking frames. This goes away by itself if it recovers. If it doesn't, tap Quit Game and reopen MuffinEMU."
+        default: return "The picture has stopped while the game keeps running. This goes away by itself if the picture comes back."
+        }
+    }
+
+    /// Only a problem that can clear by itself is worth waiting on; the others are a decision to dismiss.
+    private var stallDismissTitle: String {
+        let kind = gameManager.videoStallKind
+        return (kind == 1 || kind == 5) ? "Keep waiting" : "Dismiss"
     }
 
     /// Small card shown while the picture is stopped. The game's audio and input keep running
@@ -2331,23 +3177,24 @@ struct EmulatorViewOptimized: View {
     /// rest of the overlay lets them through to the game.
     private var videoStalledCard: some View {
         VStack(spacing: 10) {
-            Text(gameManager.videoStallKind == 2 ? "The GPU stopped" : gameManager.videoStallKind == 3 ? "Out of memory for the screen" : gameManager.videoStallKind == 4 ? "Not enough memory" : gameManager.videoStallKind == 5 ? "The screen stopped updating" : "Video stopped responding")
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
+            Text(stallTitle)
+                .font(.system(.subheadline, design: .rounded).weight(.semibold))
                 .foregroundColor(.white)
-            if gameManager.videoStallKind >= 2 && !stallSaveRequested {
-                Text(gameManager.videoStallKind == 4
-                     ? "Not enough memory for this game on this device. Save State, then try Render Scale: Battery saver."
-                     : gameManager.videoStallKind == 5
-                     ? "The game is still running but the screen isn't taking frames. This card goes away by itself if it recovers; if it doesn't, Save State and restart the app."
-                     : "Save State, then restart the app.")
-                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                .multilineTextAlignment(.center)
+                .accessibilityAddTraits(.isHeader)
+            if gameManager.videoStalled {
+                Text(stallAdvice)
+                    .font(.system(.caption, design: .rounded))
                     .foregroundColor(.white.opacity(0.85))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if stallSaveRequested {
                 Text(saveStateBusySlot != nil ? "Saving..." : (saveStateStatus?.message ?? ""))
-                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                    .font(.system(.caption, design: .rounded))
                     .foregroundColor(.white.opacity(0.85))
                     .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             HStack(spacing: 8) {
                 Button("Save State") { saveStalledGame() }
@@ -2356,12 +3203,13 @@ struct EmulatorViewOptimized: View {
                     gameManager.stopEmulation()
                     isRunning = true
                 }
-                Button(gameManager.videoStallKind >= 2 && gameManager.videoStallKind != 5 ? "Dismiss" : "Keep waiting") {
+                .disabled(saveStateBusySlot != nil)
+                Button(stallDismissTitle) {
                     stallCardDismissed = true
                     stallSaveRequested = false
                 }
             }
-            .buttonStyle(MuffinSecondaryButtonStyle())
+            .buttonStyle(MuffinBarButtonStyle())
         }
         .padding(14)
         .background(Color.black.opacity(0.78), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -2383,7 +3231,16 @@ struct EmulatorViewOptimized: View {
         let gameID = game.id
         SaveStateStore.delete(gameID: gameID, slot: slot)
         saveStateSlots = SaveStateStore.slots(for: gameID)
-        saveStateStatus = SaveStateStatus(message: "Slot \(slot) deleted.", isWarning: false)
+        reportSaveState(SaveStateStatus(message: "Slot \(slot) deleted.", isWarning: false))
+    }
+
+    /// Shows a save, load or delete result and says it aloud for VoiceOver, which would
+    /// otherwise never notice a line appearing at the top of the list.
+    private func reportSaveState(_ status: SaveStateStatus) {
+        saveStateStatus = status
+        #if os(iOS)
+        UIAccessibility.post(notification: .announcement, argument: status.message)
+        #endif
     }
 
     #if os(iOS)
@@ -2444,6 +3301,10 @@ struct EmulatorViewOptimized: View {
 
                     padScreen
                         .frame(width: padWidth, height: padHeight)
+                        // Below the top bar while it is showing, so the bar's buttons don't sit on the GamePad
+                        // screen and eat its taps.
+                        .padding(.top, topBarHidden ? 0 : max(0, topBarHeight - geometry.frame(in: .global).minY))
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: topBarHidden)
                 }
             } else if portrait {
                 VStack(spacing: 0) { screens }
@@ -2458,6 +3319,8 @@ struct EmulatorViewOptimized: View {
         .onChange(of: screenLayout) { _ in updateVisibleOutputs() }
         .onChange(of: localSwapped) { _ in updateVisibleOutputs() }
         .onChange(of: displayRouter.placement) { _ in updateVisibleOutputs() }
+        .onChange(of: pauseHiddenTV) { _ in updateVisibleOutputs() }
+        .onChange(of: pauseHiddenPad) { _ in updateVisibleOutputs() }
         .onDisappear {
             // MeloCafe's own onDisappear sets both outputs false outright - not ported
             // literally, because this specific view can disappear for a reason MeloCafe's
@@ -2470,6 +3333,7 @@ struct EmulatorViewOptimized: View {
             // behavior - is the safe default for "this composition went away, but the
             // title itself may still be very much running."
             DisplayRouter.shared.updateLocalVisibleOutputs(showTV: true, showPad: false)
+            cemu_bridge_set_skip_hidden_screen(false, false)
             // Mirrors MeloCafe's own `cemuPadView.cancelActiveTouches()` call here -
             // MuffinEMU has no such method, but this is the same cleanup MetalView.swift's
             // touch-cancel path already performs elsewhere (see sendPadTouch below and the
@@ -2497,16 +3361,27 @@ struct EmulatorViewOptimized: View {
     /// otherwise; MuffinEMU never mounts a controller overlay in here (see
     /// screenLayoutComposition's doc comment), so it's always the `Spacer`.
     private func screensSizeLayout(in size: CGSize) -> some View {
-        let screenHeight = size.width * 9.0 / 16.0
-
         return VStack(spacing: 0) {
             ForEach(visibleScreens, id: \.self) { main in
+                let height = portraitScreenHeight(main: main, in: size)
                 screenView(main: main)
-                    .frame(width: size.width, height: screenHeight)
+                    .frame(width: height * 16 / 9, height: height)
+                    .frame(width: size.width)
             }
             Spacer(minLength: 0)
         }
         .frame(width: size.width, height: size.height, alignment: .top)
+    }
+
+    /// How tall a screen is when the phone is upright. The TV (or the only screen) runs the full
+    /// width at 16:9. With both screens up, the GamePad screen under it gives up height to the
+    /// controls, down to about half the width, centred; below that the controls cover the bottom
+    /// of it instead (see belowPicture) rather than shrink it to a postage stamp.
+    private func portraitScreenHeight(main: Bool, in size: CGSize) -> CGFloat {
+        let full = size.width * 9.0 / 16.0
+        guard !main, visibleScreens.count > 1 else { return full }
+        let room = size.height - full - ControllerGeometry.Portrait.minimumHeight(joystick: joystickMode)
+        return min(full, max(full * 0.55, room))
     }
 
     private var screens: some View {
@@ -2542,12 +3417,10 @@ struct EmulatorViewOptimized: View {
         }
     }
 
-    /// Dual-screen places the GamePad screen on this device unless the screens are swapped.
+    /// Whether this device is showing the GamePad screen in dual-screen, so its touches are the GamePad's:
+    /// the other screen when the screens are not swapped, or the same screen when they are.
     private var padIsOnDeviceInDualScreen: Bool {
-        guard displayRouter.placement == .dualScreen else { return false }
-        let swapped = UserDefaults.standard.object(forKey: DisplayLayoutSettings.swapKey) as? Bool
-            ?? DisplayLayoutSettings.defaultSwap
-        return !swapped
+        displayRouter.gamePadTouchOnDevice
     }
 
     /// The GamePad's own touchscreen - a real Wii U input distinct from every button on
@@ -2559,8 +3432,11 @@ struct EmulatorViewOptimized: View {
     /// `cemu_bridge_resize_render_surface()` already sizes this surface in, so they're
     /// scaled the same way that sizing is - see RenderScale.swift's effectiveRenderScale.
     private var padScreen: some View {
+        // Simultaneous, like the TV screen's gesture above. This view's container is cached and
+        // re-mounted on every swap; an exclusive minimum-distance-0 drag on it is the prime
+        // suspect for every control going dead after swapping to the GamePad screen.
         PadMetalViewIOS()
-            .gesture(
+            .simultaneousGesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in sendPadTouch(value.location, down: true) }
                     .onEnded { value in sendPadTouch(value.location, down: false) }
@@ -2579,7 +3455,7 @@ struct EmulatorViewOptimized: View {
     /// drives the "hide controls to touch the GamePad screen" button in the top bar,
     /// which has no `GeometryReader` of its own to derive this from directly.
     private var isPadViewVisible: Bool {
-        visibleScreens.contains(false)
+        visibleScreens.contains(false) || padIsOnDeviceInDualScreen
     }
 
     /// A direct port of MeloCafe's `EmulationView.updateVisibleOutputs()`, using
@@ -2593,6 +3469,7 @@ struct EmulatorViewOptimized: View {
     private func updateVisibleOutputs() {
         let both = displayRouter.placement == .dualScreen || screenLayout.showsBothScreens
         DisplayRouter.shared.updateLocalVisibleOutputs(showTV: both || !localSwapped, showPad: both || localSwapped)
+        cemu_bridge_set_skip_hidden_screen(!both && pauseHiddenTV, !both && pauseHiddenPad)
         if !both && !localSwapped {
             cemu_bridge_set_pad_touch(0, 0, false)
         }
@@ -2625,6 +3502,18 @@ private extension View {
 // rather than inside the view means ControllerPad.swift stays a pure SwiftUI file with no
 // dependency on the bridge at all.
 //
+/// Where MuffinEMU's own pad and the preview pad send a press. HOME is the app's, not the
+/// game's: the core's GamePad mapping has no HOME bit, so it opens the HOME menu instead of
+/// reaching the bridge. The label is recorded first, so the diagnostics overlay still shows it.
+@MainActor private func sendPadButton(_ label: String, _ pressed: Bool) {
+    PadDiagnostics.shared.recordInput(label, pressed)
+    if label == "HOME" {
+        HomeMenuRouter.shared.padHome(pressed: pressed)
+        return
+    }
+    cemu_bridge_set_button_state(cemuBridgeButton(forLabel: label), pressed)
+}
+
 // One function now rather than two, because the pad no longer has two kinds of control to
 // tell apart: the d-pad, the face buttons, the shoulders, plus/minus and the stick clicks
 // all report through the same closure, and the bridge has had an id for every one of them
@@ -2657,9 +3546,8 @@ private func cemuBridgeButton(forLabel label: String) -> CemuBridgeButton {
     case "L3": return CEMU_BRIDGE_BUTTON_STICK_L
     case "R3": return CEMU_BRIDGE_BUTTON_STICK_R
 
-    // The preview pad draws the GamePad's own HOME button, and the bridge has had a
-    // constant for it all along - Melo-Controller's "guide" already maps here. Without
-    // this case it fell through to NONE and was dropped silently.
+    // The preview pad draws the GamePad's own HOME button. sendPadButton above never lets it
+    // reach the bridge (it opens the HOME menu), so this only keeps the label from being unknown.
     case "HOME": return CEMU_BRIDGE_BUTTON_HOME
 
     // "POWER" and "TV" reach here from the preview pad's hardware-accurate face, and

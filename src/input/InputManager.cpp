@@ -987,22 +987,22 @@ glm::ivec2 InputManager::get_mouse_position(bool pad_window) const
 std::optional<glm::ivec2> InputManager::get_left_down_mouse_info(bool* is_pad)
 {
     if (is_pad) *is_pad = false;
-    { std::shared_lock lock(m_main_mouse.m_mutex); if (std::exchange(m_main_mouse.left_down_toggle, false)) return m_main_mouse.position; if (m_main_mouse.left_down) return m_main_mouse.position; }
-    { std::shared_lock lock(m_main_touch.m_mutex); if (std::exchange(m_main_touch.left_down_toggle, false)) return m_main_touch.position; if (m_main_touch.left_down) return m_main_touch.position; }
+    { std::unique_lock lock(m_main_mouse.m_mutex); if (std::exchange(m_main_mouse.left_down_toggle, false)) return m_main_mouse.position; if (m_main_mouse.left_down) return m_main_mouse.position; }
+    { std::unique_lock lock(m_main_touch.m_mutex); if (std::exchange(m_main_touch.left_down_toggle, false)) return m_main_touch.position; if (m_main_touch.left_down) return m_main_touch.position; }
     if (is_pad) *is_pad = true;
-    { std::shared_lock lock(m_pad_mouse.m_mutex); if (std::exchange(m_pad_mouse.left_down_toggle, false)) return m_pad_mouse.position; if (m_pad_mouse.left_down) return m_pad_mouse.position; }
-    { std::shared_lock lock(m_pad_touch.m_mutex); if (std::exchange(m_pad_touch.left_down_toggle, false)) return m_pad_touch.position; if (m_pad_touch.left_down) return m_pad_touch.position; }
+    { std::unique_lock lock(m_pad_mouse.m_mutex); if (std::exchange(m_pad_mouse.left_down_toggle, false)) return m_pad_mouse.position; if (m_pad_mouse.left_down) return m_pad_mouse.position; }
+    { std::unique_lock lock(m_pad_touch.m_mutex); if (std::exchange(m_pad_touch.left_down_toggle, false)) return m_pad_touch.position; if (m_pad_touch.left_down) return m_pad_touch.position; }
     return {};
 }
 
 std::optional<glm::ivec2> InputManager::get_right_down_mouse_info(bool* is_pad)
 {
     if (is_pad) *is_pad = false;
-    { std::shared_lock lock(m_main_mouse.m_mutex); if (std::exchange(m_main_mouse.right_down_toggle, false)) return m_main_mouse.position; if (m_main_mouse.right_down) return m_main_mouse.position; }
-    { std::shared_lock lock(m_main_touch.m_mutex); if (std::exchange(m_main_touch.right_down_toggle, false)) return m_main_touch.position; if (m_main_touch.right_down) return m_main_touch.position; }
+    { std::unique_lock lock(m_main_mouse.m_mutex); if (std::exchange(m_main_mouse.right_down_toggle, false)) return m_main_mouse.position; if (m_main_mouse.right_down) return m_main_mouse.position; }
+    { std::unique_lock lock(m_main_touch.m_mutex); if (std::exchange(m_main_touch.right_down_toggle, false)) return m_main_touch.position; if (m_main_touch.right_down) return m_main_touch.position; }
     if (is_pad) *is_pad = true;
-    { std::shared_lock lock(m_pad_mouse.m_mutex); if (std::exchange(m_pad_mouse.right_down_toggle, false)) return m_pad_mouse.position; if (m_pad_mouse.right_down) return m_pad_mouse.position; }
-    { std::shared_lock lock(m_pad_touch.m_mutex); if (std::exchange(m_pad_touch.right_down_toggle, false)) return m_pad_touch.position; if (m_pad_touch.right_down) return m_pad_touch.position; }
+    { std::unique_lock lock(m_pad_mouse.m_mutex); if (std::exchange(m_pad_mouse.right_down_toggle, false)) return m_pad_mouse.position; if (m_pad_mouse.right_down) return m_pad_mouse.position; }
+    { std::unique_lock lock(m_pad_touch.m_mutex); if (std::exchange(m_pad_touch.right_down_toggle, false)) return m_pad_touch.position; if (m_pad_touch.right_down) return m_pad_touch.position; }
     return {};
 }
 

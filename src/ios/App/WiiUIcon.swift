@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import Foundation
 import UIKit
 
@@ -10,6 +15,12 @@ import UIKit
 enum WiiUIcon {
     /// Hidden folder (leading dot) so it doesn't clutter the Files app or get picked up as a title.
     private static let cacheDirectoryName = ".covers"
+
+    /// The already-extracted icon, without extracting anything (no I/O beyond an exists check).
+    static func existingCachedIconPath(for gameID: String, in libraryDirectory: URL) -> String? {
+        let p = libraryDirectory.appendingPathComponent(cacheDirectoryName).appendingPathComponent("\(gameID).png").path
+        return FileManager.default.fileExists(atPath: p) ? p : nil
+    }
 
     /// Path to a PNG of the dump's icon, extracting and caching it on first use.
     /// Returns nil when the dump has no readable icon - the card falls back to its

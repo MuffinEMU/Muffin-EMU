@@ -1,7 +1,7 @@
 name: MuffinEMU
 
 options:
-  bundleIdPrefix: com.kiddreads
+  bundleIdPrefix: com.void
   deploymentTarget:
     iOS: '15.0'
   xcodeVersion: '15.0'
@@ -11,7 +11,7 @@ settings:
   # Its own identifier, so MuffinEMU installs next to Muffin instead of over it: a
   # different identifier is a different app container, and Muffin's library, keys and
   # saves stay exactly where they are.
-  PRODUCT_BUNDLE_IDENTIFIER: com.kiddreads.MuffinEMU
+  PRODUCT_BUNDLE_IDENTIFIER: com.void.muffinemu
   SDKROOT: iphoneos
   IPHONEOS_DEPLOYMENT_TARGET: '15.0'
   CODE_SIGN_IDENTITY: iPhone Developer
@@ -34,29 +34,38 @@ settings:
   # dropped by the generated plist, so they live in this partial plist and are merged in.
   INFOPLIST_FILE: 'Info-AlternateIcons.plist'
   ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-  ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: 'AltIcon-dark AltIcon-happy AltIcon-retro AltIcon-mint-matcha AltIcon-blueberry-blast AltIcon-strawberry AltIcon-double-chocolate AltIcon-lemon-zest AltIcon-neon-cyber AltIcon-pumpkin-spice AltIcon-holiday-frost AltIcon-spooky-halloween AltIcon-rainbow-pride AltIcon-summer-beach AltIcon-galaxy-space AltIcon-progress-pride AltIcon-transgender-pride AltIcon-equality AltIcon-fix-the-world AltIcon-autism-awareness AltIcon-adhd-awareness AltIcon-audhd-awareness AltIcon-disability-pride AltIcon-mental-health-pride AltIcon-lesbian-pride AltIcon-bisexual-pride AltIcon-nonbinary-pride AltIcon-pro-gold-vip AltIcon-pro-holographic AltIcon-pro-diamond-ice'
+  ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: 'AltIcon-dark AltIcon-happy AltIcon-retro AltIcon-mint-matcha AltIcon-blueberry-blast AltIcon-strawberry AltIcon-double-chocolate AltIcon-lemon-zest AltIcon-neon-cyber AltIcon-pumpkin-spice AltIcon-holiday-frost AltIcon-spooky-halloween AltIcon-rainbow-pride AltIcon-summer-beach AltIcon-galaxy-space AltIcon-progress-pride AltIcon-transgender-pride AltIcon-equality AltIcon-fix-the-world AltIcon-autism-awareness AltIcon-adhd-awareness AltIcon-audhd-awareness AltIcon-disability-pride AltIcon-mental-health-pride AltIcon-lesbian-pride AltIcon-bisexual-pride AltIcon-nonbinary-pride AltIcon-pro-gold-vip AltIcon-pro-holographic AltIcon-pro-royal-velvet AltIcon-pro-aurora AltIcon-pro-diamond-ice AltIcon-cherry-blossom AltIcon-cookies-and-cream AltIcon-campfire-smores AltIcon-under-the-sea AltIcon-rainy-day AltIcon-cafe-latte AltIcon-retro-pixel AltIcon-pro-gold-vip-glow AltIcon-galaxy-space-classic AltIcon-holiday-frost-classic AltIcon-spooky-halloween-classic AltIcon-autism-awareness-classic AltIcon-retro-classic AltIcon-pumpkin-spice-classic AltIcon-neon-cyber-classic AltIcon-pro-gold-vip-classic AltIcon-pro-diamond-ice-classic AltIcon-pro-holographic-classic AltIcon-equality-classic AltIcon-mental-health-pride-classic AltIcon-adhd-awareness-classic AltIcon-audhd-awareness-classic'
   MARKETING_VERSION: '1.0'
   CURRENT_PROJECT_VERSION: '1'
   INFOPLIST_KEY_CFBundleDisplayName: MuffinEMU
   INFOPLIST_KEY_UILaunchScreen_Generation: 'YES'
   INFOPLIST_KEY_UIApplicationSceneManifest_Generation: 'YES'
-  INFOPLIST_KEY_UISupportedInterfaceOrientations: 'UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight'
+  # iPhone may turn upright, but only during a game (OrientationPolicy.swift narrows it to
+  # landscape everywhere else). iPad stays landscape-only, exactly as before.
+  INFOPLIST_KEY_UISupportedInterfaceOrientations: 'UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight'
+  INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: 'UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight'
   INFOPLIST_KEY_GCSupportsControllerUserInteraction: 'YES'
   INFOPLIST_KEY_UIStatusBarHidden: 'YES'
   # The core opens the microphone when a title asks for GamePad microphone input.
   # Without a usage string iOS terminates the app at that moment instead of asking.
   INFOPLIST_KEY_NSMicrophoneUsageDescription: 'MuffinEMU uses the microphone only when a Wii U game asks for GamePad microphone input.'
+  INFOPLIST_KEY_NSLocalNetworkUsageDescription: 'MuffinEMU connects to game servers on your local network when you use a custom server hosted at home.'
+  INFOPLIST_KEY_NSHumanReadableCopyright: '© 2026 MuffinEMU Development Team'
 
-# Melo-Controller, for the optional "Use melo-controls" pad (App/MeloControls.swift).
-# Pinned to a fixed revision, so a push to its main branch cannot change a MuffinEMU build. GPL-3.0; see README.md.
 packages:
-  MeloController:
-    url: https://github.com/stossy11/Melo-Controller
-    revision: e39c6b7b87dc44dbbf548dc1e28fd6f0b0a5d609
+  # Melo-Controller (github.com/stossy11/Melo-Controller, GPL-3.0) is not in the build. To wire it
+  # back in, uncomment this package and its two lines under the target's dependencies below.
+  # Nothing else changes: App/MeloControls.swift checks `canImport(Melo_Controller)`, so the
+  # "Use Melo-Controller" switch and its pad come back on their own when the package is linked.
+  # MeloController:
+  #   url: https://github.com/stossy11/Melo-Controller
+  #   revision: e39c6b7b87dc44dbbf548dc1e28fd6f0b0a5d609
   # The optional Zone / Float / Adaptive / Frame control styles, vendored in this repo
   # (see Packages/MuffinTouchLab/VENDORED.md) so the app builds with no outside dependency.
   MuffinTouchLab:
     path: Packages/MuffinTouchLab
+  MuffinLoadKit:
+    path: Packages/MuffinLoadKit
 
 targets:
   MuffinEMU:
@@ -83,12 +92,14 @@ targets:
         type: group
 
     dependencies:
-      - package: MeloController
-        product: Melo-Controller
+      # - package: MeloController
+      #   product: Melo-Controller
       - package: MuffinTouchLab
         product: TouchLabCore
       - package: MuffinTouchLab
         product: TouchLabUI
+      - package: MuffinLoadKit
+        product: LoadKit
       - framework: ../../build-ios/out/Cemu.framework
         embed: true
       # Two MoltenVK builds for the Vulkan renderer, embedded and deliberately not linked:

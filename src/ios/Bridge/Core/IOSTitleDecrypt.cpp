@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team.
+// SPDX-License-Identifier: MPL-2.0
+// This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 // Decrypt-to-Files for iOS: take a WUD/WUX the user already owns the
 // keys for and produce a plain, decrypted copy - either to keep using instead of the
 // encrypted original, or to hand to another app via the Files share sheet.

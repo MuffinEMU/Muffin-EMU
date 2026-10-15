@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import SwiftUI
 
 private extension Bundle {
@@ -15,16 +20,24 @@ struct AboutSettingsSection: View {
     var body: some View {
         Section {
             SettingsRow(label: "Version", value: Bundle.main.appVersionString, icon: "number")
-            Link(destination: URL(string: "https://github.com/kiddreads/MuffinEMU")!) {
+            SettingsRow(label: "Created by", value: "Void", icon: "person.fill")
+            Link(destination: URL(string: "https://github.com/MuffinEMU/Muffin-EMU")!) {
                 Label("View on GitHub", systemImage: "arrow.up.right.square")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
-            Link(destination: URL(string: "https://kiddreads.github.io/MuffinEMU/docs/licenses.html")!) {
+            Link(destination: URL(string: "https://muffinemu.github.io/MuffinEMU/docs/licenses.html")!) {
                 Label("Open-source licences", systemImage: "doc.text")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
 
-            Text("MuffinEMU is built on Cemu. The optional melo-controls pad is Melo-Controller by stossy11.")
+            Text(MeloControlsSetting.isAvailable
+                 ? "MuffinEMU is built on Cemu, and its core includes code from MeloCafe by stossy11. The optional Melo-Controller pad is also by stossy11."
+                 : "MuffinEMU is built on Cemu, and its core includes code from MeloCafe by stossy11.")
+                .font(.system(size: 12))
+                .foregroundColor(MuffinTheme.secondaryText)
+
+            // GPL-3.0 section 5(d): the "Appropriate Legal Notices" every interactive interface must show.
+            Text("© 2026 MuffinEMU Development Team (Void). MuffinEMU is free software: you can redistribute it under the GNU GPL 3.0 with the attribution terms in ATTRIBUTION.md, and its core under the MPL 2.0. It comes with no warranty. The licences are under Open-source licences above.")
                 .font(.system(size: 12))
                 .foregroundColor(MuffinTheme.secondaryText)
 
@@ -59,7 +72,7 @@ struct AboutSettingsSection: View {
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("Puts emulation, graphics, display, audio and control settings back to their defaults. Your library, favorites, keys.txt, theme, app icon and premium unlock are not affected.")
+            Text("Puts every option in Settings back to its default, including controls, graphics, audio, overlay and appearance. Your library, favourites, keys.txt, accounts, theme, app icon and premium unlock are not affected. Per-game options stay unless you pick the second button.")
         }
     }
 }

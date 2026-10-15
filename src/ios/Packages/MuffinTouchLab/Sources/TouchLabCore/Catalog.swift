@@ -1,16 +1,28 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import CoreGraphics
 
-/// The four schemes, for pickers and for the checks.
+/// The schemes, for pickers and for the checks.
 public enum SchemeCatalog {
     public static let all: [SchemeInfo] = [ZonePad.schemeInfo, FloatPad.schemeInfo,
-                                           AdaptivePad.schemeInfo, FramePad.schemeInfo]
+                                           AdaptivePad.schemeInfo, FramePad.schemeInfo,
+                                           RacingPad.schemeInfo, ArcPad.schemeInfo,
+                                           ShowcasePad.schemeInfo]
 
-    public static func make(_ id: String) -> TouchScheme {
+    public static func make(_ id: String) -> TouchScheme { make(id, aScale: 1) }
+
+    public static func make(_ id: String, aScale: CGFloat) -> TouchScheme {
         switch id {
-        case FloatPad.schemeInfo.id: return FloatPad()
-        case AdaptivePad.schemeInfo.id: return AdaptivePad()
-        case FramePad.schemeInfo.id: return FramePad()
-        default: return ZonePad()
+        case FloatPad.schemeInfo.id: return FloatPad(aScale: aScale)
+        case AdaptivePad.schemeInfo.id: return AdaptivePad(aScale: aScale)
+        case FramePad.schemeInfo.id: return FramePad(aScale: aScale)
+        case RacingPad.schemeInfo.id: return RacingPad(aScale: aScale)
+        case ArcPad.schemeInfo.id: return ArcPad()
+        case ShowcasePad.schemeInfo.id: return ShowcasePad()
+        default: return ZonePad(aScale: aScale)
         }
     }
 }

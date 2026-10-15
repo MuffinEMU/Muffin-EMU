@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team (Void).
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
+
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -29,7 +34,7 @@ struct KeysSettingsSection: View {
             InfoButton.footer(
                 "Only needed for encrypted games. Homebrew and already-decrypted dumps don't need keys.",
                 title: "Wii U Keys",
-                text: "Encrypted games (.wux, .wud, .iso, .wua) need AES keys dumped from your own Wii U, in a text file called keys.txt with one key per line. MuffinEMU doesn't include keys.\n\nYou can also open MuffinEMU in the Files app and drop keys.txt into the \"keys\" folder.\n\nNew keys are used the next time you start a game. If you've already started a game since opening MuffinEMU, quit and reopen MuffinEMU first.")
+                text: "Encrypted games (.wux, .wud, .iso) need AES keys dumped from your own Wii U, in a text file called keys.txt with one key per line. MuffinEMU doesn't include keys.\n\nYou can also open MuffinEMU in the Files app and drop keys.txt into the \"keys\" folder.\n\nNew keys are used the next time you start a game. If you've already started a game since opening MuffinEMU, quit and reopen MuffinEMU first.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         // .item: a keys.txt may carry no useful type; WiiUKeys.importKeys checks the contents.

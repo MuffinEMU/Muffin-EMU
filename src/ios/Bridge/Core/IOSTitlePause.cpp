@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team.
+// SPDX-License-Identifier: MPL-2.0
+// This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 // Pause and resume for a running title.
 //
 // The core has no pause of its own, but iOS needs one: the app goes to the background, a sheet covers the game, a call comes
@@ -23,37 +28,53 @@
 #include "Cemu/Logging/CemuLogging.h"
 
 #include <atomic>
+#include <mutex>
 
 static std::atomic_bool sTitlePaused{false};
+// Pause and Resume each run start to finish under this. sTitlePaused is only set once every thread has been suspended,
+// and only cleared when a resume starts, so IsPaused() == true means "fully paused": a second caller (the app's
+// lifecycle pause racing a save state) can no longer see the flag while the first is still suspending threads.
+static std::mutex sPauseMutex;
 
+// Neither function logs while holding sPauseMutex: Quit and Resume run on the main thread and wait on that mutex, so anything
+// that can block inside it (a log write) would block the main thread with it.
 bool IOSTitlePause_Pause()
 {
-	if (!CafeSystem::IsTitleRunning() || sTitlePaused.exchange(true))
-		return false;
-	__OSLockScheduler();
-	for (sint32 i = 0; i < activeThreadCount; i++)
+	sint32 suspended;
 	{
-		auto thread = reinterpret_cast<OSThread_t*>(memory_getPointerFromVirtualOffset(activeThread[i]));
-		coreinit::__OSSuspendThreadNolock(thread);
+		std::lock_guard<std::mutex> lock(sPauseMutex);
+		if (!CafeSystem::IsTitleRunning() || sTitlePaused.load())
+			return false;
+		__OSLockScheduler();
+		for (sint32 i = 0; i < activeThreadCount; i++)
+		{
+			auto thread = reinterpret_cast<OSThread_t*>(memory_getPointerFromVirtualOffset(activeThread[i]));
+			coreinit::__OSSuspendThreadNolock(thread);
+		}
+		suspended = activeThreadCount;
+		__OSUnlockScheduler();
+		sTitlePaused.store(true);
 	}
-	__OSUnlockScheduler();
-	cemuLog_log(LogType::Force, "iOS: title paused ({} guest threads suspended)", activeThreadCount);
+	cemuLog_log(LogType::Force, "iOS: title paused ({} guest threads suspended)", suspended);
 	return true;
 }
 
 bool IOSTitlePause_Resume()
 {
-	if (!sTitlePaused.exchange(false))
-		return false;
-	if (!CafeSystem::IsTitleRunning())
-		return false;
-	__OSLockScheduler();
-	for (sint32 i = 0; i < activeThreadCount; i++)
 	{
-		auto thread = reinterpret_cast<OSThread_t*>(memory_getPointerFromVirtualOffset(activeThread[i]));
-		coreinit::__OSResumeThreadInternal(thread, 1);
+		std::lock_guard<std::mutex> lock(sPauseMutex);
+		if (!sTitlePaused.exchange(false))
+			return false;
+		if (!CafeSystem::IsTitleRunning())
+			return false;
+		__OSLockScheduler();
+		for (sint32 i = 0; i < activeThreadCount; i++)
+		{
+			auto thread = reinterpret_cast<OSThread_t*>(memory_getPointerFromVirtualOffset(activeThread[i]));
+			coreinit::__OSResumeThreadInternal(thread, 1);
+		}
+		__OSUnlockScheduler();
 	}
-	__OSUnlockScheduler();
 	cemuLog_log(LogType::Force, "iOS: title resumed");
 	return true;
 }

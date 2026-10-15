@@ -1,4 +1,14 @@
 #!/bin/bash
+# MuffinEMU — code by the MuffinEMU Development Team.
+# Copyright (c) 2026 MuffinEMU Development Team.
+# SPDX-License-Identifier: MPL-2.0
+# This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
+# MuffinEMU — code by the MuffinEMU Development Team.
+# Copyright (c) 2026 MuffinEMU Development Team.
+# SPDX-License-Identifier: MPL-2.0
+# This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 # A fingerprint of everything in the tree that can change what CI builds: the content of every
 # tracked file (git's own blob hashes, so this is fast and needs no submodule checkout, and a
 # submodule counts by the commit it pins) minus the paths that cannot change the binary.
