@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team.
+// SPDX-License-Identifier: MPL-2.0
+// This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 // CafeSystem calls back into its host through a SystemImplementation: to recreate the
 // render canvas, and - since upstream Cemu's coreinit exit() - when the emulated process
 // exits on its own. Desktop Cemu's MainWindow is the only implementation there is, and

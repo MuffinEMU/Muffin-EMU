@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# MuffinEMU — code by the MuffinEMU Development Team.
+# Copyright (c) 2026 MuffinEMU Development Team.
+# SPDX-License-Identifier: MPL-2.0
+# This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 """check_protocol.py - fails when the probe protocol constants in the guest header (guest/audit_protocol.h) and in the
 app (Sources/Engine/GuestLink.swift) disagree. They are written twice on purpose (C for the guest, Swift for the
 host), so this is what keeps them one protocol.

@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team.
+// SPDX-License-Identifier: MPL-2.0
+// This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 #pragma once
 // Syntax-only shim - see ../README.md. The CPU core does not use glm; it only arrives
 // through precompiled.h, so shapes need to exist, not to be correct.

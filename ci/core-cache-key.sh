@@ -1,4 +1,9 @@
 #!/bin/bash
+# MuffinEMU — code by the MuffinEMU Development Team.
+# Copyright (c) 2026 MuffinEMU Development Team.
+# SPDX-License-Identifier: MPL-2.0
+# This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 # The fingerprint of Cemu.framework: a hash of EVERYTHING that can change a byte of it.
 #
 # Two builds with the same fingerprint would compile the same framework, so a verified copy of it

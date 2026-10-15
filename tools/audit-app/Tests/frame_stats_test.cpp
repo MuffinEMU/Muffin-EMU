@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team.
+// SPDX-License-Identifier: MPL-2.0
+// This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 // Host-side unit test for ios/Bridge/IOSAuditFrameStats.h. Built and run by the audit workflow's
 // "checks" job with the compiler every Mac runner has; no engine headers involved.
 #include "IOSAuditFrameStats.h"

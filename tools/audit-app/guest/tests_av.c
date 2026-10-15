@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team.
+// SPDX-License-Identifier: MPL-2.0
+// This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 // tests_av.c - the audio and input tests of the audit guest.
 //
 // audio_sweep plays a looping sine table through one AX voice and sweeps its pitch. What reaches

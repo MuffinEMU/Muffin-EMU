@@ -1,3 +1,8 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team.
+// SPDX-License-Identifier: MPL-2.0
+// This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 // Save states: freeze a running title's guest RAM to a slot file, and restore it later.
 //
 // Captures every currently-mapped guest RAM region (MMU.h's MMURange table) and nothing
