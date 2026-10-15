@@ -22,7 +22,7 @@
 [Releases](https://github.com/MuffinEMU/Muffin-EMU/releases) ·
 [Report a bug](https://github.com/MuffinEMU/Muffin-EMU/issues/new/choose) ·
 [Discussions](https://github.com/MuffinEMU/Muffin-EMU/discussions) ·
-[Discord](https://discord.gg/6FG8k29Q5) ·
+[Discord](https://muffinemu.github.io/MuffinEMU/discord.html) ·
 [Community stats](https://github.com/MuffinEMU/Muffin-EMU/blob/stats/STATS.md)
 
 </div>

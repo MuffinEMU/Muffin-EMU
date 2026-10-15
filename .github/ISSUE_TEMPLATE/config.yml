@@ -6,3 +6,6 @@ contact_links:
   - name: FAQ
     url: https://muffinemu.github.io/MuffinEMU/docs/faq.html
     about: Answers to the most common questions about MuffinEMU.
+  - name: MuffinEMU Discord
+    url: https://muffinemu.github.io/MuffinEMU/discord.html
+    about: Ask for help, share what you're playing, and chat with other MuffinEMU users.
