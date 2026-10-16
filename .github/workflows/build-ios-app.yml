@@ -418,10 +418,17 @@ jobs:
           swift run --package-path src/ios/Packages/MuffinLoadKit \
             --scratch-path "$RUNNER_TEMP/loadkit-build" loadkit-check
 
+      # The key (ci/vcpkg-cache-key.sh) names the pinned vcpkg, the toolchain and the dependency
+      # inputs. The complete set for main's key is saved by vcpkg-cache.yml, which runs on main: a
+      # build of main almost never compiles the core (it adopts the pull request's), so before that
+      # workflow existed main never saved this cache, and every pull request that compiled a core
+      # rebuilt all ~90 ports (about eight minutes) from an empty cache.
       - name: Identify the pinned vcpkg
         if: steps.go.outputs.reuse != 'true' && steps.core.outputs.build == 'true'
         id: vcpkg
-        run: echo "rev=$(git -C dependencies/vcpkg rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        run: |
+          set -eo pipefail
+          ./ci/vcpkg-cache-key.sh | tee -a "$GITHUB_OUTPUT"
 
       # Restore and save are separate so the cache is saved even when a later step fails:
       # the dependency build is the slow part, and a compile error in the core should not
@@ -434,9 +441,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .vcpkg-archives
-          key: vcpkg-arm64-ios-${{ steps.vcpkg.outputs.rev }}-${{ hashFiles('vcpkg.json', 'triplets/**', 'dependencies/vcpkg_overlay_ports/**', 'dependencies/vcpkg_overlay_ports_mac/**') }}
+          key: ${{ steps.vcpkg.outputs.key }}
           restore-keys: |
-            vcpkg-arm64-ios-${{ steps.vcpkg.outputs.rev }}-
+            ${{ steps.vcpkg.outputs.prefix }}
 
       - name: Build Cemu.framework (core + bridge) from scratch
         if: steps.go.outputs.reuse != 'true' && steps.core.outputs.build == 'true'
@@ -445,11 +452,13 @@ jobs:
       - name: Save vcpkg binary cache
         # Only when this run had to add something: the exact entry already exists otherwise, and
         # saving it again under every pull request's ref just stored the same 130 MB dozens of times.
-        if: always() && steps.go.outputs.reuse != 'true' && steps.core.outputs.build == 'true' && steps.vcpkgcache.outputs.cache-hit != 'true'
+        # And only when the set is complete (configure finished, see ci/build-core.sh): a partial set
+        # saved under the exact key would be restored as a hit from then on and never completed.
+        if: always() && steps.go.outputs.reuse != 'true' && steps.core.outputs.build == 'true' && steps.vcpkgcache.outputs.cache-hit != 'true' && hashFiles('build-ios/vcpkg-deps-complete') != ''
         uses: actions/cache/save@v4
         with:
           path: .vcpkg-archives
-          key: vcpkg-arm64-ios-${{ steps.vcpkg.outputs.rev }}-${{ hashFiles('vcpkg.json', 'triplets/**', 'dependencies/vcpkg_overlay_ports/**', 'dependencies/vcpkg_overlay_ports_mac/**') }}
+          key: ${{ steps.vcpkg.outputs.key }}
 
       # ---- fresh or reused, the core is held to the same standard ----
       - name: Gate - every function Swift can call is in the framework
