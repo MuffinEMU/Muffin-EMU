@@ -19,7 +19,7 @@ struct StickFineTuneView: View {
     @State private var left = true
 
     var body: some View {
-        Form {
+        Form { Group {
             Section {
                 Picker("Stick", selection: $left) {
                     Text("Left stick").tag(true)
@@ -29,7 +29,7 @@ struct StickFineTuneView: View {
             }
             // Rebuilt per stick: its settings are @AppStorage on that stick's keys.
             ForEach([left], id: \.self) { StickFineTuneEditor(left: $0) }
-        }
+        }.muffinGlassRows()}.muffinGlassFormGround()
         .navigationTitle("Stick fine-tuning")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

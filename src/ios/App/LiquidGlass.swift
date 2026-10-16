@@ -78,6 +78,17 @@ extension View {
         #endif
     }
 
+    /// A dark panel for text drawn white over the game (logs, progress, dialogs). On Liquid
+    /// Glass it is dark-scheme glass, so white text stays readable whatever is behind; below
+    /// iOS 26 it is the black backing it always had.
+    @ViewBuilder func muffinDarkGlassPanel<S: Shape>(in shape: S, fallbackOpacity: Double) -> some View {
+        if MuffinGlass.isActive {
+            self.muffinGlassOnly(in: shape).environment(\.colorScheme, .dark)
+        } else {
+            self.background(shape.fill(Color.black.opacity(fallbackOpacity)))
+        }
+    }
+
     /// Glass behind the view when active; otherwise the view is returned untouched.
     @ViewBuilder func muffinGlassOnly<S: Shape>(
         in shape: S,
@@ -140,6 +151,38 @@ extension View {
             } else {
                 self.scrollEdgeEffectHidden(true, for: .all)
             }
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
+    }
+
+    /// Translucent row backgrounds for a Form or List: system material over the theme ground,
+    /// so the gradient shows through. Applied to the content of the Form (a Group forwards the
+    /// row trait to every Section inside it). Without glass: the list's own rows.
+    @ViewBuilder func muffinGlassRows() -> some View {
+        if MuffinGlass.isActive {
+            self.listRowBackground(Rectangle().fill(.thinMaterial))
+        } else {
+            self
+        }
+    }
+
+    /// The ground behind a Form or List on Liquid Glass: the list's opaque scroll background is
+    /// hidden and the theme gradient shows behind translucent rows. Unchanged without glass.
+    @ViewBuilder func muffinGlassFormGround() -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *), UIStyle.allowsLiquidGlass {
+            self.scrollContentBackground(.hidden)
+                .background(
+                    // The system grouped ground with a wash of the theme on it: headers and
+                    // footers sit straight on this, so it stays near neutral for their ink,
+                    // while the translucent rows above still pick the theme up.
+                    MuffinTheme.formGround
+                        .overlay(MuffinTheme.backgroundGradient.opacity(0.28))
+                        .ignoresSafeArea())
         } else {
             self
         }

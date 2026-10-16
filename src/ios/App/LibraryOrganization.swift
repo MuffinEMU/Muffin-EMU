@@ -300,7 +300,7 @@ struct LibraryRenameSheet: View {
 
     var body: some View {
         NavigationView {
-            Form {
+            Form { Group {
                 Section {
                     TextField("Name", text: $text)
                         .autocapitalization(.words)
@@ -316,7 +316,7 @@ struct LibraryRenameSheet: View {
                         }
                     }
                 }
-            }
+            }.muffinGlassRows()}.muffinGlassFormGround()
             .navigationTitle("Rename")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

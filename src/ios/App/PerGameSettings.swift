@@ -639,14 +639,14 @@ struct GameOptionsView: View {
     }
 
     private var optionsForm: some View {
-        Form {
+        Form { Group {
             overridesSection
             AdvancedGameOptionsSection(game: game, store: store)
             GameShaderCacheSection(game: game)
             graphicPacksSection
             gameSavesSection
             shaderCachesSection
-        }
+        }.muffinGlassRows()}.muffinGlassFormGround()
     }
 
     var body: some View {

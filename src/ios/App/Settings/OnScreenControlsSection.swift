@@ -132,7 +132,7 @@ struct OnScreenControlsSection: View {
                 // Gate, deadzone, curve and spacing live on their own page so this section
                 // stays a short list of the things most people change.
                 NavigationLink {
-                    Form { Section { joystickOptions } }
+                    Form { Group { Section { joystickOptions } }.muffinGlassRows()}.muffinGlassFormGround()
                         .navigationTitle("Stick tuning")
                 } label: {
                     Label("Stick tuning", systemImage: "dial.medium")
@@ -232,7 +232,7 @@ struct OnScreenControlsSection: View {
             }
 
             NavigationLink {
-                Form { PreviewPadSection() }
+                Form { Group { PreviewPadSection() }.muffinGlassRows()}.muffinGlassFormGround()
                     .navigationTitle("New pad system (preview)")
             } label: {
                 Label("New pad system (preview)", systemImage: "sparkles")

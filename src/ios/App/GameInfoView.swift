@@ -205,7 +205,7 @@ struct GameMatchPickerView: View {
 
     var body: some View {
         NavigationView {
-            List {
+            List { Group {
                 if !data.hasTitleIndex {
                     Section {
                         ScreenStatusCallout(tone: .info, message: "The title list comes from GameTDB's database. Scrape once to download it.")
@@ -246,7 +246,7 @@ struct GameMatchPickerView: View {
                         }
                     }
                 }
-            }
+            }.muffinGlassRows()}.muffinGlassFormGround()
             .searchable(text: $query, prompt: "Search GameTDB titles")
             .navigationTitle("Choose the game")
             .muffinOpaqueNavigationBar(MuffinTheme.formGround)

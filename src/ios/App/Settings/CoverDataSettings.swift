@@ -45,11 +45,11 @@ struct CoverDataSettingsView: View {
     private static func bytes(_ n: Int64) -> String { ByteCountFormatter.string(fromByteCount: n, countStyle: .file) }
 
     var body: some View {
-        Form {
+        Form { Group {
             packsSection
             scrapeSection
             creditsSection
-        }
+        }.muffinGlassRows()}.muffinGlassFormGround()
         .navigationTitle("Cover + data scraping")
         .muffinOpaqueNavigationBar(MuffinTheme.formGround)
         #if os(iOS)
