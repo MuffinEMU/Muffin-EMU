@@ -552,17 +552,23 @@ private struct ControlButton: View {
         let fill = fillColor.opacity(isPressed ? 1.0 : 0.88)
         let line = max(1, unit * 0.05)
 
+        // Liquid Glass: the same shape, same frame, same hit area; the skin's colour becomes the
+        // glass tint instead of a painted fill. The near-clear fill keeps the full shape
+        // hit-testable exactly as the painted one was.
+        let glass = MuffinGlass.isActive
         switch control.shape {
         case .circle:
             Circle()
-                .fill(fill)
-                .overlay(Circle().strokeBorder(Color.black.opacity(0.45), lineWidth: line))
+                .fill(glass ? Color.white.opacity(0.001) : fill)
+                .muffinGlassOnly(in: Circle(), tint: fill)
+                .overlay(Circle().strokeBorder(Color.black.opacity(glass ? 0 : 0.45), lineWidth: line))
         case .roundedRect(_, let radius):
             RoundedRectangle(cornerRadius: radius * unit, style: .continuous)
-                .fill(fill)
+                .fill(glass ? Color.white.opacity(0.001) : fill)
+                .muffinGlassOnly(in: RoundedRectangle(cornerRadius: radius * unit, style: .continuous), tint: fill)
                 .overlay(
                     RoundedRectangle(cornerRadius: radius * unit, style: .continuous)
-                        .strokeBorder(Color.black.opacity(0.45), lineWidth: line)
+                        .strokeBorder(Color.black.opacity(glass ? 0 : 0.45), lineWidth: line)
                 )
         }
     }

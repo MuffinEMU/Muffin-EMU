@@ -191,20 +191,6 @@ extension View {
         #endif
     }
 
-    /// A glass sheet background (iOS 26 sheets are already glass; this keeps a full-height
-    /// sheet from painting an opaque ground over it).
-    @ViewBuilder func muffinGlassSheetBackground() -> some View {
-        #if compiler(>=6.2)
-        if #available(iOS 26.0, *), UIStyle.allowsLiquidGlass {
-            self.presentationBackground(.clear)
-        } else {
-            self
-        }
-        #else
-        self
-        #endif
-    }
-
     /// Lets nearby glass shapes blend and morph as one. Without glass: the content as is.
     @ViewBuilder func muffinGlassContainer(spacing: CGFloat = 12) -> some View {
         #if compiler(>=6.2)
