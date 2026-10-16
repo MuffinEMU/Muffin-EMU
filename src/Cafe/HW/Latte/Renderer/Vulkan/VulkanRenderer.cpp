@@ -1157,6 +1157,15 @@ VulkanRenderer::~VulkanRenderer()
 	SubmitCommandBuffer();
 	WaitDeviceIdle();
 	WaitCommandBufferFinished(GetCurrentCommandBufferId());
+
+	// The GPU is idle, so the delayed-free frame count no longer protects anything. Release everything that is waiting
+	// now, while the descriptor pool, the sampler cache and the memory manager still exist. With the frame delay on, the
+	// objects released in the last few frames before the stop (descriptor sets, and the samplers they hold) used to be
+	// left queued until the very end: by then vkFreeDescriptorSets ran on the destroyed pool and DestroyCache() had
+	// already deleted samplers those descriptor sets still referenced, so quitting a game could crash.
+	m_drainDestructionQueue = true;
+	DrainDestructionQueue();
+
 	// shut down pipeline save thread
 	m_destructionRequested = true;
 	m_pipeline_cache_semaphore.notify();
@@ -1175,6 +1184,7 @@ VulkanRenderer::~VulkanRenderer()
 	}
 
 	vkDestroyDescriptorPool(m_logicalDevice, m_descriptorPool, nullptr);
+	m_descriptorPool = VK_NULL_HANDLE; // destroying the pool freed every set in it; objects released later must not free theirs again
 
 	for(auto& i : m_backbufferBlitPipelineCache)
 	{
@@ -1244,9 +1254,11 @@ VulkanRenderer::~VulkanRenderer()
 		vkDestroyDebugUtilsMessengerEXT(m_instance, m_debugCallback, nullptr);
 	}
 
-	m_drainDestructionQueue = true; // shutdown: the frame delay no longer applies
-	while(!m_destructionQueue.empty())
-		ProcessDestructionQueue();
+	// Whatever was released during the teardown above. An object that is still referenced can never be freed, and
+	// waiting for it would hang the quit forever, so it is reported and left.
+	DrainDestructionQueue();
+	if (!m_destructionQueue.empty())
+		cemuLog_log(LogType::Force, "Vulkan: {} object(s) still referenced at shutdown, not freed", m_destructionQueue.size());
 
 	// destroy memory manager
 	memoryManager.reset();
@@ -4394,6 +4406,21 @@ void VulkanRenderer::OnFramePresented()
 	m_framesPresented.store(frames, std::memory_order_release);
 }
 
+// Teardown only: run the queue until a pass frees nothing more. One pass isn't enough, because deleting an object
+// (a framebuffer) can drop the last reference to one that sits earlier in the queue (its texture view).
+void VulkanRenderer::DrainDestructionQueue()
+{
+	size_t remaining = m_destructionQueue.size();
+	while (remaining > 0)
+	{
+		ProcessDestructionQueue();
+		const size_t now = m_destructionQueue.size();
+		if (now >= remaining)
+			break;
+		remaining = now;
+	}
+}
+
 void VulkanRenderer::ProcessDestructionQueue()
 {
 	m_spinlockDestructionQueue.lock();
@@ -5430,6 +5457,7 @@ VKRObjectDescriptorSet::VKRObjectDescriptorSet()
 VKRObjectDescriptorSet::~VKRObjectDescriptorSet()
 {
 	auto vkr = VulkanRenderer::GetInstance();
-	vkFreeDescriptorSets(vkr->GetLogicalDevice(), vkr->GetDescriptorPool(), 1, &descriptorSet);
+	if (descriptorSet != VK_NULL_HANDLE && vkr->GetDescriptorPool() != VK_NULL_HANDLE) // a destroyed pool already freed it
+		vkFreeDescriptorSets(vkr->GetLogicalDevice(), vkr->GetDescriptorPool(), 1, &descriptorSet);
 	performanceMonitor.vk.numDescriptorSets.decrement();
 }
