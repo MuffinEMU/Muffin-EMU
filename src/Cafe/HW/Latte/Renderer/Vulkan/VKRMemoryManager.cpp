@@ -471,7 +471,7 @@ size_t VKRMemoryManager::GetTotalMemoryForBufferType(VkBufferUsageFlags usage, V
 	size_t total = 0;
 	for (auto heapIndex : list_heapIndices)
 	{
-		if (heapIndex > memProperties.memoryHeapCount)
+		if (heapIndex >= memProperties.memoryHeapCount)
 			continue;
 		total += memProperties.memoryHeaps[heapIndex].size;
 	}
