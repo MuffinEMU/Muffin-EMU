@@ -4288,6 +4288,25 @@ static void ios_timebase_ladder_entry() {
     // title that took 36 seconds to reach GX2Init then ran at an eighth speed forever.
     const int startShift = cemu_bridge_get_timebase_shift();
     auto lastStep = start;
+    auto lastPoll = start;
+    // The shift this ladder last set, or -1 while it has not stepped.
+    int ladderShift = -1;
+    // The same rule on the ways out that are not "advancing" or "at the floor" (both restore below): the title
+    // stopping, a Wii U Menu switch replacing it, or the ladder being stopped for the next launch. Those used to
+    // leave the stepped clock in place, and it outlived the title: cemu_bridge_initialize() only sets real time
+    // once per process, and TimebaseScale applies nothing when no value was chosen by hand, so the next game
+    // started at a fraction of real speed. Only a value this ladder set is undone; one picked by hand (which
+    // also turns the ladder off) stands.
+    auto restoreIfStepped = [&](const char* why) {
+        if (ladderShift < 0 || !g_timebaseAutoEnabled.load())
+            return;
+        const int shift = cemu_bridge_get_timebase_shift();
+        if (shift != ladderShift || shift == startShift)
+            return;
+        cemuLog_log(LogType::Force, "Emulated timebase: {} while the ladder was searching; restoring the clock from shift {} to shift {} ({:.4g}x real time).",
+            why, shift, startShift, 8.0 / (double)(1u << startShift));
+        cemu_bridge_set_timebase_shift(startShift);
+    };
     // Baselines from the first poll, not zero: a title that drew one frame and stopped
     // must not read as advancing.
     bool baselineTaken = false;
@@ -4295,10 +4314,20 @@ static void ios_timebase_ladder_entry() {
     unsigned int baseGuestFlipRequests = 0;
     while (g_timebaseLadderRunning.load()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        if (!g_timebaseLadderRunning.load() || !g_timebaseAutoEnabled.load() || !CafeSystem::IsTitleRunning())
+        if (!g_timebaseLadderRunning.load() || !g_timebaseAutoEnabled.load() || !CafeSystem::IsTitleRunning()) {
+            restoreIfStepped(CafeSystem::IsTitleRunning() ? "the ladder was stopped" : "the title stopped");
             return;
-        if (IOSTitlePause_IsPaused())
+        }
+        const auto polledAt = std::chrono::steady_clock::now();
+        if (IOSTitlePause_IsPaused()) {
+            // The guest does not run while paused (HOME menu, app in the background), so paused time does not count
+            // towards the next step. Without this, coming back from a pause longer than one step slowed the clock
+            // on the very next poll.
+            lastStep += polledAt - lastPoll;
+            lastPoll = polledAt;
             continue;
+        }
+        lastPoll = polledAt;
 
         CemuBridgeProgress progress{};
         cemu_bridge_get_progress(&progress);
@@ -4365,7 +4394,9 @@ static void ios_timebase_ladder_entry() {
             "({:.4g}x real time). This is the ladder searching, not a value anyone chose.",
             elapsed, shift + 1, 8.0 / (double)(1u << (shift + 1)));
         cemu_bridge_set_timebase_shift(shift + 1);
+        ladderShift = shift + 1;
     }
+    restoreIfStepped("the ladder was stopped");
 }
 
 static void ios_timebase_ladder_stop() {
