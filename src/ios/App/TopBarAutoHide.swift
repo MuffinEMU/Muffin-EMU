@@ -63,8 +63,7 @@ enum TopBarAutoHide {
             }
         }
 
-        /// The tap target in points around the pill. A swipe down works anywhere along the top edge
-        /// whichever size this is (TopBarRevealHandle).
+        /// The tap target in points around the pill (TopBarRevealHandle). It answers taps only.
         var width: CGFloat { self == .large ? 260 : 170 }
         var height: CGFloat { self == .large ? 80 : 60 }
     }
@@ -105,8 +104,8 @@ struct TopBarHidingEffect: ViewModifier {
     }
 }
 
-/// The pill that brings the bar back: a tap, or a swipe down. A 96 by 44 point target (or 220 by 72,
-/// see TopBarAutoHide.HandleSize) around a small, faint pill, so it is easy to hit without looking and
+/// The pill that brings the bar back with a tap. A 170 by 60 point target (or 260 by 80, see
+/// TopBarAutoHide.HandleSize) around a small, faint pill, so it is easy to hit without looking and
 /// easy to ignore. The frame itself is what grows (never negative padding: hit testing clips to the frame).
 struct TopBarRevealHandle: View {
     let onReveal: () -> Void
