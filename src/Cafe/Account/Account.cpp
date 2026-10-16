@@ -302,11 +302,17 @@ const std::vector<Account>& Account::RefreshAccounts()
 {
 	std::vector<Account> result;
 	const fs::path path = ActiveSettings::GetMlcPath("usr/save/system/act");
-	if (fs::exists(path))
+	// error_code overloads: the throwing ones ended the app at every launch when the account folder could not be
+	// listed (an MLC folder whose access was lost, an I/O error). If the listing fails, the accounts on disk are
+	// left untouched: the fallback account below is not saved over them and persisid.dat is not rewritten
+	std::error_code ec;
+	std::error_code iterEc;
+	if (fs::exists(path, ec))
 	{
-		for (const auto& it : fs::directory_iterator(path))
+		for (fs::directory_iterator itr(path, iterEc); !iterEc && itr != fs::directory_iterator(); itr.increment(iterEc))
 		{
-			if (!fs::is_directory(it))
+			const fs::directory_entry& it = *itr;
+			if (!it.is_directory(ec))
 				continue;
 
 			const auto file_name = it.path().filename().string();
@@ -323,16 +329,23 @@ const std::vector<Account>& Account::RefreshAccounts()
 				result.emplace_back(account);
 		}
 	}
+	else if (ec)
+		iterEc = ec; // the folder's existence itself could not be checked
 	
+	if (iterEc)
+		cemuLog_log(LogType::Force, "Accounts: cannot list {}: {}", _pathToUtf8(path), iterEc.message());
+
 	// we always force at least one account
 	if (result.empty())
 	{
 		result.emplace_back(kMinPersistendId, L"default");
-		result.begin()->Save();
+		if (!iterEc)
+			result.begin()->Save();
 	}
 
 	s_account_list = result;
-	UpdatePersisidDat();
+	if (!iterEc)
+		UpdatePersisidDat();
 	return s_account_list;
 }
 
