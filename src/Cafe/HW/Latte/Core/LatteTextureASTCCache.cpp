@@ -178,17 +178,19 @@ bool LatteTextureASTCCache_Lookup(const ASTCCacheKey& key, uint8* outputData, si
 	auto it = c.index.find(key);
 	if (it == c.index.end() || it->second.size != outputSize)
 		return false;
-	if (pread(fileno(c.file), outputData, outputSize, (off_t)it->second.offset) != (ssize_t)outputSize)
-	{
-		c.index.erase(it);
-		return false;
-	}
 	// Neither the encoder nor the direct transcoder ever writes an all-zero block (block mode 0 is reserved), so one at the
 	// end of the image means its record was cut short and zero-filled (files written before the size check in Open()).
 	// Encode it again instead; the fresh result is appended and replaces this record from the next launch on.
+	// The last block is read on its own, before outputData is touched: the direct transcode path has already written
+	// its blocks there and only re-encodes the rest when this returns false.
 	if (outputSize >= 16)
 	{
-		const uint8* lastBlock = outputData + outputSize - 16;
+		uint8 lastBlock[16];
+		if (pread(fileno(c.file), lastBlock, 16, (off_t)(it->second.offset + outputSize - 16)) != 16)
+		{
+			c.index.erase(it);
+			return false;
+		}
 		bool allZero = true;
 		for (size_t i = 0; i < 16 && allZero; i++)
 			allZero = lastBlock[i] == 0;
@@ -197,6 +199,11 @@ bool LatteTextureASTCCache_Lookup(const ASTCCacheKey& key, uint8* outputData, si
 			c.index.erase(it);
 			return false;
 		}
+	}
+	if (pread(fileno(c.file), outputData, outputSize, (off_t)it->second.offset) != (ssize_t)outputSize)
+	{
+		c.index.erase(it);
+		return false;
 	}
 	return true;
 }
