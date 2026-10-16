@@ -1042,7 +1042,9 @@ bool FSTVolume::ProcessFST(FSTHeader_FileEntry* fileTable, uint32 numFileEntries
 			pFileOut->SetType(FSTEntry::TYPE::DIRECTORY);
 			uint32 endIndex = pFileIn->GetDirectoryEndIndex();
 			uint32 parentIndex = pFileIn->GetDirectoryParent();
-			if (endIndex < currentIndex || endIndex > currentDirEnd.back().endIndex)
+			// a directory ends after itself (an empty one at currentIndex + 1). An end index equal to its own index made
+			// OpenFile() and directory lookups loop forever on that entry
+			if (endIndex <= currentIndex || endIndex > currentDirEnd.back().endIndex)
 			{
 				cemuLog_log(LogType::Force, "FST: Directory range out of bounds");
 				return false; // dir index out of range
@@ -1389,11 +1391,14 @@ FSTCachedRawBlock* FSTVolume::GetDecryptedRawBlock(uint32 clusterIndex, uint32 b
 	{
 		if(cluster.singleHashNumBlocksHashed == blockIndex)
 		{
-			cemu_assert_debug(!(cluster.contentSize % m_sectorSize)); // size should be multiple of sector size? Regardless, the hashing code below can handle non-aligned sizes
-			bool isLastBlock = blockIndex == (std::max<uint32>(cluster.contentSize / m_sectorSize, 1) - 1);
+			// The content does not have to end on a sector boundary. The last block is the one holding its final byte
+			// (rounded up), and at most one sector of it is hashed: rounding down here hashed past the end of the block
+			// buffer, by up to a sector, when the size was not a multiple of the sector size
+			const uint64 numBlocks = std::max<uint64>((cluster.contentSize + m_sectorSize - 1) / m_sectorSize, 1);
+			bool isLastBlock = blockIndex == (numBlocks - 1);
 			uint32 hashSize = m_sectorSize;
 			if(isLastBlock)
-				hashSize = cluster.contentSize - (uint64)blockIndex*m_sectorSize;
+				hashSize = (uint32)std::min<uint64>(cluster.contentSize - (uint64)blockIndex*m_sectorSize, m_sectorSize);
 			EVP_DigestUpdate(cluster.singleHashCtx.get(), block->blockData.rawData.data(), hashSize);
 			cluster.singleHashNumBlocksHashed++;
 			if(isLastBlock)
@@ -1641,7 +1646,11 @@ bool FSTVerifier::VerifyContentFile(FileStream* fileContent, const NCrypto::AesK
 	uint64 remainingBytes = contentSize;
 	uint8 calculatedHash[SHA256_DIGEST_LENGTH];
 
-	EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+	// freed on every return, including a short read
+	std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> ctxHolder(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
+	EVP_MD_CTX* ctx = ctxHolder.get();
+	if (!ctx)
+		return false;
 	EVP_DigestInit(ctx, isSHA1 ? EVP_sha1() : EVP_sha256());
 
 	while (remainingBytes > 0)
@@ -1657,7 +1666,6 @@ bool FSTVerifier::VerifyContentFile(FileStream* fileContent, const NCrypto::AesK
 	}
 	unsigned int md_len;
 	EVP_DigestFinal_ex(ctx, calculatedHash, &md_len);
-	EVP_MD_CTX_free(ctx);
 	return memcmp(calculatedHash, tmdContentHash, md_len) == 0;
 }
 

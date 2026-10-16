@@ -96,8 +96,12 @@ void GraphicPack2::LoadGraphicPack(fs::path graphicPackPath)
 void GraphicPack2::LoadAll()
 {
 	std::error_code ec;
+	std::error_code iterEc;
 	fs::path basePath = ActiveSettings::GetUserDataPath("graphicPacks");
-	for (fs::recursive_directory_iterator it(basePath, ec); it != end(it); ++it)
+	// increment(iterEc), not ++: operator++ throws when a folder cannot be opened (removed while the scan runs, a file
+	// provider folder that is not available) and nothing above this catches it, so it ended the app. Folders without
+	// permission are skipped; any other error ends the scan with what was loaded so far
+	for (fs::recursive_directory_iterator it(basePath, fs::directory_options::skip_permission_denied, iterEc); !iterEc && it != end(it); it.increment(iterEc))
 	{
 		if (!it->is_directory(ec))
 			continue;
@@ -109,6 +113,8 @@ void GraphicPack2::LoadAll()
 			continue;
 		}
 	}
+	if (iterEc && fs::exists(basePath, ec))
+		cemuLog_log(LogType::Force, "Graphic packs: the scan of {} stopped early: {}", _pathToUtf8(basePath), iterEc.message());
 }
 
 bool GraphicPack2::LoadGraphicPack(const fs::path& rulesPath, IniParser& rules)
@@ -768,9 +774,14 @@ bool GraphicPack2::SetActivePreset(std::string_view category, std::string_view n
 void GraphicPack2::LoadShaders()
 {
 	fs::path path = GetRulesPath();
-	for (auto& it : fs::directory_iterator(path.remove_filename()))
+	// error_code overloads: this runs while a title boots, and a throw here (the pack folder was removed or became
+	// unreadable after the scan) is not caught anywhere above it
+	std::error_code ec;
+	std::error_code iterEc;
+	for (fs::directory_iterator itr(path.remove_filename(), iterEc); !iterEc && itr != fs::directory_iterator(); itr.increment(iterEc))
 	{
-		if (!is_regular_file(it))
+		const fs::directory_entry& it = *itr;
+		if (!it.is_regular_file(ec))
 			continue;
 
 		try
@@ -928,11 +939,22 @@ void GraphicPack2::_iterateReplacedFiles(const fs::path& currentPath, bool isAOC
 {
 	uint64 currentTitleId = CafeSystem::GetForegroundTitleId();
 	uint64 aocTitleId = (currentTitleId & 0xFFFFFFFFull) | 0x0005000c00000000ull;
-	for (auto& it : fs::recursive_directory_iterator(currentPath))
+	// Runs while the title boots and nothing above catches an exception, so every call here takes an error_code: a
+	// folder that cannot be read ends the listing (the files found so far stay replaced), a file whose size cannot be
+	// read is skipped
+	std::error_code iterEc;
+	for (fs::recursive_directory_iterator itr(currentPath, fs::directory_options::skip_permission_denied, iterEc); !iterEc && itr != end(itr); itr.increment(iterEc))
 	{
-		if (fs::is_regular_file(it))
+		const fs::directory_entry& it = *itr;
+		std::error_code ec;
+		if (it.is_regular_file(ec))
 		{
-			fs::path virtualMountPath = fs::relative(it.path(), currentPath);
+			const uintmax_t fileSize = it.file_size(ec);
+			if (ec)
+				continue;
+			fs::path virtualMountPath = fs::relative(it.path(), currentPath, ec);
+			if (ec)
+				continue;
 			if (isAOC)
 			{
 				virtualMountPath = fs::path(fmt::format("/vol/aoc{:016x}/", aocTitleId)) / virtualMountPath;
@@ -941,9 +963,11 @@ void GraphicPack2::_iterateReplacedFiles(const fs::path& currentPath, bool isAOC
 			{
 				virtualMountPath = fs::path(virtualMountBase) / virtualMountPath;
 			}
-			fscDeviceRedirect_add(virtualMountPath.generic_string(), it.file_size(), it.path().generic_string(), m_fs_priority);
+			fscDeviceRedirect_add(virtualMountPath.generic_string(), fileSize, it.path().generic_string(), m_fs_priority);
 		}
 	}
+	if (iterEc)
+		cemuLog_log(LogType::Force, "Graphic pack {}: could not list all replaced files in {}: {}", GetNormalizedPathString(), _pathToUtf8(currentPath), iterEc.message());
 }
 
 void GraphicPack2::LoadReplacedFiles()
