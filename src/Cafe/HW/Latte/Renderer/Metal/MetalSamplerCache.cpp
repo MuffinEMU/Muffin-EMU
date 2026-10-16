@@ -86,9 +86,9 @@ MetalSamplerCache::~MetalSamplerCache()
     m_samplerCache.clear();
 }
 
-MTL::SamplerState* MetalSamplerCache::GetSamplerState(const LatteContextRegister& lcr, LatteConst::ShaderType shaderType, uint32 stageSamplerIndex, const _LatteRegisterSetSampler* samplerWords)
+MTL::SamplerState* MetalSamplerCache::GetSamplerState(const LatteContextRegister& lcr, LatteConst::ShaderType shaderType, uint32 stageSamplerIndex, const _LatteRegisterSetSampler* samplerWords, bool depthCompare)
 {
-    uint64 stateHash = CalculateSamplerHash(lcr, shaderType, stageSamplerIndex, samplerWords);
+    uint64 stateHash = CalculateSamplerHash(lcr, shaderType, stageSamplerIndex, samplerWords, depthCompare);
     auto& samplerState = m_samplerCache[stateHash];
     if (samplerState)
         return samplerState;
@@ -158,9 +158,12 @@ MTL::SamplerState* MetalSamplerCache::GetSamplerState(const LatteContextRegister
     //samplerInfo.mipLodBias = (float)iLodBias / 64.0f;
 
     // depth compare
-    //uint8 depthCompareMode = shader->textureUsesDepthCompare[relative_textureUnit] ? 1 : 0;
-    // TODO: is it okay to just cast?
-    samplerDescriptor->setCompareFunction(GetMtlCompareFunc((Latte::E_COMPAREFUNC)samplerWords->WORD0.get_DEPTH_COMPARE_FUNCTION()));
+    // Only for a unit the shader samples with sample_compare, as the Vulkan backend sets compareEnable only for units
+    // the shader compares. The register can hold a compare function while the shader reads the texture plainly (or
+    // emulates the compare itself), and such a read never asked for one. Never is what Metal uses otherwise.
+    // E_DEPTH_COMPARE and E_COMPAREFUNC share their encoding (NEVER, LESS, EQUAL, LEQUAL, GREATER, NOTEQUAL, GEQUAL, ALWAYS).
+    if (depthCompare)
+        samplerDescriptor->setCompareFunction(GetMtlCompareFunc((Latte::E_COMPAREFUNC)samplerWords->WORD0.get_DEPTH_COMPARE_FUNCTION()));
 
     // Border color
     auto borderColor = GetBorderColor(shaderType, stageSamplerIndex, samplerWords, true);
@@ -171,21 +174,16 @@ MTL::SamplerState* MetalSamplerCache::GetSamplerState(const LatteContextRegister
     return samplerState;
 }
 
-uint64 MetalSamplerCache::CalculateSamplerHash(const LatteContextRegister& lcr, LatteConst::ShaderType shaderType, uint32 stageSamplerIndex, const _LatteRegisterSetSampler* samplerWords)
+uint64 MetalSamplerCache::CalculateSamplerHash(const LatteContextRegister& lcr, LatteConst::ShaderType shaderType, uint32 stageSamplerIndex, const _LatteRegisterSetSampler* samplerWords, bool depthCompare)
 {
-    uint64 hash = 0;
-    hash = std::rotl<uint64>(hash, 17);
-    hash += (uint64)samplerWords->WORD0.getRawValue();
-    hash = std::rotl<uint64>(hash, 17);
-    hash += (uint64)samplerWords->WORD1.getRawValue();
-    hash = std::rotl<uint64>(hash, 17);
-    hash += (uint64)samplerWords->WORD2.getRawValue();
+    // GetSamplerState() builds the sampler from WORD0, the MIN_LOD and MAX_LOD fields of WORD1, the Metal border
+    // colour and whether the compare function is applied, and nothing else (Metal has no LOD bias on the sampler, and
+    // WORD2 is not used). Those fit in 55 bits, so they are packed into the key as they are rather than hashed. The
+    // old rotate-and-add hash let the border colour land on the bits of the depth compare function, so a shadow
+    // sampler could be handed a sampler with another compare function (or border colour) that shared its key.
+    const uint64 word0 = samplerWords->WORD0.getRawValue();
+    const uint64 lodRange = samplerWords->WORD1.getRawValue() & 0xFFFFF; // MIN_LOD (bits 0-9), MAX_LOD (bits 10-19)
+    const uint64 borderColor = (uint64)GetBorderColor(shaderType, stageSamplerIndex, samplerWords) & 0x3;
 
-    auto borderColor = GetBorderColor(shaderType, stageSamplerIndex, samplerWords);
-
-    hash = std::rotl<uint64>(hash, 5);
-    hash += (uint64)borderColor;
-
-    // TODO: check this
-	return hash;
+    return word0 | (lodRange << 32) | (borderColor << 52) | ((depthCompare ? 1ull : 0ull) << 54);
 }

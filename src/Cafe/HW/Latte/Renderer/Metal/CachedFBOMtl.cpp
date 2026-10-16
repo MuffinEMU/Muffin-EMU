@@ -9,6 +9,7 @@ CachedFBOMtl::CachedFBOMtl(class MetalRenderer* metalRenderer, uint64 key) : Lat
 	m_renderPassDescriptor = MTL::RenderPassDescriptor::alloc()->init();
 
 	bool hasAttachment = false;
+	bool droppedAttachment = false; // the guest bound a target whose view could not be made
 	auto trackRenderArea = [this](MTL::Texture* texture) {
 		if (!texture)
 			return;
@@ -21,13 +22,16 @@ CachedFBOMtl::CachedFBOMtl(class MetalRenderer* metalRenderer, uint64 key) : Lat
 	{
 		const auto& buffer = colorBuffer[i];
 		auto textureView = (LatteTextureViewMtl*)buffer.texture;
-		if (!textureView)
+		// no view when the texture got no GPU memory; MetalAttachmentsInfo leaves the attachment out the same way
+		MTL::Texture* attachmentTexture = textureView ? textureView->GetRGBAView() : nullptr;
+		if (!attachmentTexture)
 		{
+			droppedAttachment |= textureView != nullptr;
 			continue;
 		}
 		auto colorAttachment = m_renderPassDescriptor->colorAttachments()->object(i);
-		colorAttachment->setTexture(textureView->GetRGBAView());
-		trackRenderArea(textureView->GetRGBAView());
+		colorAttachment->setTexture(attachmentTexture);
+		trackRenderArea(attachmentTexture);
 		colorAttachment->setLoadAction(MTL::LoadActionLoad);
 		colorAttachment->setStoreAction(MTL::StoreActionStore);
 
@@ -35,12 +39,13 @@ CachedFBOMtl::CachedFBOMtl(class MetalRenderer* metalRenderer, uint64 key) : Lat
 	}
 
 	// setup depth attachment
-	if (depthBuffer.texture)
+	MTL::Texture* depthTexture = depthBuffer.texture ? static_cast<LatteTextureViewMtl*>(depthBuffer.texture)->GetRGBAView() : nullptr;
+	droppedAttachment |= depthBuffer.texture && !depthTexture;
+	if (depthTexture)
 	{
-		auto textureView = static_cast<LatteTextureViewMtl*>(depthBuffer.texture);
 		auto depthAttachment = m_renderPassDescriptor->depthAttachment();
-		depthAttachment->setTexture(textureView->GetRGBAView());
-		trackRenderArea(textureView->GetRGBAView());
+		depthAttachment->setTexture(depthTexture);
+		trackRenderArea(depthTexture);
 		depthAttachment->setLoadAction(MTL::LoadActionLoad);
 		depthAttachment->setStoreAction(MTL::StoreActionStore);
 
@@ -48,7 +53,7 @@ CachedFBOMtl::CachedFBOMtl(class MetalRenderer* metalRenderer, uint64 key) : Lat
 		if (depthBuffer.hasStencil && GetMtlPixelFormatInfo(depthBuffer.texture->format, true).hasStencil)
 		{
 		    auto stencilAttachment = m_renderPassDescriptor->stencilAttachment();
-            stencilAttachment->setTexture(textureView->GetRGBAView());
+            stencilAttachment->setTexture(depthTexture);
             stencilAttachment->setLoadAction(MTL::LoadActionLoad);
             stencilAttachment->setStoreAction(MTL::StoreActionStore);
 		}
@@ -61,6 +66,10 @@ CachedFBOMtl::CachedFBOMtl(class MetalRenderer* metalRenderer, uint64 key) : Lat
 	{
         auto colorAttachment = m_renderPassDescriptor->colorAttachments()->object(0);
     	colorAttachment->setTexture(metalRenderer->GetNullTexture2D());
+    	// When every target the guest bound was left out above, the draw still rasterizes with the guest's scissor,
+    	// which is clamped to the render area; make that area this 1x1 attachment so the scissor stays inside it
+    	if (droppedAttachment)
+    	    trackRenderArea(metalRenderer->GetNullTexture2D());
     	colorAttachment->setLoadAction(MTL::LoadActionDontCare);
     	colorAttachment->setStoreAction(MTL::StoreActionDontCare);
 	}
