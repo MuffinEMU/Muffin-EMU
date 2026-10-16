@@ -1635,10 +1635,12 @@ bool PPCRecompiler_Init26() {
     }
     catch (const std::exception& e)
     {
-        if (ActiveSettings::GetCPUMode() == CPUMode::Auto) {
-            PPCCore_InitializePointer(false);
-            ppcRecompilerEnabled = false;
-        } else { throw e; }
+        // Any CPU mode falls back to the interpreter. This used to rethrow for the explicit recompiler modes (the only
+        // ones the iOS app sets), as a sliced std::exception whose message was lost, and the title launch failed.
+        cemuLog_log(LogType::Force, "Recompiler: JIT setup failed ({}); using the interpreter", e.what());
+        PPCCore_InitializePointer(false);
+        ppcRecompilerEnabled = false;
+        ppcRecompilerInited = false;
     }
     
     PPCRecompiler_finishJitMappingSession();
