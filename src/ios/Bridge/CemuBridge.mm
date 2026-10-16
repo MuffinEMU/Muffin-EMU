@@ -55,6 +55,7 @@
 #include <dlfcn.h>
 #include <pthread.h>
 #include <sys/ucontext.h>
+#include <malloc/malloc.h>
 
 #include "Cafe/CafeSystem.h"
 #include "Cafe/OS/libs/nn_ac/nn_ac_reachability.h"
@@ -794,6 +795,23 @@ void cemu_bridge_start_memory_watchdog(void) {
                     unsigned long long avail = 0, foot = 0;
                     cemu_bridge_memory_status(&avail, &foot);
                     cemu_mem_write_line("WARNING - iOS is asking for memory back", avail, foot);
+                    // Give some back instead of only logging the warning. The Metal GPU thread watches free memory
+                    // itself, but only acts below its own marks, and iOS can warn earlier than that. One eviction pass
+                    // drops textures that are cheap to bring back (unused, and restorable from guest memory); textures
+                    // the GPU drew are only touched when memory is already critical, exactly as in its own passes. It
+                    // is the same request a guest thread makes when it cannot get a stack. The Vulkan renderer does
+                    // not read the flag, so there it is a no-op.
+                    if (CafeSystem::IsTitleRunning())
+                        LatteWait::Get().evictionRequested.store(true);
+                    // And hand back the free pages the allocator is still holding. Off the main thread: it walks
+                    // every malloc zone.
+                    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+                        const size_t released = malloc_zone_pressure_relief(nullptr, 0);
+                        char line[96];
+                        snprintf(line, sizeof(line), "MEM: allocator returned %llu MB of free pages to iOS",
+                                 (unsigned long long)(released >> 20));
+                        cemu_bridge_log_checkpoint(line);
+                    });
                 }];
 
     cemu_bridge_memory_note("baseline at startup");
@@ -835,6 +853,13 @@ void cemu_bridge_start_memory_watchdog(void) {
             {
                 criticalAnnounced = true;
                 cemu_mem_write_line("CRITICAL - a kill by iOS is likely imminent", avail, foot);
+            }
+            // Re-armed once memory has clearly recovered (a stopped game, an eviction pass), so a second close call
+            // later in the session, or in the next game, is logged too. The gap stops a footprint hovering at the
+            // line from writing it over and over.
+            else if (criticalAnnounced && avail > (384ull << 20))
+            {
+                criticalAnnounced = false;
             }
         }
     }).detach();
