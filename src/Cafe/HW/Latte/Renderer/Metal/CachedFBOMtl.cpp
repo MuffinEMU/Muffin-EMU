@@ -9,6 +9,7 @@ CachedFBOMtl::CachedFBOMtl(class MetalRenderer* metalRenderer, uint64 key) : Lat
 	m_renderPassDescriptor = MTL::RenderPassDescriptor::alloc()->init();
 
 	bool hasAttachment = false;
+	bool droppedAttachment = false; // the guest bound a target whose view could not be made
 	auto trackRenderArea = [this](MTL::Texture* texture) {
 		if (!texture)
 			return;
@@ -25,6 +26,7 @@ CachedFBOMtl::CachedFBOMtl(class MetalRenderer* metalRenderer, uint64 key) : Lat
 		MTL::Texture* attachmentTexture = textureView ? textureView->GetRGBAView() : nullptr;
 		if (!attachmentTexture)
 		{
+			droppedAttachment |= textureView != nullptr;
 			continue;
 		}
 		auto colorAttachment = m_renderPassDescriptor->colorAttachments()->object(i);
@@ -38,6 +40,7 @@ CachedFBOMtl::CachedFBOMtl(class MetalRenderer* metalRenderer, uint64 key) : Lat
 
 	// setup depth attachment
 	MTL::Texture* depthTexture = depthBuffer.texture ? static_cast<LatteTextureViewMtl*>(depthBuffer.texture)->GetRGBAView() : nullptr;
+	droppedAttachment |= depthBuffer.texture && !depthTexture;
 	if (depthTexture)
 	{
 		auto depthAttachment = m_renderPassDescriptor->depthAttachment();
@@ -63,6 +66,10 @@ CachedFBOMtl::CachedFBOMtl(class MetalRenderer* metalRenderer, uint64 key) : Lat
 	{
         auto colorAttachment = m_renderPassDescriptor->colorAttachments()->object(0);
     	colorAttachment->setTexture(metalRenderer->GetNullTexture2D());
+    	// When every target the guest bound was left out above, the draw still rasterizes with the guest's scissor,
+    	// which is clamped to the render area; make that area this 1x1 attachment so the scissor stays inside it
+    	if (droppedAttachment)
+    	    trackRenderArea(metalRenderer->GetNullTexture2D());
     	colorAttachment->setLoadAction(MTL::LoadActionDontCare);
     	colorAttachment->setStoreAction(MTL::StoreActionDontCare);
 	}
