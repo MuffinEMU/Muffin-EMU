@@ -1016,7 +1016,10 @@ void nsysnetExport_accept(PPCInterpreter_t* hCPU)
 		if (hr != SOCKET_ERROR)
 		{
 			r = nsysnet_createVirtualSocketFromExistingSocket(hr);
-			_setSockError(WU_SO_SUCCESS);
+			if (r < 0)
+				closesocket(hr); // no free guest handle, the error is already set
+			else
+				_setSockError(WU_SO_SUCCESS);
 		}
 		else
 		{
