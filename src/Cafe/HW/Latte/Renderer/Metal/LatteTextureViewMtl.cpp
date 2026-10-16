@@ -64,16 +64,19 @@ LatteTextureViewMtl::~LatteTextureViewMtl()
 {
     m_mtlr->texture_notifyDelete(this);
 
-    m_rgbaView->release();
+    // Views of a texture that stands on the null texture are never created (see CreateSwizzledView), so any of these can be null
+    if (m_rgbaView)
+        m_rgbaView->release();
 	for (sint32 i = 0; i < std::size(m_viewCache); i++)
     {
-        if (m_viewCache[i].key != INVALID_SWIZZLE)
+        if (m_viewCache[i].key != INVALID_SWIZZLE && m_viewCache[i].texture)
             m_viewCache[i].texture->release();
     }
 
     for (auto& [key, texture] : m_fallbackViewCache)
     {
-        texture->release();
+        if (texture)
+            texture->release();
     }
 }
 
@@ -123,6 +126,14 @@ MTL::Texture* LatteTextureViewMtl::GetSwizzledView(uint32 gpuSamplerSwizzle)
 
 MTL::Texture* LatteTextureViewMtl::CreateSwizzledView(uint32 gpuSamplerSwizzle)
 {
+    // When the GPU had no memory for the base texture it stands on the shared 1x1 RGBA8 null texture (see
+    // LatteTextureMtl). That texture has one level, one slice, no pixel-format-view usage and is 2D, so a view with
+    // this view's format, type, levels or slices cannot be made from it. Make none: callers treat a null view as
+    // missing (a typed null texture is sampled instead, and no attachment is bound), and the renderer drops the
+    // texture so its next use allocates it again.
+    if (m_baseTexture->IsNullSubstitute())
+        return nullptr;
+
     uint32 compSelR = (gpuSamplerSwizzle >> 16) & 0x7;
 	uint32 compSelG = (gpuSamplerSwizzle >> 19) & 0x7;
 	uint32 compSelB = (gpuSamplerSwizzle >> 22) & 0x7;

@@ -21,13 +21,15 @@ CachedFBOMtl::CachedFBOMtl(class MetalRenderer* metalRenderer, uint64 key) : Lat
 	{
 		const auto& buffer = colorBuffer[i];
 		auto textureView = (LatteTextureViewMtl*)buffer.texture;
-		if (!textureView)
+		// no view when the texture got no GPU memory; MetalAttachmentsInfo leaves the attachment out the same way
+		MTL::Texture* attachmentTexture = textureView ? textureView->GetRGBAView() : nullptr;
+		if (!attachmentTexture)
 		{
 			continue;
 		}
 		auto colorAttachment = m_renderPassDescriptor->colorAttachments()->object(i);
-		colorAttachment->setTexture(textureView->GetRGBAView());
-		trackRenderArea(textureView->GetRGBAView());
+		colorAttachment->setTexture(attachmentTexture);
+		trackRenderArea(attachmentTexture);
 		colorAttachment->setLoadAction(MTL::LoadActionLoad);
 		colorAttachment->setStoreAction(MTL::StoreActionStore);
 
@@ -35,12 +37,12 @@ CachedFBOMtl::CachedFBOMtl(class MetalRenderer* metalRenderer, uint64 key) : Lat
 	}
 
 	// setup depth attachment
-	if (depthBuffer.texture)
+	MTL::Texture* depthTexture = depthBuffer.texture ? static_cast<LatteTextureViewMtl*>(depthBuffer.texture)->GetRGBAView() : nullptr;
+	if (depthTexture)
 	{
-		auto textureView = static_cast<LatteTextureViewMtl*>(depthBuffer.texture);
 		auto depthAttachment = m_renderPassDescriptor->depthAttachment();
-		depthAttachment->setTexture(textureView->GetRGBAView());
-		trackRenderArea(textureView->GetRGBAView());
+		depthAttachment->setTexture(depthTexture);
+		trackRenderArea(depthTexture);
 		depthAttachment->setLoadAction(MTL::LoadActionLoad);
 		depthAttachment->setStoreAction(MTL::StoreActionStore);
 
@@ -48,7 +50,7 @@ CachedFBOMtl::CachedFBOMtl(class MetalRenderer* metalRenderer, uint64 key) : Lat
 		if (depthBuffer.hasStencil && GetMtlPixelFormatInfo(depthBuffer.texture->format, true).hasStencil)
 		{
 		    auto stencilAttachment = m_renderPassDescriptor->stencilAttachment();
-            stencilAttachment->setTexture(textureView->GetRGBAView());
+            stencilAttachment->setTexture(depthTexture);
             stencilAttachment->setLoadAction(MTL::LoadActionLoad);
             stencilAttachment->setStoreAction(MTL::StoreActionStore);
 		}

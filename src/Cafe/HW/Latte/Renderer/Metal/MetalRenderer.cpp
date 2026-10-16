@@ -1626,6 +1626,10 @@ void MetalRenderer::texture_clearColorSlice(LatteTexture* hostTexture, sint32 sl
         cemuLog_logOnce(LogType::Force, "cannot clear color texture with format {}, because it's not renderable", hostTexture->format);
         return;
     }
+    // A texture with no GPU memory stands on the shared 1x1 null texture; clearing that would only change what the
+    // null texture holds for everything else that uses it
+    if (static_cast<LatteTextureMtl*>(hostTexture)->IsNullSubstitute())
+        return;
 
     auto mtlTexture = static_cast<LatteTextureMtl*>(hostTexture)->GetTexture();
 
@@ -1640,6 +1644,10 @@ void MetalRenderer::texture_clearDepthSlice(LatteTexture* hostTexture, uint32 sl
         cemuLog_logOnce(LogType::Force, "skipping depth/stencil clear");
         return;
     }
+
+    // The 1x1 null texture a texture with no GPU memory stands on is a colour texture, not a depth attachment
+    if (static_cast<LatteTextureMtl*>(hostTexture)->IsNullSubstitute())
+        return;
 
     auto mtlTexture = static_cast<LatteTextureMtl*>(hostTexture)->GetTexture();
 
@@ -2079,8 +2087,17 @@ LatteTextureReadbackInfo* MetalRenderer::texture_createReadback(LatteTextureView
     }
 
     MTL::Texture* mtlTexture = static_cast<LatteTextureMtl*>(textureView->baseTexture)->GetTexture();
-    if (!mtlTexture)
+    if (!mtlTexture || baseTexture->IsNullSubstitute())
         return nullptr;
+    // The transfer copies the guest-sized first level of one slice (LatteTextureReadbackInfoMtl::StartTransfer). A
+    // texture that stands on the 1x1 null texture, or one a graphic pack made smaller than the guest surface, does not
+    // have that region, and a blit outside a texture is a GPU fault; the reservation below would also be too small.
+    if ((uint64)baseTexture->width > mtlTexture->width() || (uint64)baseTexture->height > mtlTexture->height() ||
+        (uint64)std::max(textureView->firstSlice, 0) >= std::max<NS::UInteger>(1, mtlTexture->arrayLength()) * (mtlTexture->textureType() == MTL::TextureTypeCubeArray || mtlTexture->textureType() == MTL::TextureTypeCube ? 6 : 1))
+    {
+        cemuLog_logOnce(LogType::Force, "Metal: skipped a texture readback whose region lies outside the host texture");
+        return nullptr;
+    }
 
     size_t uploadSize = mtlTexture->allocatedSize();
     if (uploadSize > TextureReadbackSize())
@@ -2123,7 +2140,14 @@ void MetalRenderer::surfaceCopy_copySurfaceWithFormatConversion(LatteTexture* so
         return;
     }
     
+    // Either side may stand on the shared 1x1 null texture after a failed allocation: nothing to copy from or into
+    if (static_cast<LatteTextureMtl*>(sourceTexture)->IsNullSubstitute() || static_cast<LatteTextureMtl*>(destinationTexture)->IsNullSubstitute())
+        return;
+
     auto sourceView = static_cast<LatteTextureViewMtl*>(sourceTexture->GetOrCreateView(Latte::E_DIM::DIM_2D, sourceTexture->format, srcMip, 1, srcSlice, 1));
+    MTL::Texture* sourceMtl = sourceView ? sourceView->GetRGBAView() : nullptr;
+    if (!sourceMtl)
+        return;
     auto destinationTextureMtl = static_cast<LatteTextureMtl*>(destinationTexture);
     MTL::Texture* destinationMtl = destinationTextureMtl->GetTexture();
     
@@ -2203,7 +2227,7 @@ void MetalRenderer::surfaceCopy_copySurfaceWithFormatConversion(LatteTexture* so
         }
         renderCommandEncoder->setScissorRect(MTL::ScissorRect{0, 0, (NS::UInteger)scissorWidth, (NS::UInteger)scissorHeight});
     }
-    SetTexture(renderCommandEncoder, METAL_SHADER_TYPE_FRAGMENT, sourceView->GetRGBAView(), GET_HELPER_TEXTURE_BINDING(0));
+    SetTexture(renderCommandEncoder, METAL_SHADER_TYPE_FRAGMENT, sourceMtl, GET_HELPER_TEXTURE_BINDING(0));
     renderCommandEncoder->drawPrimitives(MTL::PrimitiveTypeTriangle, NS::UInteger(0), NS::UInteger(3));
     EndEncoding();
 }

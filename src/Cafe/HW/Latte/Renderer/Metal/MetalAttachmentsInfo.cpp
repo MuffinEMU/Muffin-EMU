@@ -9,18 +9,22 @@ MetalAttachmentsInfo::MetalAttachmentsInfo(class CachedFBOMtl* fbo)
 	{
 	    const auto& colorBuffer = fbo->colorBuffer[i];
 		auto texture = static_cast<LatteTextureViewMtl*>(colorBuffer.texture);
-		if (!texture)
+		// Must describe exactly the attachments CachedFBOMtl binds, or the pipeline's formats disagree with the
+		// render pass: a view that could not be made (texture with no GPU memory) is not attached there
+		if (!texture || !texture->GetRGBAView())
 		    continue;
 
 		colorFormats[i] = texture->format;
 	}
 
 	// Depth stencil attachment
-	if (fbo->depthBuffer.texture)
+	auto depthTexture = static_cast<LatteTextureViewMtl*>(fbo->depthBuffer.texture);
+	if (depthTexture && depthTexture->GetRGBAView())
 	{
-	    auto texture = static_cast<LatteTextureViewMtl*>(fbo->depthBuffer.texture);
-        depthFormat = texture->format;
-        hasStencil = fbo->depthBuffer.hasStencil;
+        depthFormat = depthTexture->format;
+        // Same condition as the stencil attachment in CachedFBOMtl: a stencil pixel format for the pipeline only
+        // when the view's format really has stencil, never a depth-only format in the stencil slot
+        hasStencil = fbo->depthBuffer.hasStencil && GetMtlPixelFormatInfo(depthTexture->format, true).hasStencil;
 	}
 }
 
