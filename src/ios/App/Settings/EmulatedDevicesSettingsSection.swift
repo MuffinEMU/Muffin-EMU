@@ -55,7 +55,7 @@ struct EmulatedDevicesSettingsSection: View {
             SettingsSectionHeader("Figure portals", icon: "square.stack.3d.up", accent: .content)
         } footer: {
             InfoButton.footer(
-                "Emulates a Skylanders portal, Disney Infinity base or LEGO Dimensions toypad. Changes apply the next time you start a game.",
+                "Turn on the one your game uses. Applies the next time you start a game.",
                 title: "Figure portals",
                 text: fullText)
         }
@@ -64,9 +64,9 @@ struct EmulatedDevicesSettingsSection: View {
 
     private var fullText: String {
         """
-        Some games (Skylanders, Disney Infinity, LEGO Dimensions) read toy figures from a USB portal, base or toypad. Turn on the one your game uses; it applies the next time you start a game.
+        Some games (Skylanders, Disney Infinity, LEGO Dimensions) read toy figures from a USB portal, base or toypad. MuffinEMU can pretend to be one. Turn on the one your game uses.
 
-        Manage figures lets you load a figure dump you own, create a new save for a figure, or clear a slot. No figure data is included with MuffinEMU.
+        Manage figures lets you load a figure file you own, create a new save for a figure, or clear a slot. MuffinEMU doesn't include any figure data.
         """
     }
 }

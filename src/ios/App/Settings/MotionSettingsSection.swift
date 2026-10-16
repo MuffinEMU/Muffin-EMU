@@ -108,7 +108,7 @@ struct MotionSettingsSection: View {
             SettingsSectionHeader("Motion and aiming", icon: "gyroscope", accent: .io)
         } footer: {
             InfoButton.footer(
-                "For games that aim with the GamePad's gyro, such as Splatoon.",
+                "For games that aim by tilting the GamePad, such as Splatoon.",
                 title: "Motion and aiming",
                 text: fullText)
         }
@@ -171,6 +171,6 @@ struct MotionSettingsSection: View {
     }
 
     private var fullText: String {
-        "Motion aiming feeds this device's gyroscope and accelerometer to the emulated GamePad, so games that aim by moving the GamePad work the way they do on a Wii U. Hold the device like the GamePad, screen toward you, and tilt or turn it. It follows the way the screen is turned, so it works in every orientation.\n\nMotion from: This device uses the iPad or iPhone itself. Controller uses the motion sensors of a connected controller that has them (DualShock 4, DualSense, Switch Pro Controller) and falls back to the device when there is none. Controller motion has had little testing.\n\nSensitivity is how far the GamePad turns for a given movement. 1.00x matches the real GamePad. Turn it up if you have to move the device a long way to turn.\n\nRecentre aim forgets where the GamePad has been pointing and treats the current position as straight ahead. Use it when aim has drifted, or after turning in your seat. Many games also have their own recentre button.\n\nIf aiming turns the wrong way, \"If aim feels backwards\" reverses left and right, or up and down.\n\nTurn Motion aiming off to aim with the sticks only. A game with its own motion option, Splatoon included, should have that switched off as well."
+        "Motion aiming uses your device's motion sensors as the GamePad's gyro, so games like Splatoon can aim by tilting. Hold the device like the GamePad, screen toward you, and tilt or turn it. It works in any orientation.\n\nMotion from: This device uses the iPad or iPhone itself. Controller uses a connected controller with motion sensors (DualShock 4, DualSense, Switch Pro Controller) and falls back to the device if there isn't one. Controller motion has had little testing.\n\nSensitivity sets how far the aim moves for a given tilt. 1.00x matches the real GamePad.\n\nRecentre aim treats the way you're holding the device as straight ahead. Use it if aim drifts.\n\nIf aim feels backwards, use the options under it to reverse left and right, or up and down.\n\nTurn Motion aiming off to aim with the sticks only. If a game has its own motion option, switch that off as well."
     }
 }

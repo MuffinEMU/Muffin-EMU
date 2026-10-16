@@ -78,7 +78,7 @@ struct AppearanceSettingsSection: View {
             InfoButton.footer(
                 "Both change how MuffinEMU looks, not what it does.",
                 title: "Appearance",
-                text: "Flat surfaces removes the soft highlights on cards and buttons.\n\nClassic UI restores the flat v2.0 styling: plain cards, text headers and the standard iOS font. It turns on flat surfaces too. All settings and screens are still there; newer screens just have no classic form.")
+                text: "Flat surfaces removes the soft highlights on cards and buttons.\n\nClassic UI brings back the flat look of version 2.0: plain cards, text headers and the standard iOS font. It also turns on flat surfaces. All settings and screens are still there; newer screens just have no classic look.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }

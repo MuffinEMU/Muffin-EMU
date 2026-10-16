@@ -101,7 +101,7 @@ struct OnScreenControlsSection: View {
                         Text("Use Melo-Controller")
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
                         Text(useMeloControls
-                             ? "Melo-Controller by stossy11, with its own layout editor. The options below are for MuffinEMU's pad."
+                             ? "Melo-Controller by stossy11, with its own layout editor. The options below don't apply to it."
                              : "MuffinEMU's own GamePad layout.")
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
@@ -169,7 +169,7 @@ struct OnScreenControlsSection: View {
                     Toggle("Same height in portrait and landscape",
                            isOn: shoulderStore.linkBinding(in: windowSize.effectiveSize, touchLab: usingTouchLab))
                         .font(.system(size: 13, design: .rounded))
-                    Text("Moves the four shoulder buttons up or down together. They stop before they would leave the screen or touch the sticks and buttons.")
+                    Text("Moves L, R, ZL and ZR up or down together.")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -207,7 +207,7 @@ struct OnScreenControlsSection: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Haptic feedback")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text("A light tap on press. Turn off if it feels like buzzing rather than a button.")
+                    Text("A light tap when you press a button. Turn off if it feels like buzzing.")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
@@ -218,7 +218,7 @@ struct OnScreenControlsSection: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Hide the top bar while playing")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text("The bar fades away a few seconds after you last touch it. Tap the small handle at the top of the screen, or swipe down from it, to bring it back. It stays up while paused, in menus, and with VoiceOver on. On by default.")
+                    Text("Fades the top bar out a few seconds after you touch it. Tap the handle at the top, or swipe down from it, to bring it back. On by default.")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -294,7 +294,7 @@ struct OnScreenControlsSection: View {
             SettingsSectionHeader("On-screen controls", icon: "gamecontroller", accent: .io)
         } footer: {
             InfoButton.footer(
-                "Sticks are analog like the real GamePad. Comfort controls move the shoulder buttons onto the sticks.",
+                "To move buttons, start a game and tap the move button in the top bar.",
                 title: "On-screen controls",
                 text: fullText)
         }
@@ -344,7 +344,7 @@ struct OnScreenControlsSection: View {
                 }
             }
             .pickerStyle(.segmented)
-            Text("The area you tap to bring the bar back. Large is easier to hit, but it can take touches meant for the GamePad screen at the top of the picture.")
+            Text("The area you tap to bring the bar back. Large is easier to hit but can block touches meant for the GamePad screen.")
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -395,7 +395,7 @@ struct OnScreenControlsSection: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Stick follows thumb")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text("A thumb that slides past the ring takes the stick's base along, so turning back is as quick as turning out.")
+                    Text("The stick moves with your thumb if you slide past the ring, so turning back is quick.")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
@@ -406,7 +406,7 @@ struct OnScreenControlsSection: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Relative stick")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text("The stick's centre is wherever your thumb lands in its zone, so the first touch doesn't move the stick.")
+                    Text("The stick centres wherever you first touch, so the first touch doesn't move it.")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
@@ -524,6 +524,6 @@ struct OnScreenControlsSection: View {
     }
 
     private var fullText: String {
-        "Add analog sticks puts both sticks on screen alongside the d-pad and face buttons. Push further for more speed.\n\nStick gate is the shape the stick can reach. Octagon matches the real GamePad; Round reaches full travel in every direction.\n\nCalibrate sticks has you rest your thumb, push to every edge and let go, then sets where full push is and ignores the wobble of your resting thumb. It applies to every control style.\n\nDeadzone is how far you can move before the game notices. Turn it up only if a resting thumb makes the game drift.\n\nFine control makes small movements gentler: at linear, halfway is half speed; higher values make halfway slower.\n\nIn Advanced mode, Tune each stick sets each stick on its own: inner deadzone, outer deadzone (where full push is reached), anti-deadzone (the least the game is sent once past the deadzone, for games with their own), fine control, horizontal and vertical sensitivity, and invert. Its test circle shows what the game is sent. It is also in the move-controls panel in a game. The Deadzone and Fine control sliders set both sticks.\n\nStick spacing moves both sticks closer together or further apart, for smaller or bigger hands. On a narrow screen it stops before the sticks would touch.\n\nOn iPad, L, R, ZL and ZR height moves the four shoulder buttons up or down together, stopping before they would leave the screen or touch a stick or button.\n\nButton size and opacity adjust the size MuffinEMU picks for your screen.\n\nHide the top bar while playing fades the Back and pause bar out a few seconds after you last touch it, so it stops covering the picture. A small handle stays at the top centre of the screen: tap it, or swipe down from it, to bring the bar back. The bar stays up while the game is paused, a menu is open, or VoiceOver is on.\n\nIn Advanced mode, Top bar hides after sets the wait (2, 4 or 8 seconds) and Reveal handle sets the size of the area you tap to bring the bar back. Normal is the default; Large is easier to hit but can take touches meant for the GamePad screen at the top of the picture.\n\nHide on-screen controls when a controller is connected takes the controls off the screen while a controller is paired, and puts them back when it disconnects. It is off by default. The GamePad's screen stays visible and touchable either way.\n\nThese settings apply to every game. Two things are kept per game instead: Adaptive remembers where your thumbs land, and Melo-Controller remembers where you moved its buttons.\n\nTo move a cluster, start a game and tap the move button in the top bar. There you can also switch control style without leaving the game."
+        "Add analog sticks shows both sticks alongside the d-pad and face buttons.\n\nStick tuning has Calibrate sticks (rest your thumb, push to each edge, let go, so the sticks fit your reach). In Advanced mode it also has Tune each stick, Stick gate, Stick deadzone and Fine control. Stick gate is the shape the stick can reach: Octagon matches the real GamePad, Round reaches full travel in every direction. Deadzone is how far you can move before the game notices; raise it only if a resting thumb makes the game drift. Fine control makes small movements gentler. Stick spacing moves the sticks closer together or further apart.\n\nOn iPad, Shoulder button height moves L, R, ZL and ZR up or down together.\n\nHide the top bar while playing fades the Back and pause bar out a few seconds after you last touch it. Tap the small handle at the top, or swipe down from it, to bring it back. The bar stays visible when the game is paused, a menu is open or VoiceOver is on. In Advanced mode you can set how long it waits and how big the handle is. Large is easier to tap but can block touches meant for the GamePad screen.\n\nHide on-screen controls when a controller is connected removes the controls while a controller is paired. It is off by default.\n\nThese settings apply to every game. Adaptive remembers where your thumbs land, and Melo-Controller remembers where you moved its buttons, for each game separately.\n\nTo move buttons, start a game and tap the move button in the top bar. You can also switch control style there."
     }
 }

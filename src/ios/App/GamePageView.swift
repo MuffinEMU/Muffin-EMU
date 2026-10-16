@@ -200,38 +200,18 @@ struct GamePageView: View {
     }
 
     private var playButtons: some View {
-        VStack(spacing: 10) {
-            Button {
-                closeThen(onPlay)
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "play.fill").font(.system(size: 18, weight: .bold))
-                    Text("Play").font(.system(size: 20, weight: .bold, design: .rounded))
-                }
-                .frame(maxWidth: .infinity, minHeight: 36)
-            }
-            .buttonStyle(MuffinPrimaryButtonStyle())
-            .accessibilityLabel("Play \(live.cardName.name)")
-
-            // The two things people reach for most, one tap from the top of the page.
+        Button {
+            closeThen(onPlay)
+        } label: {
             HStack(spacing: 10) {
-                Button { sheet = .settings } label: {
-                    Label("Game settings", systemImage: "slider.horizontal.3")
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                        .frame(maxWidth: .infinity, minHeight: 32)
-                }
-                .buttonStyle(MuffinSecondaryButtonStyle())
-
-                Button { gameManager.toggleFavorite(live) } label: {
-                    Label(live.isFavorite ? "Favourited" : "Favourite",
-                          systemImage: live.isFavorite ? "heart.fill" : "heart")
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                        .frame(maxWidth: .infinity, minHeight: 32)
-                }
-                .buttonStyle(MuffinSecondaryButtonStyle())
+                Image(systemName: "play.fill").font(.system(size: 18, weight: .bold))
+                Text("Play").font(.system(size: 20, weight: .bold, design: .rounded))
             }
+            .frame(maxWidth: .infinity, minHeight: 36)
         }
+        .buttonStyle(MuffinPrimaryButtonStyle())
         .frame(maxWidth: 340)
+        .accessibilityLabel("Play \(live.cardName.name)")
     }
 
     // MARK: Your play
@@ -243,7 +223,7 @@ struct GamePageView: View {
             SettingsRow(label: "Size on disk", value: sizeOnDisk.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? "\u{2026}",
                         icon: "internaldrive")
         } header: {
-            SettingsSectionHeader("Your play", icon: "clock.arrow.circlepath", accent: .content)
+            SettingsSectionHeader("Play history", icon: "clock.arrow.circlepath", accent: .content)
         }
     }
 

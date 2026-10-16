@@ -93,9 +93,9 @@ struct CoverDataSettingsView: View {
             SettingsSectionHeader("Art packs", icon: "shippingbox", accent: .content)
         } footer: {
             InfoButton.footer(
-                "Downloaded from the MuffinEMU-Art repository. Each one checks its checksum, unpacks and indexes itself, then removes the download.",
+                "Art packs are downloaded from the MuffinEMU-Art repository and installed automatically.",
                 title: "Art packs",
-                text: "Art packs are community collections of cover art, most of them 3D boxes. Download one and MuffinEMU matches its images to your games by title and region.\n\nThe download needs free space for the file and for the unpacked images at the same time; MuffinEMU checks first and says if there isn't enough. Keep MuffinEMU open while a pack downloads. Cancel stops it and cleans up.\n\nPacks are stored where Files can't see them, and aren't included in device backups, since they can be downloaded again."
+                text: "Art packs are community collections of cover art, mostly 3D boxes. Download one and MuffinEMU matches its images to your games by title and region.\n\nYou need free space for the download and the unpacked images at the same time. MuffinEMU checks first. Keep MuffinEMU open while a pack downloads. Cancel stops it and cleans up.\n\nPacks are stored where Files can't see them and aren't included in device backups, since you can download them again."
             )
         }
     }
@@ -133,9 +133,9 @@ struct CoverDataSettingsView: View {
             SettingsSectionHeader("Game data", icon: "doc.text.magnifyingglass", accent: .content)
         } footer: {
             InfoButton.footer(
-                "Reads GameTDB's Wii U database and keeps the entries for the games you have: summary, release dates, publisher and more.",
+                "Looks up your games in the GameTDB database for summaries, release dates, publishers and more.",
                 title: "Game data",
-                text: "MuffinEMU downloads GameTDB's Wii U database (about 2 MB), reads it one entry at a time and keeps only your games' entries, so the saved file stays small.\n\nEach game is matched in this order: its exact GameTDB ID worked out from the title ID, then its product code, then its title in any language, preferring the entry for the game's own region. Every match records how sure it is, and each game's Info screen lets you pick a different entry if one is wrong.\n\nIt also runs by itself in the background for new games. Everything is stored per install, so two copies of one game can match differently."
+                text: "MuffinEMU downloads GameTDB's Wii U database (about 2 MB) and keeps only the entries for your games.\n\nEach game is matched by its title ID, then its product code, then its title in any language, preferring the game's own region. If a match is wrong, open the game's Info screen and pick a different entry.\n\nIt also runs by itself in the background for new games."
             )
         }
     }

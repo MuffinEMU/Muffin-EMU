@@ -111,7 +111,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     /// The line under the title on the hub.
     var blurb: String {
         switch self {
-        case .emulation: return "CPU, JIT, graphics and shaders. What decides whether a game runs well."
+        case .emulation: return "CPU, JIT, graphics and shaders. These decide how well games run."
         case .controls: return "On-screen pad, motion aiming and figure portals."
         case .screenAndSound: return "Screen layout, audio, the performance overlay and alerts."
         case .library: return "How the library looks, cover art, Wii U keys and the Wii U Menu."
@@ -125,11 +125,11 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     /// A short note at the top of the page about what matters there.
     var intro: String {
         switch self {
-        case .emulation: return "Start with CPU and Graphics. The defaults suit most games, so change one thing at a time. Switch Settings mode to Advanced on the main list to see the rest."
+        case .emulation: return "The defaults suit most games, so change one thing at a time. Switch Settings mode to Advanced on the main list to see more."
         case .controls: return "Button size, sticks and opacity are under On-screen controls. Figure portals are for Skylanders, Disney Infinity and LEGO Dimensions."
-        case .screenAndSound: return "How the game is shown and heard. Display covers the TV and external screens."
-        case .library: return "Library layout changes how your games are shown. Wii U keys are used to open encrypted game files."
-        case .accountOnline: return "An account is optional. The online service decides which servers online games talk to."
+        case .screenAndSound: return "Display covers screen layout and external screens. Audio, the performance overlay and pop-up notifications are here too."
+        case .library: return "Choose how your games look and where cover art comes from. Add Wii U keys and the Wii U Menu here."
+        case .accountOnline: return "An account is only needed for online play. The online service decides which servers games connect to."
         case .appearance: return "Looks only. None of this changes how games run."
         case .storage: return "Back up your settings before a big change or an update (Advanced mode). Move to another device exports your saves and settings, and your games if you choose."
         case .support: return "Copy the device report and send it when you ask for help."

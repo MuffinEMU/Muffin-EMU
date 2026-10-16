@@ -80,7 +80,7 @@ struct PreviewPadSection: View {
             InfoButton.footer(
                 "Try a new movable, resizable pad layout. It replaces the normal pad while on, so turn it off if controls stop responding.",
                 title: "New pad (preview)",
-                text: "Every group (shoulders, sticks, d-pad, A/B/X/Y, Start, Select, HOME) can be dragged and pinch-resized. Tap the move icon in the top bar during a game.\n\nFit floats the controls over the screen. Native sizes the picture to fit around the controls: small on a phone, life-size on an iPad.\n\nThis pad is experimental.")
+                text: "You can drag and pinch-resize every group of controls (shoulders, sticks, d-pad, A/B/X/Y, Start, Select, HOME). Tap the move icon in the top bar during a game.\n\nFit floats the controls over the screen. Native makes the picture fit around the controls: small on a phone, life-size on an iPad.\n\nThis pad is experimental.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         .fileExporter(isPresented: $showingLayoutExporter,
@@ -111,7 +111,7 @@ struct PreviewPadSection: View {
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("Every group goes back to the preset's own positions and sizes. The preset, colours and picture mode you picked are untouched.")
+            Text("Every group goes back to the preset's positions and sizes. Your preset, colours and picture mode stay.")
         }
     }
 

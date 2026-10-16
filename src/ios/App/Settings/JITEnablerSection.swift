@@ -55,7 +55,7 @@ struct JITEnablerSection: View {
         } header: {
             SettingsSectionHeader("JIT", icon: "bolt.fill", accent: .core)
         } footer: {
-            Text("JIT lets MuffinEMU run games at full speed, and iOS only allows it with the help of an enabler app. When JIT isn't active, MuffinEMU asks once each time it opens and offers to open the enabler. It doesn't ask during a game. In a custom link, {bundleId} is replaced with MuffinEMU's bundle ID.")
+            Text("JIT makes games run much faster, and iOS only allows it with an enabler app. If JIT is off when you open MuffinEMU, it asks once whether to open your enabler. In a custom link, {bundleId} is replaced with MuffinEMU's app ID.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         .onAppear { active = JITStatus.isActive }

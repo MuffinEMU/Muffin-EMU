@@ -247,13 +247,13 @@ struct OverlaySettingsSection: View {
 
     private var fullText: String {
         """
-        The overlay is a readout MuffinEMU draws over the game. Position picks a corner of the TV screen; Off hides it, and the other rows stay dimmed until a corner is chosen.
+        The overlay shows live numbers over the game. Position picks a corner of the TV screen. Off hides it, and the other rows stay dimmed until you pick a corner.
 
-        FPS is the frame rate the game is producing. CPU, per-core CPU, RAM and VRAM usage measure MuffinEMU itself, not the whole device. Draw calls counts draw commands in the current frame. Renderer details adds a few lines of graphics state.
+        FPS is how many frames per second the game produces. CPU, per-core CPU, RAM and VRAM (graphics memory) usage measure MuffinEMU itself, not the whole device. Draw calls counts drawing commands in each frame. Renderer details adds a few lines of graphics information.
 
-        The panel only appears while at least one of FPS, draw calls, CPU, per-core CPU or RAM is on. VRAM usage and renderer details are extra lines inside it, so on their own they show nothing.
+        The overlay only appears while at least one of FPS, draw calls, CPU, per-core CPU or RAM is on. VRAM usage and renderer details are extra lines in it, so on their own they show nothing.
 
-        Text size and colour change the readout's look. Changes show up straight away.
+        Text size and colour change how it looks, and apply straight away.
         """
     }
 }

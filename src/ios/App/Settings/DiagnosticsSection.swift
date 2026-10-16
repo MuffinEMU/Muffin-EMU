@@ -85,9 +85,9 @@ struct DiagnosticsSection: View {
                 Toggle(isOn: $padOverlayEnabled) {
                     Label {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Show controls diagnostic")
+                            Text("Show button press readout")
                                 .font(.system(size: 15, weight: .semibold, design: .rounded))
-                            Text("A small readout over the game showing whether your button presses are reaching the game, and why not if they aren't.")
+                            Text("Shows a small readout over the game of whether button presses reach it, and why not if they don't.")
                                 .font(.system(size: 12))
                                 .foregroundColor(MuffinTheme.secondaryText)
                         }
@@ -104,7 +104,7 @@ struct DiagnosticsSection: View {
                 // Show launch log is Advanced mode only, so Basic doesn't describe it.
                 advanced ? "The launch log shows boot progress and replaces the intro while it's on." : "The intro plays while a game starts.",
                 title: "Diagnostics",
-                text: "The intro plays during the boot. If you turn on the launch log it takes the screen instead, so you can see timestamped boot steps when a game starts but stays black.")
+                text: "The intro plays when a game starts. If you turn on the launch log, it shows boot steps with timestamps instead. That helps when a game starts but stays black.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }
