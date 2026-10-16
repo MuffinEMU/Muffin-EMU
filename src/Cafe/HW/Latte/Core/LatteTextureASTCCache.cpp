@@ -134,23 +134,31 @@ namespace
 		c.file = f;
 
 		// Index every whole record; a torn tail (the app was killed mid-write) is cut off.
+		// Records are checked against the real file size: seeking past the end of a file succeeds, so a record whose
+		// header made it to disk but whose data did not used to be accepted, and the truncate below then grew the file
+		// to fit it with zeros. All-zero ASTC blocks are invalid and sample as the error colour, so that texture stayed
+		// broken on every later launch.
+		fseeko(f, 0, SEEK_END);
+		const uint64 actualSize = (uint64)ftello(f);
 		uint64 pos = sizeof(FileHeader);
 		fseeko(f, (off_t)pos, SEEK_SET);
 		RecordHeader r{};
-		while (fread(&r, sizeof(r), 1, f) == 1)
+		while (pos + sizeof(r) <= actualSize && fread(&r, sizeof(r), 1, f) == 1)
 		{
 			const uint64 dataPos = pos + sizeof(r);
-			if (r.size == 0 || fseeko(f, (off_t)r.size, SEEK_CUR) != 0)
+			// a record always holds one whole 4x4 ASTC image of its size; anything else is a damaged header
+			const uint64 expectedSize = (uint64)((r.width + 3) / 4) * (uint64)((r.height + 3) / 4) * 16u;
+			if (r.size == 0 || r.size != expectedSize || r.size > actualSize - dataPos)
 				break;
-			if ((uint64)ftello(f) != dataPos + r.size)
+			if (fseeko(f, (off_t)r.size, SEEK_CUR) != 0)
 				break;
 			c.index[ASTCCacheKey{r.hashA, r.hashB, r.width, r.height, r.kind}] = Entry{dataPos, r.size};
 			pos = dataPos + r.size;
 		}
 		c.fileSize = pos;
-		fseeko(f, 0, SEEK_END);
-		if ((uint64)ftello(f) != pos)
+		if (actualSize != pos)
 		{
+			// pos <= actualSize here, so this only ever cuts the damaged tail off
 			fflush(f);
 			ftruncate(fileno(f), (off_t)pos);
 		}
@@ -174,6 +182,21 @@ bool LatteTextureASTCCache_Lookup(const ASTCCacheKey& key, uint8* outputData, si
 	{
 		c.index.erase(it);
 		return false;
+	}
+	// Neither the encoder nor the direct transcoder ever writes an all-zero block (block mode 0 is reserved), so one at the
+	// end of the image means its record was cut short and zero-filled (files written before the size check in Open()).
+	// Encode it again instead; the fresh result is appended and replaces this record from the next launch on.
+	if (outputSize >= 16)
+	{
+		const uint8* lastBlock = outputData + outputSize - 16;
+		bool allZero = true;
+		for (size_t i = 0; i < 16 && allZero; i++)
+			allZero = lastBlock[i] == 0;
+		if (allZero)
+		{
+			c.index.erase(it);
+			return false;
+		}
 	}
 	return true;
 }
