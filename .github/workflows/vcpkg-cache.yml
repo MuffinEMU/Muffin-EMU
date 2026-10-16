@@ -1,0 +1,124 @@
+name: Warm the vcpkg cache
+
+# Builds the core's third-party libraries (vcpkg, arm64-ios) on main and saves vcpkg's binary cache
+# under main's ref, where every pull request can restore it.
+#
+# Why this exists: about eight of the thirteen minutes of a fresh core build are vcpkg compiling
+# ~90 ports. build-ios-app.yml saves that cache only from a run that compiled a core, and a build of
+# main almost never does (it adopts the core its pull request already compiled). A cache saved by a
+# pull request is visible to that pull request only, so with nothing saved on main every pull request
+# that compiled a core started from an empty vcpkg cache and stored its own 130 MB copy.
+#
+# It compiles no Cemu code and publishes nothing: it runs the core's configure step
+# (ci/build-core.sh --configure-only, the exact flags and toolchain of the real build, so vcpkg
+# computes the same ABI hashes) and saves .vcpkg-archives under the key from ci/vcpkg-cache-key.sh.
+# When that key is already in the cache it stops after the lookup.
+#
+# Triggers: a change on main to anything in the key, a weekly run (a new runner image means a new
+# Xcode, which changes the key), and by hand.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'vcpkg.json'
+      - 'triplets/**'
+      - 'dependencies/vcpkg'
+      - 'dependencies/vcpkg_overlay_ports/**'
+      - 'dependencies/vcpkg_overlay_ports_mac/**'
+      - 'ci/build-core.sh'
+      - 'ci/core-cache-key.sh'
+      - 'ci/vcpkg-cache-key.sh'
+      - '.github/workflows/vcpkg-cache.yml'
+  schedule:
+    - cron: '41 4 * * 1'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vcpkg-cache
+  cancel-in-progress: false
+
+env:
+  VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-archives,readwrite"
+
+jobs:
+  warm:
+    # Saved anywhere but main, the cache would be visible to that branch only, which is the problem
+    # this workflow exists to fix.
+    if: github.ref == 'refs/heads/main'
+    # The image build-ios-app.yml compiles the core on: a different toolchain is a different key.
+    runs-on: xcode-27
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Select full Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          xcodebuild -version
+
+      - name: Compute the cache key
+        id: vcpkg
+        run: |
+          set -eo pipefail
+          ./ci/vcpkg-cache-key.sh | tee -a "$GITHUB_OUTPUT"
+
+      - name: Is it already cached?
+        id: lookup
+        uses: actions/cache/restore@v4
+        with:
+          path: .vcpkg-archives
+          key: ${{ steps.vcpkg.outputs.key }}
+          lookup-only: true
+
+      - name: Check out the submodules
+        if: steps.lookup.outputs.cache-hit != 'true'
+        run: |
+          set -eo pipefail
+          git submodule sync --recursive
+          git -c protocol.version=2 submodule update --init --force --recursive
+
+      - name: Install ninja if the image lacks it
+        if: steps.lookup.outputs.cache-hit != 'true'
+        run: command -v ninja >/dev/null || brew install ninja
+
+      # Whatever an earlier key of the same vcpkg and toolchain already built: vcpkg reuses each port
+      # whose ABI hash is unchanged and builds only the rest.
+      - name: Restore the nearest earlier cache
+        if: steps.lookup.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: .vcpkg-archives
+          key: ${{ steps.vcpkg.outputs.key }}
+          restore-keys: |
+            ${{ steps.vcpkg.outputs.prefix }}
+
+      - name: Build the dependencies (the core's configure step)
+        if: steps.lookup.outputs.cache-hit != 'true'
+        run: ./ci/build-core.sh --configure-only
+
+      # Not always(): a configure that failed left a partial set, and a partial set saved under this
+      # key would be restored as a hit by every later run and never completed.
+      - name: Save the cache
+        if: steps.lookup.outputs.cache-hit != 'true' && hashFiles('build-ios/vcpkg-deps-complete') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: .vcpkg-archives
+          key: ${{ steps.vcpkg.outputs.key }}
+
+      - name: Upload the logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vcpkg-cache-logs
+          path: |
+            configure.log
+            build-ios/vcpkg-manifest-install.log
+            build-ios/**/*.log
+          if-no-files-found: ignore
+          retention-days: 14
