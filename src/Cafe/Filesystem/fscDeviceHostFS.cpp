@@ -195,13 +195,18 @@ bool FSCVirtualFile_Host::fscDirNext(FSCDirEntry* dirEntry)
 	if (m_type != FSC_TYPE_DIRECTORY)
 		return false;
 
+	// Every filesystem call here uses the error_code overloads. The throwing ones end the process from the IOSU
+	// thread when the host folder changes under the game: a save folder that was removed or renamed between
+	// FSOpenDir and FSReadDir, a file deleted mid-listing, or an entry whose size cannot be read.
+	std::error_code ec;
 	if (!m_dirIterator)
 	{
 		// init iterator on first iteration attempt
-		m_dirIterator.reset(new fs::directory_iterator(*m_path));
-		if (!m_dirIterator)
+		m_dirIterator.reset(new fs::directory_iterator(*m_path, ec));
+		if (ec)
 		{
-			cemuLog_log(LogType::Force, "Failed to iterate directory: {}", _pathToUtf8(*m_path));
+			cemuLog_log(LogType::Force, "Failed to iterate directory: {} ({})", _pathToUtf8(*m_path), ec.message());
+			*m_dirIterator = fs::directory_iterator(); // reads as the end of the listing from now on
 			return false;
 		}
 	}
@@ -214,7 +219,7 @@ bool FSCVirtualFile_Host::fscDirNext(FSCDirEntry* dirEntry)
 	if (fileName.size() >= sizeof(dirEntry->path) - 1)
 		fileName.resize(sizeof(dirEntry->path) - 1);
 	strncpy(dirEntry->path, fileName.data(), sizeof(dirEntry->path));
-	if (entry.is_directory())
+	if (entry.is_directory(ec))
 	{
 		dirEntry->isDirectory = true;
 		dirEntry->isFile = false;
@@ -224,10 +229,17 @@ bool FSCVirtualFile_Host::fscDirNext(FSCDirEntry* dirEntry)
 	{
 		dirEntry->isDirectory = false;
 		dirEntry->isFile = true;
-		dirEntry->fileSize = entry.file_size();
+		const uintmax_t size = entry.file_size(ec);
+		dirEntry->fileSize = ec ? 0 : (uint32)size;
 	}
 
-	(*m_dirIterator)++;
+	m_dirIterator->increment(ec);
+	if (ec)
+	{
+		// the entry above is still reported; the listing ends after it
+		cemuLog_log(LogType::Force, "Directory listing of {} ended early: {}", _pathToUtf8(*m_path), ec.message());
+		*m_dirIterator = fs::directory_iterator();
+	}
 	return true;
 }
 
@@ -307,14 +319,14 @@ public:
 	bool fscDeviceCreateDir(std::string_view path, void* ctx, sint32* fscStatus) override
 	{
 		fs::path dirPath = _utf8ToPath(path);
-		if (fs::exists(dirPath))
+		std::error_code ec;
+		if (fs::exists(dirPath, ec))
 		{
-			if (!fs::is_directory(dirPath))
+			if (!fs::is_directory(dirPath, ec))
 				cemuLog_log(LogType::Force, "CreateDir: {} already exists but is not a directory", path);
 			*fscStatus = FSC_STATUS_ALREADY_EXISTS;
 			return false;
 		}
-		std::error_code ec;
 		bool r = fs::create_directories(dirPath, ec);
 		if (!r)
 			cemuLog_log(LogType::Force, "CreateDir: Failed to create {}", path);

@@ -240,9 +240,9 @@ bool fsc_lookupPath(const char* path, std::string& devicePathOut, fscDeviceC** f
 {
 	FSCPath parsedPath(path);
 	fsc_ensureRootNodes();
-	FSCMountPathNode* nodeParent = s_fscRootNodePerPrio[priority];
 	size_t i;
 	fscEnter();
+	FSCMountPathNode* nodeParent = s_fscRootNodePerPrio[priority]; // read under the lock, like every other use of the roots
 	for (i = 0; i < parsedPath.GetNodeCount(); i++)
 	{
 		// search for subdirectory
@@ -293,8 +293,8 @@ FSCMountPathNode* fsc_lookupPathVirtualNode(const char* path, sint32 priority)
 {
 	FSCPath parsedPath(path);
 	fsc_ensureRootNodes();
-	FSCMountPathNode* nodeCurrentDir = s_fscRootNodePerPrio[priority];
 	fscEnter();
+	FSCMountPathNode* nodeCurrentDir = s_fscRootNodePerPrio[priority];
 	for (size_t i = 0; i < parsedPath.GetNodeCount(); i++)
 	{
 		// search for subdirectory
@@ -780,7 +780,12 @@ bool fsc_doesDirectoryExist(const char* path, sint32 maxPriority)
 }
 
 // initialize Cemu's virtual filesystem
+// Runs once, when the emulator starts. By then the iOS library screen may already have created the roots
+// (fsc_ensureRootNodes) and can be mounting a title on another thread to read its meta files: deleting the
+// roots here, as fsc_reset() does, freed nodes that thread was still walking. The roots are only created when
+// missing, and under the lock. The temporary mounts of the library screen are always paired with an unmount,
+// so nothing stale is kept.
 void fsc_init()
 {
-	fsc_reset();
+	fsc_ensureRootNodes();
 }
