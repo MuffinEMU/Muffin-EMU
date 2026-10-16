@@ -61,6 +61,9 @@
 
 static bool s_dualMapJITEnabled = false;
 static PPCRecompilerThreadPool s_threadPool;
+// Set once the TXM debugger has been told to detach (once per process). From then on nothing can prepare JIT pages
+// again, so the arena's pages are no longer handed back to the kernel (see DualMapArena::reset).
+static std::atomic<bool> s_jitDebuggerDetached{false};
 
 bool PPCRecompiler_isDualMapJITEnabled()
 {
@@ -194,8 +197,10 @@ bool PPCRecompiler_readTXMEnvVar()
 static void PPCRecompiler_finishJitMappingSession()
 {
     // Detaching the TXM debugger is once-per-process (both call sites end a mapping session), so latch it.
-    static std::atomic<bool> s_txmDetached{false};
-    if (PPCRecompiler_readTXMEnvVar() && !s_txmDetached.exchange(true))
+    // Checked first: after the detach no debugger is attached any more, and asking again would only log that.
+    if (s_jitDebuggerDetached.load())
+        return;
+    if (PPCRecompiler_readTXMEnvVar() && !s_jitDebuggerDetached.exchange(true))
     {
         cemuLog_log(LogType::Force, "Recompiler: detaching TXM debugger after JIT mapping");
         JIT26Detach();
@@ -402,7 +407,12 @@ struct DualMapArena
         // generated code branches within it by address. Only called with no live code (init on a fresh
         // mapping, and shutdown after the PPC core threads have been joined). MADV_FREE lets the kernel zero
         // pages at any time, so it must never run while a thread can still execute arena code.
-        if (releasePages && region.rwAlias && region.size)
+        // Not once the TXM debugger has detached (shutdown of the first and every later title on such a device): the
+        // debugger made each page executable by writing to it (StikDebug's prepare step), it can't do that again, and
+        // the arena is reused by the next title. A page the kernel takes back and zero-fills is not known to stay
+        // executable, so the pages keep the state they had while the title ran. Before the detach (init) and on every
+        // other device this is unchanged.
+        if (releasePages && region.rwAlias && region.size && !s_jitDebuggerDetached.load())
             madvise(region.rwAlias, region.size, MADV_FREE);
 #else
         (void)releasePages;
@@ -1509,6 +1519,13 @@ bool PPCRecompiler_Init26() {
     if (!s_dualMapJITEnabled)
         return true;
 
+    // The arena and the entry/exit code from an earlier title in this process are still mapped (they live as long as
+    // the process): reuse them. This comes before the debugger check below because on a TXM device the debugger
+    // detaches once the first title has mapped its memory, and nothing new has to be mapped now. Before, every title
+    // after the first one (including a game started from the Wii U Menu) ran in the interpreter there.
+    if (s_jitArena.region.rxAlias)
+        return PPCRecompiler_enterRecompilerCode != nullptr;
+
 #if defined(__APPLE__) && defined(__aarch64__)
     // On a TXM device the arena can only be mapped through a debugger, whatever the CPU mode says.
     // With none attached now (a JIT enabler that never attached, or one that already detached),
@@ -1522,10 +1539,7 @@ bool PPCRecompiler_Init26() {
         return false;
     }
 #endif
-    
-    if (s_jitArena.region.rxAlias)
-        return true;
-    
+
     try
     {
         // Try progressively smaller arenas before falling back to the interpreter. init() reports
@@ -1669,7 +1683,8 @@ void PPCRecompiler_init()
     {
         if (appleOsMajorVersion >= 26)
         {
-            cemuLog_log(LogType::Force, PPCRecompiler_readTXMEnvVar()
+            // the environment only: PPCRecompiler_readTXMEnvVar() also asks for a debugger, and logs when there is none
+            cemuLog_log(LogType::Force, PPCRecompiler_readBoolEnvVar("HAS_TXM") == 1
                         ? "Recompiler: using iOS 26+ dual-mapped JIT via TXM/vm_remap"
                         : "Recompiler: using iOS 26+ dual-mapped JIT via vm_remap");
         }
