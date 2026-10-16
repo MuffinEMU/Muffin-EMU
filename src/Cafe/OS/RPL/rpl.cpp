@@ -1701,6 +1701,7 @@ void RPLLoader_FlushMemory(RPLModule* rpl)
 {
 	// invalidate recompiler cache
 	PPCRecompiler_invalidateRange(rpl->regionMappingBase_text.GetMPTR(), rpl->regionMappingBase_text.GetMPTR() + rpl->regionSize_text);
+    PPCInterpreter_invalidateBlockCacheRange(rpl->regionMappingBase_text.GetMPTR(), rpl->regionSize_text);
 	rpl->heapTrampolineArea.forEachBlock([](void* mem, uint32 size)
 	{
 		MEMPTR<void> memVirtual = mem;
