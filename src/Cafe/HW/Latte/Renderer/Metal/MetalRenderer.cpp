@@ -1592,6 +1592,33 @@ void MetalRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, s
     //}
 }
 
+// Points a render pass attachment at one level and slice of a texture. A 3D texture has no array slices: the core's
+// slice index is a depth plane there, which Metal takes through depthPlane with the slice left at 0. Returns false
+// when that level or slice does not exist in the texture, since a render pass that reaches outside its attachment is
+// undefined on the GPU (and on a tile-based GPU usually a fault).
+static bool SetAttachmentLevelAndSlice(MTL::RenderPassAttachmentDescriptor* attachment, MTL::Texture* texture, sint32 sliceIndex, sint32 mipIndex)
+{
+    if (!texture || sliceIndex < 0 || mipIndex < 0 || (NS::UInteger)mipIndex >= texture->mipmapLevelCount())
+        return false;
+    attachment->setLevel(mipIndex);
+    if (texture->textureType() == MTL::TextureType3D)
+    {
+        const NS::UInteger planes = std::max<NS::UInteger>(1, texture->depth() >> mipIndex);
+        if ((NS::UInteger)sliceIndex >= planes)
+            return false;
+        attachment->setSlice(0);
+        attachment->setDepthPlane(sliceIndex);
+        return true;
+    }
+    NS::UInteger slices = std::max<NS::UInteger>(1, texture->arrayLength());
+    if (texture->textureType() == MTL::TextureTypeCube || texture->textureType() == MTL::TextureTypeCubeArray)
+        slices *= 6;
+    if ((NS::UInteger)sliceIndex >= slices)
+        return false;
+    attachment->setSlice(sliceIndex);
+    return true;
+}
+
 void MetalRenderer::texture_clearColorSlice(LatteTexture* hostTexture, sint32 sliceIndex, sint32 mipIndex, float r, float g, float b, float a)
 {
     if (!FormatIsRenderable(hostTexture->format))
@@ -1624,8 +1651,11 @@ void MetalRenderer::texture_clearDepthSlice(LatteTexture* hostTexture, uint32 sl
         depthAttachment->setClearDepth(depthValue);
         depthAttachment->setLoadAction(MTL::LoadActionClear);
         depthAttachment->setStoreAction(MTL::StoreActionStore);
-        depthAttachment->setSlice(sliceIndex);
-        depthAttachment->setLevel(mipIndex);
+        if (!SetAttachmentLevelAndSlice(depthAttachment, mtlTexture, (sint32)sliceIndex, mipIndex))
+        {
+            cemuLog_logOnce(LogType::Force, "Metal: skipped a depth clear of slice {} mip {}, which the texture does not have", sliceIndex, mipIndex);
+            return;
+        }
     }
     if (clearStencil)
     {
@@ -1634,8 +1664,11 @@ void MetalRenderer::texture_clearDepthSlice(LatteTexture* hostTexture, uint32 sl
         stencilAttachment->setClearStencil(stencilValue);
         stencilAttachment->setLoadAction(MTL::LoadActionClear);
         stencilAttachment->setStoreAction(MTL::StoreActionStore);
-        stencilAttachment->setSlice(sliceIndex);
-        stencilAttachment->setLevel(mipIndex);
+        if (!SetAttachmentLevelAndSlice(stencilAttachment, mtlTexture, (sint32)sliceIndex, mipIndex))
+        {
+            cemuLog_logOnce(LogType::Force, "Metal: skipped a stencil clear of slice {} mip {}, which the texture does not have", sliceIndex, mipIndex);
+            return;
+        }
     }
 
     GetTemporaryRenderCommandEncoder(renderPassDescriptor);
@@ -2101,8 +2134,8 @@ void MetalRenderer::surfaceCopy_copySurfaceWithFormatConversion(LatteTexture* so
         const auto& formatInfo = GetMtlPixelFormatInfo(destinationTexture->format, true);
         auto depthAttachment = renderPassDescriptor->depthAttachment();
         depthAttachment->setTexture(destinationMtl);
-        depthAttachment->setLevel(dstMip);
-        depthAttachment->setSlice(dstSlice);
+        if (!SetAttachmentLevelAndSlice(depthAttachment, destinationMtl, dstSlice, dstMip))
+            return;
         depthAttachment->setLoadAction(MTL::LoadActionLoad);
         depthAttachment->setStoreAction(MTL::StoreActionStore);
         
@@ -2110,8 +2143,7 @@ void MetalRenderer::surfaceCopy_copySurfaceWithFormatConversion(LatteTexture* so
         {
             auto stencilAttachment = renderPassDescriptor->stencilAttachment();
             stencilAttachment->setTexture(destinationMtl);
-            stencilAttachment->setLevel(dstMip);
-            stencilAttachment->setSlice(dstSlice);
+            SetAttachmentLevelAndSlice(stencilAttachment, destinationMtl, dstSlice, dstMip); // same texture, already checked
             stencilAttachment->setLoadAction(MTL::LoadActionLoad);
             stencilAttachment->setStoreAction(MTL::StoreActionStore);
         }
@@ -2133,8 +2165,8 @@ void MetalRenderer::surfaceCopy_copySurfaceWithFormatConversion(LatteTexture* so
         const MTL::PixelFormat pixelFormat = destinationMtl->pixelFormat();
         auto colorAttachment = renderPassDescriptor->colorAttachments()->object(0);
         colorAttachment->setTexture(destinationMtl);
-        colorAttachment->setLevel(dstMip);
-        colorAttachment->setSlice(dstSlice);
+        if (!SetAttachmentLevelAndSlice(colorAttachment, destinationMtl, dstSlice, dstMip))
+            return;
         colorAttachment->setLoadAction(MTL::LoadActionLoad);
         colorAttachment->setStoreAction(MTL::StoreActionStore);
         
@@ -5165,8 +5197,11 @@ void MetalRenderer::ClearColorTextureInternal(MTL::Texture* mtlTexture, sint32 s
     colorAttachment->setClearColor(MTL::ClearColor(r, g, b, a));
     colorAttachment->setLoadAction(MTL::LoadActionClear);
     colorAttachment->setStoreAction(MTL::StoreActionStore);
-    colorAttachment->setSlice(sliceIndex);
-    colorAttachment->setLevel(mipIndex);
+    if (!SetAttachmentLevelAndSlice(colorAttachment, mtlTexture, sliceIndex, mipIndex))
+    {
+        cemuLog_logOnce(LogType::Force, "Metal: skipped a colour clear of slice {} mip {}, which the texture does not have", sliceIndex, mipIndex);
+        return;
+    }
 
     GetTemporaryRenderCommandEncoder(renderPassDescriptor);
     EndEncoding();
