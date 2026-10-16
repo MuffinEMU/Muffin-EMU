@@ -2466,6 +2466,10 @@ static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContex
 				src->add(")");
     				src->addFmt(")");
     				src->addFmt(", uint(cubeMapArrayIndex{})", texInstruction->textureFetch.textureIndex); // cubemap index
+    				// compare value: x/y are the face coordinates and z the face id, so w is the only component left for it.
+    				// depthcube_array::sample_compare takes it after the array index; without it the shader does not compile.
+    				src->add(", ");
+    				_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 3, LATTE_DECOMPILER_DTYPE_FLOAT);
     			}
     			else if (texDim == Latte::E_DIM::DIM_1D)
     			{
