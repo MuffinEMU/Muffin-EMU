@@ -2813,15 +2813,11 @@ static void _emitTEXGetCompTexLodCode(LatteDecompilerShaderContext* shaderContex
 static void _emitTEXSetCubemapIndexCode(LatteDecompilerShaderContext* shaderContext, LatteDecompilerTEXInstruction* texInstruction)
 {
 	StringBuf* src = shaderContext->shaderSource;
-	src->addFmt("cubeMapArrayIndex{}", texInstruction->textureFetch.textureIndex);
-	const char* resultElemTable[4] = {"x","y","z","w"};
-
-	if (shaderContext->typeTracker.defaultDataType == LATTE_DECOMPILER_DTYPE_SIGNED_INT)
-		src->addFmt(" = as_type<float>(R{}i.{});" _CRLF, texInstruction->srcGpr, resultElemTable[texInstruction->textureFetch.srcSel[0]]);
-	else if (shaderContext->typeTracker.defaultDataType == LATTE_DECOMPILER_DTYPE_FLOAT)
-		src->addFmt(" = R{}f.{};" _CRLF, texInstruction->srcGpr, resultElemTable[texInstruction->textureFetch.srcSel[0]]);
-	else
-		cemu_assert_unimplemented();
+	src->addFmt("cubeMapArrayIndex{} = ", texInstruction->textureFetch.textureIndex);
+	// Read through the shared helper rather than spelling out "R{n}i": that name does not exist when the shader keeps its
+	// registers in an array (any relative GPR write), and a constant selector (4/5) would index past a 4-entry swizzle table.
+	_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 0, LATTE_DECOMPILER_DTYPE_FLOAT);
+	src->add(";" _CRLF);
 }
 
 static void _emitTEXGetGradientsHV(LatteDecompilerShaderContext* shaderContext, LatteDecompilerTEXInstruction* texInstruction)
