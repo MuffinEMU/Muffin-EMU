@@ -44,6 +44,9 @@ enum MigrationArchive {
     private static let maxMetaBytes: Int64 = 16 << 20
     /// Two seconds either way counts as the same moment; file systems round modification times differently.
     private static let timeTolerance: Int64 = 2
+    /// Modification times in a manifest are seconds since 1970; anything this far either side
+    /// (about 35,000 years) can only come from a damaged file.
+    private static let maxModifiedMagnitude: Int64 = 1 << 40
     private static let gameExtensions: Set<String> = ["rpx", "wux", "wud", "wua", "wup", "iso"]
 
     enum MigrationError: LocalizedError {
@@ -368,9 +371,13 @@ enum MigrationArchive {
         guard trailer.suffix(8) == tailMagic else { throw MigrationError.damaged("the end of the file is missing") }
         let manifestOffset = readUInt64(trailer, 0)
         let manifestLength = readUInt64(trailer, 8)
+        // Compared by subtraction, never by adding two values read from the file: a damaged trailer
+        // can hold any 64-bit number, and an addition that overflows traps and closes the app.
+        let manifestLimit = size - UInt64(trailerSize)
         guard manifestLength > 0, manifestLength <= maxManifestBytes,
               manifestOffset >= UInt64(headMagic.count),
-              manifestOffset + manifestLength <= size - UInt64(trailerSize) else {
+              manifestOffset <= manifestLimit,
+              manifestLength <= manifestLimit - manifestOffset else {
             throw MigrationError.damaged("the file list position")
         }
 
@@ -382,9 +389,14 @@ enum MigrationArchive {
 
         for file in manifest.files {
             let isMeta = file.path == settingsPath || file.path == statePath
+            // Same reason as above: offset + size from a damaged list could overflow, so the end is
+            // checked as "size fits in what is left after offset".
             guard isMeta || destinationParts(for: file.path) != nil,
                   file.size >= 0, file.offset >= Int64(headMagic.count),
-                  UInt64(file.offset + file.size) <= manifestOffset else {
+                  UInt64(file.offset) <= manifestOffset,
+                  UInt64(file.size) <= manifestOffset - UInt64(file.offset),
+                  // analyse() does arithmetic on the time; a value no file system writes is damage.
+                  file.modified > -maxModifiedMagnitude, file.modified < maxModifiedMagnitude else {
                 throw MigrationError.damaged("an entry in the file list: \(file.path)")
             }
         }
