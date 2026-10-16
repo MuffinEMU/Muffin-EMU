@@ -454,15 +454,117 @@ struct PPCInvalidationRange
 {
     MPTR startAddress;
     uint32 size;
-    PPCInvalidationRange(MPTR _startAddress, uint32 _size) : startAddress(_startAddress), size(_size) {}
+    uint64 sequence; // PPCRecompilerState.invalidationSequence right after this range was added
+    PPCInvalidationRange(MPTR _startAddress, uint32 _size, uint64 _sequence) : startAddress(_startAddress), size(_size), sequence(_sequence) {}
 };
+
+// Upper bound on translations running at the same time (compile workers, plus the synchronous path). Far above the
+// worker count; a translation that finds no free slot is still handled correctly, only more cautiously.
+constexpr size_t PPCREC_MAX_TRACKED_COMPILES = 16;
 
 struct
 {
     FSpinlock             recompilerSpinlock;
     std::queue<MPTR>      targetQueue;
+    // Code ranges invalidated while a translation was running. Upstream has one compile thread and clears this list
+    // after every translation; with several workers that would let one worker's finished translation erase a range
+    // another worker still has to check, and the other worker would then publish code built from the old bytes.
+    // So every translation records the sequence number it started at, checks only ranges added after that, and a
+    // range is dropped once no translation that started before it is still running.
     std::vector<PPCInvalidationRange> invalidationRanges;
+    uint64                invalidationSequence = 0;
+    uint64                compileStartSequence[PPCREC_MAX_TRACKED_COMPILES] = {}; // start sequence + 1, 0 = free slot
+    uint32                compilesInFlight = 0; // including untracked ones
+    uint64                lostRangeSequence = 0; // sequence of the last range that could not be stored (out of memory)
 } PPCRecompilerState;
+
+static bool PPCRecompiler_rangesOverlap(MPTR startA, MPTR endA, MPTR startB, MPTR endB)
+{
+    return startA < endB && endA > startB;
+}
+
+// One translation, from before the guest code is first read until it has been published or dropped.
+class PPCRecompilerCompileTracker
+{
+public:
+    PPCRecompilerCompileTracker()
+    {
+        PPCRecompilerState.recompilerSpinlock.lock();
+        m_startSequence = PPCRecompilerState.invalidationSequence;
+        for (size_t i = 0; i < PPCREC_MAX_TRACKED_COMPILES; i++)
+        {
+            if (PPCRecompilerState.compileStartSequence[i] == 0)
+            {
+                PPCRecompilerState.compileStartSequence[i] = m_startSequence + 1;
+                m_slot = (sint32)i;
+                break;
+            }
+        }
+        PPCRecompilerState.compilesInFlight++;
+        PPCRecompilerState.recompilerSpinlock.unlock();
+    }
+
+    ~PPCRecompilerCompileTracker()
+    {
+        PPCRecompilerState.recompilerSpinlock.lock();
+        if (m_slot >= 0)
+            PPCRecompilerState.compileStartSequence[m_slot] = 0;
+        PPCRecompilerState.compilesInFlight--;
+        // drop every range that no running translation still has to check
+        auto& ranges = PPCRecompilerState.invalidationRanges;
+        if (PPCRecompilerState.compilesInFlight == 0)
+        {
+            ranges.clear();
+        }
+        else
+        {
+            uint64 oldestStart = std::numeric_limits<uint64>::max();
+            for (uint64 v : PPCRecompilerState.compileStartSequence)
+                if (v != 0)
+                    oldestStart = std::min(oldestStart, v - 1);
+            // an untracked translation (no free slot) keeps everything until the last one ends
+            if (oldestStart != std::numeric_limits<uint64>::max() && PPCRecompilerState.compilesInFlight == trackedCount())
+                std::erase_if(ranges, [oldestStart](const PPCInvalidationRange& r) { return r.sequence <= oldestStart; });
+        }
+        PPCRecompilerState.recompilerSpinlock.unlock();
+    }
+
+    PPCRecompilerCompileTracker(const PPCRecompilerCompileTracker&) = delete;
+    PPCRecompilerCompileTracker& operator=(const PPCRecompilerCompileTracker&) = delete;
+
+    // Call with the spinlock held. True if code inside the translated ranges was invalidated after this translation began.
+    bool rangesWereInvalidated(const PPCRecFunction_t* func) const
+    {
+        cemu_assert_debug(PPCRecompilerState.recompilerSpinlock.is_locked());
+        if (PPCRecompilerState.lostRangeSequence > m_startSequence)
+            return true; // a range invalidated since this translation began could not be recorded
+        for (const auto& invRange : PPCRecompilerState.invalidationRanges)
+        {
+            if (invRange.sequence <= m_startSequence)
+                continue; // invalidated before this translation read the code
+            const MPTR rStartAddr = invRange.startAddress;
+            const MPTR rEndAddr = rStartAddr + invRange.size;
+            for (const auto& recFuncRange : func->list_ranges)
+            {
+                if (PPCRecompiler_rangesOverlap(recFuncRange.ppcAddress, recFuncRange.ppcAddress + recFuncRange.ppcSize, rStartAddr, rEndAddr))
+                    return true;
+            }
+        }
+        return false;
+    }
+
+private:
+    static uint32 trackedCount()
+    {
+        uint32 n = 0;
+        for (uint64 v : PPCRecompilerState.compileStartSequence)
+            n += v != 0 ? 1 : 0;
+        return n;
+    }
+
+    uint64 m_startSequence = 0;
+    sint32 m_slot = -1;
+};
 
 
 RangeStore<PPCRecFunction_t*, uint32, 7703, 0x2000> rangeStore_ppcRanges;
@@ -698,11 +800,6 @@ void PPCRecompiler_commitDualMapCode(PPCRecFunction_t* func)
     PPCRecompiler_reprotectAsExecutable(func->x86Code, func->x86Size);
 }
 
-static bool PPCRecompiler_rangesOverlap(MPTR startA, MPTR endA, MPTR startB, MPTR endB)
-{
-    return startA < endB && endA > startB;
-}
-
 static void PPCRecompiler_resetVisitedTableRange(uint32 startAddress, uint32 endAddress)
 {
     cemu_assert_debug(PPCRecompilerState.recompilerSpinlock.is_locked());
@@ -920,7 +1017,7 @@ bool PPCRecompiler_ApplyIMLPasses(ppcImlGenContext_t& ppcImlGenContext)
 	return true;
 }
 
-bool PPCRecompiler_makeRecompiledFunctionActive(uint32 initialEntryPoint, PPCFunctionBoundaryTracker::PPCRange_t& range, PPCRecFunction_t* ppcRecFunc, std::vector<std::pair<MPTR, uint32>>& entryPoints)
+bool PPCRecompiler_makeRecompiledFunctionActive(uint32 initialEntryPoint, PPCFunctionBoundaryTracker::PPCRange_t& range, PPCRecFunction_t* ppcRecFunc, std::vector<std::pair<MPTR, uint32>>& entryPoints, const PPCRecompilerCompileTracker& compileTracker)
 {
     // update jump table
     PPCRecompilerState.recompilerSpinlock.lock();
@@ -935,21 +1032,8 @@ bool PPCRecompiler_makeRecompiledFunctionActive(uint32 initialEntryPoint, PPCFun
     }
     
     // check if the current range got invalidated during the time it took to recompile it
-    bool isInvalidated = false;
-    for (auto& invRange : PPCRecompilerState.invalidationRanges)
-    {
-        MPTR rStartAddr = invRange.startAddress;
-        MPTR rEndAddr = rStartAddr + invRange.size;
-        for (auto& recFuncRange : ppcRecFunc->list_ranges)
-        {
-            if (PPCRecompiler_rangesOverlap(recFuncRange.ppcAddress, recFuncRange.ppcAddress + recFuncRange.ppcSize, rStartAddr, rEndAddr))
-            {
-                isInvalidated = true;
-                break;
-            }
-        }
-    }
-    PPCRecompilerState.invalidationRanges.clear();
+    // (the list is pruned by PPCRecompilerCompileTracker once no running translation needs a range any more)
+    const bool isInvalidated = compileTracker.rangesWereInvalidated(ppcRecFunc);
     if (isInvalidated)
     {
         PPCRecompiler_resetVisitedMarkersForFunction(ppcRecFunc);
@@ -1017,6 +1101,9 @@ static void PPCRecompiler_recompileAtAddressImpl(uint32 address)
 {
 	cemu_assert_debug(ppcRecompilerInstanceData->ppcRecompilerDirectJumpTable[address / 4] == PPCRecompiler_leaveRecompilerCode_visited);
 
+	// registered before the boundary tracker reads any guest code, so every invalidation after this point is seen
+	const PPCRecompilerCompileTracker compileTracker;
+
 	// get size
 	PPCFunctionBoundaryTracker funcBoundaries;
 	funcBoundaries.trackStartPoint(address);
@@ -1062,7 +1149,8 @@ static void PPCRecompiler_recompileAtAddressImpl(uint32 address)
 	}
 	try
 	{
-		PPCRecompiler_makeRecompiledFunctionActive(address, range, func, functionEntryPoints);
+		if (!PPCRecompiler_makeRecompiledFunctionActive(address, range, func, functionEntryPoints, compileTracker))
+			return; // invalidated while it was being translated, or replaced: nothing was published, so it is not counted
 	}
 	catch (const std::bad_alloc&)
 	{
@@ -1299,8 +1387,20 @@ void PPCRecompiler_invalidateRangeInternal(uint32 startAddr, uint32 endAddr)
 		blockStart = blockEnd;
 	}
 
-	// add entry to invalidation queue
-	PPCRecompilerState.invalidationRanges.emplace_back(startAddr, endAddr-startAddr);
+	// add entry to invalidation queue; only translations that are running now can have read the old code
+	if (PPCRecompilerState.compilesInFlight != 0)
+	{
+		PPCRecompilerState.invalidationSequence++;
+		try
+		{
+			PPCRecompilerState.invalidationRanges.emplace_back(startAddr, endAddr - startAddr, PPCRecompilerState.invalidationSequence);
+		}
+		catch (const std::bad_alloc&)
+		{
+			// can't remember the range (and must not leave the spinlock held): drop every translation now running instead
+			PPCRecompilerState.lostRangeSequence = PPCRecompilerState.invalidationSequence;
+		}
+	}
 
 
 	while (rangeStore_ppcRanges.findFirstRange(startAddr, endAddr, rStart, rEnd, rFunc) )
