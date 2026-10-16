@@ -35,6 +35,15 @@ GCControllerDevice::GCControllerDevice(size_t player_index,
     // to calibrate away and a held button at boot would otherwise stay dead for the session.
     m_is_calibrated = true;
     m_default_state = ControllerState{};
+
+    // No stick deadzone in the core. Both sources already have one: the on-screen pads send values that
+    // went through the player's own deadzone, curve and fine-tuning (SharedStick in the app), and the
+    // GameController framework deadzones a physical controller's thumbsticks itself. The core default
+    // (0.25, meant for raw desktop controllers with a settings page to change it) was applied on top,
+    // so nothing moved until about 30% of the way out whatever the deadzone slider said. Triggers keep
+    // the default: the GamePad's ZL/ZR are digital here and never read the trigger axis.
+    m_settings.axis.deadzone = 0.0f;
+    m_settings.rotation.deadzone = 0.0f;
 }
 
 GCControllerDevice::~GCControllerDevice()
