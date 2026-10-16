@@ -552,7 +552,12 @@ namespace nsyshid
 
 	Device::ReadResult SkylanderPortalDevice::Read(ReadMessage* message)
 	{
-		memcpy(message->data, g_skyportal.GetStatus().data(), message->length);
+		// the status is 64 bytes; a longer read used to copy past it
+		const auto status = g_skyportal.GetStatus();
+		const uint32 copyLength = std::min<uint32>(message->length, (uint32)status.size());
+		memcpy(message->data, status.data(), copyLength);
+		if (message->length > copyLength)
+			memset(message->data + copyLength, 0, message->length - copyLength);
 		message->bytesRead = message->length;
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		return Device::ReadResult::Success;
@@ -927,7 +932,8 @@ namespace nsyshid
 
 		replyBuf[0] = 'Q';
 		replyBuf[2] = block;
-		if (skylander.status & 1)
+		// block comes straight from the game's command byte; a figure only has SKY_BLOCK_COUNT blocks
+		if ((skylander.status & 1) && block < SKY_BLOCK_COUNT)
 		{
 			replyBuf[1] = (0x10 | skyNum);
 			memcpy(replyBuf + 3, skylander.data.data() + (16 * block), 16);
@@ -948,7 +954,8 @@ namespace nsyshid
 		replyBuf[0] = 'W';
 		replyBuf[2] = block;
 
-		if (skylander.status & 1)
+		// out-of-range blocks used to write past the end of the figure data
+		if ((skylander.status & 1) && block < SKY_BLOCK_COUNT)
 		{
 			replyBuf[1] = (0x10 | skyNum);
 			memcpy(skylander.data.data() + (block * 16), toWriteBuf, 16);

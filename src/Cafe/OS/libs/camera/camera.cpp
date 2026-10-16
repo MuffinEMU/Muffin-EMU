@@ -246,6 +246,15 @@ namespace camera
 
 	void reset()
 	{
+		// Titles usually don't call CAMExit before they end, so instances from the previous title can still be here.
+		// Left in the tables, an open one would be serviced by the next title's camera alarm, calling the old
+		// title's handler with its old target surfaces
+		std::unique_lock<std::recursive_mutex> _lock(g_mutex_camera);
+		g_activeCameraInstances.clear();
+		std::vector<CameraInstance*> leftoverInstances = g_table_cameraHandles;
+		for (CameraInstance* camInstance : leftoverInstances)
+			delete camInstance; // nullptr entries are fine
+		g_table_cameraHandles.clear();
 		g_cameraCounter = 0;
 	}
 
