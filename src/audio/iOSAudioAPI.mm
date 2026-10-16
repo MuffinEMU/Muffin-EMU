@@ -67,6 +67,9 @@ IOSAudioAPI::IOSAudioAPI(uint32 samplerate,
     [session setPreferredSampleRate:samplerate error:&error];
     [session setPreferredIOBufferDuration:(double)samples_per_block / samplerate error:&error];
     [session setActive:YES error:&error];
+    // What iOS actually granted (it rounds the preferred duration, and other audio can hold it higher).
+    // Refreshed by every render callback; this is only the starting guess for the first prime.
+    m_callbackFrames = (uint32)std::clamp<long>(std::lround(session.IOBufferDuration * samplerate), 0, 8192);
     
     AudioComponentDescription desc{};
     desc.componentType = kAudioUnitType_Output;
@@ -207,9 +210,19 @@ bool IOSAudioAPI::Stop()
     return true;
 }
 
+size_t IOSAudioAPI::TargetQueuedBytes() const
+{
+    const size_t bytesPerFrame = (size_t)m_channels * (m_bitsPerSample / 8);
+    const size_t fromSetting = (size_t)GetTargetQueuedBlocks() * m_bytesPerBlock;
+    const size_t oneCallback = (size_t)m_callbackFrames.load(std::memory_order_relaxed) * bytesPerFrame;
+    // Room for one more block is always left, or the queue could never reach the target.
+    const size_t ceiling = m_buffer.capacity() - m_bytesPerBlock;
+    return std::min(std::max(fromSetting, oneCallback + m_bytesPerBlock), ceiling);
+}
+
 bool IOSAudioAPI::NeedAdditionalBlocks() const
 {
-    return m_buffer.size() < (size_t)GetTargetQueuedBlocks() * m_bytesPerBlock;
+    return m_buffer.size() < TargetQueuedBytes();
 }
 
 bool IOSAudioAPI::FeedBlock(sint16* data)
@@ -251,10 +264,44 @@ OSStatus IOSAudioAPI::RenderCallback(
         return noErr;
     
     auto& outputBuffer = ioData->mBuffers[0];
-    const auto bytesNeeded = std::min<size_t>((size_t)inNumberFrames * self->m_channels * (self->m_bitsPerSample / 8), outputBuffer.mDataByteSize);
+    const size_t bytesPerFrame = (size_t)self->m_channels * (self->m_bitsPerSample / 8);
+    const auto bytesNeeded = std::min<size_t>((size_t)inNumberFrames * bytesPerFrame, outputBuffer.mDataByteSize);
+    self->m_callbackFrames.store(inNumberFrames, std::memory_order_relaxed);
+    const size_t target = self->TargetQueuedBytes();
+    const size_t queued = self->m_buffer.size();
+
+    // Underrun handling. Playing whatever scraps have arrived, padded with silence, turns one late
+    // block into a run of tiny gaps (crackle) until the queue happens to build up again. Instead the
+    // output stays silent until a full target's worth is queued, then plays on from there.
+    if (self->m_priming)
+    {
+        if (queued < target)
+        {
+#if MUFFIN_AUDIT_HOOKS
+            cemu_audit_audio_note_render(self, static_cast<const int16_t*>(outputBuffer.mData), 0,
+                                         (uint32_t)bytesNeeded, (uint32_t)self->m_channels, (uint32_t)self->m_bitsPerSample);
+#endif
+            return noErr; // already zeroed above
+        }
+        self->m_priming = false;
+    }
+
+    // Latency cap. After a hitch (a shader compile, say) the emulator catches up by producing audio
+    // faster than real time, and everything it produces lands on top of the queue. Nothing ever
+    // drains that surplus, so the sound would stay that far behind the picture for the rest of the
+    // session. Past one callback plus kTrimSlackBlocks of surplus, the oldest audio is dropped back
+    // down to the target; this only follows a stall, which was already audible.
+    constexpr size_t kTrimSlackBlocks = 6; // 72 ms at 48 kHz
+    const size_t highWater = target + (size_t)inNumberFrames * bytesPerFrame + kTrimSlackBlocks * self->m_bytesPerBlock;
+    if (queued > highWater)
+        self->m_buffer.skip(queued - target);
+
     const auto copied = self->m_buffer.read(static_cast<std::uint8_t*>(outputBuffer.mData), bytesNeeded);
     if (copied < bytesNeeded)
+    {
         std::memset(static_cast<std::uint8_t*>(outputBuffer.mData) + copied, 0, bytesNeeded - copied);
+        self->m_priming = true;
+    }
     // TV / GamePad volume. iOS used to ignore it and always played at full level, so 50 (the default) keeps
     // exactly that level; 0 is silent and 100 doubles it, clipped. The desktop backends use volume/100.
     const sint32 volume = std::clamp<sint32>(self->m_volume, 0, 100);
