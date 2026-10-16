@@ -95,28 +95,26 @@ uint64 MetalDepthStencilCache::CalculateDepthStencilHash(const LatteContextRegis
 
     uint32* ctxRegister = lcr.GetRawView();
 
-    // Hash
-    uint64 stateHash = 0;
+    // The state is fully described by DB_DEPTH_CONTROL plus the compare and write masks of each face, which is
+    // exactly 64 bits, so they are packed side by side instead of hashed. The old rotate-and-add hash let the
+    // stencil write mask spill into the depth control bits, so two different states could share one key and a
+    // draw got the other one's depth test or stencil setup. The stencil reference is left out: it is set per
+    // draw with setStencilReferenceValues and is not part of the state object.
     uint32 depthControl = ctxRegister[Latte::REGADDR::DB_DEPTH_CONTROL];
-	bool stencilTestEnable = depthControl & 1;
-	if (stencilTestEnable)
-	{
-		stateHash += ctxRegister[mmDB_STENCILREFMASK];
-		stateHash = std::rotl<uint64>(stateHash, 17);
-		if(depthControl & (1<<7)) // back stencil enable
-		{
-			stateHash += ctxRegister[mmDB_STENCILREFMASK_BF];
-			stateHash = std::rotl<uint64>(stateHash, 13);
-		}
-	}
-	else
-	{
-		// zero out stencil related bits (8-31)
-		depthControl &= 0xFF;
-	}
+    uint64 frontMasks = 0;
+    uint64 backMasks = 0;
+    const bool stencilTestEnable = depthControl & 1;
+    if (stencilTestEnable)
+    {
+        frontMasks = (ctxRegister[mmDB_STENCILREFMASK] >> 8) & 0xFFFF; // STENCILMASK_F, STENCILWRITEMASK_F
+        if (depthControl & (1 << 7)) // back stencil enable
+            backMasks = (ctxRegister[mmDB_STENCILREFMASK_BF] >> 8) & 0xFFFF; // STENCILMASK_B, STENCILWRITEMASK_B
+    }
+    else
+    {
+        // zero out stencil related bits (8-31)
+        depthControl &= 0xFF;
+    }
 
-	stateHash = std::rotl<uint64>(stateHash, 17);
-	stateHash += depthControl;
-
-	return stateHash;
+    return (uint64)depthControl | (frontMasks << 32) | (backMasks << 48);
 }
