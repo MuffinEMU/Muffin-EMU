@@ -50,13 +50,8 @@
 #endif
 #include "util/highresolutiontimer/HighResolutionTimer.h"
 
-#ifndef PPCREC_FORCE_SYNCHRONOUS_COMPILATION
-#if defined(__aarch64__)
-#define PPCREC_FORCE_SYNCHRONOUS_COMPILATION    1
-#else
-#define PPCREC_FORCE_SYNCHRONOUS_COMPILATION    0
-#endif
-#endif
+// PPCREC_FORCE_SYNCHRONOUS_COMPILATION comes from PPCRecompilerThreadPool.h (included above): 0 on AArch64, where
+// a pool of workers compiles, 1 elsewhere. A second default here used to say the opposite and was never used.
 #define PPCREC_LOG_RECOMPILATION_RESULTS        0
 
 static bool s_dualMapJITEnabled = false;
@@ -105,12 +100,6 @@ __attribute__((noinline,optnone,naked))
 void JIT26Detach(void) {
     asm("mov x16, #0 \n"
         "brk #0xf00d \n"
-        "ret");
-}
-
-__attribute__((noinline,optnone,naked))
-void* BreakMarkJITMapping(size_t bytes) {
-    asm("brk #0x69 \n"
         "ret");
 }
 
@@ -250,10 +239,6 @@ DualMapRegion PPCRecompiler_allocateDualMap(size_t size)
 
     r.rxAlias = rxPtr;
     r.rwAlias = (void*)rwAddr;
-
-   // int result2 = func();
-    // cemuLog_log(LogType::Force, "Executed JIT-ed function, result: {}\n", result2);
-
     return r;
 }
 
@@ -786,28 +771,6 @@ void PPCRecompiler_reprotectAsExecutable(void* codePtr, size_t codeSize)
         cemuLog_log(LogType::Force, "Recompiler: mprotect RX failed for {:p} ({} bytes)", codePtr, codeSize);
 
     PPCRecompiler_flushInstructionCache(codePtr, codeSize);
-}
-
-void PPCRecompiler_reprotectAsWriteable(void* codePtr, size_t codeSize)
-{
-    if (codePtr == nullptr || codeSize == 0)
-        return;
-
-    if (s_dualMapJITEnabled)
-        return;
-
-    static const uintptr_t pageSize = (uintptr_t)sysconf(_SC_PAGESIZE);
-    uintptr_t base = (uintptr_t)codePtr & ~(pageSize - 1);
-    size_t alignedSize = (codeSize + ((uintptr_t)codePtr - base) + pageSize - 1) & ~(pageSize - 1);
-    if (mprotect((void*)base, alignedSize, PROT_READ | PROT_WRITE) != 0)
-        cemuLog_log(LogType::Force, "Recompiler: mprotect RW failed for {:p} ({} bytes)", codePtr, codeSize);
-}
-
-void PPCRecompiler_commitDualMapCode(PPCRecFunction_t* func)
-{
-    if (!s_dualMapJITEnabled)
-        return;
-    PPCRecompiler_reprotectAsExecutable(func->x86Code, func->x86Size);
 }
 
 static void PPCRecompiler_resetVisitedTableRange(uint32 startAddress, uint32 endAddress)
