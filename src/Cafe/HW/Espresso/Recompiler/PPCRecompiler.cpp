@@ -1225,7 +1225,6 @@ void PPCRecompiler_reserveLookupTableBlock(uint32 offset)
 
 	if (ppcRecompiler_reservedBlockMask[blockIndex])
 		return;
-	ppcRecompiler_reservedBlockMask[blockIndex] = true;
 
 	void* p3 = MemMapper::AllocateMemory(&(ppcRecompilerInstanceData->ppcRecompilerDirectJumpTable[offset/4]), (PPC_REC_ALLOC_BLOCK_SIZE/4)*sizeof(void*), MemMapper::PAGE_PERMISSION::P_RW, true);
 	if( !p3 )
@@ -1238,6 +1237,12 @@ void PPCRecompiler_reserveLookupTableBlock(uint32 offset)
 	{
 		ppcRecompilerInstanceData->ppcRecompilerDirectJumpTable[offset/4+i] = PPCRecompiler_leaveRecompilerCode_unvisited;
 	}
+	// Marked reserved only now, and under the spinlock that PPCRecompiler_invalidateRangeInternal holds while it reads
+	// the mask: it writes into every block marked reserved, and a block marked before its pages were committed and
+	// filled could be written while still unmapped (an invalidation on another core during a module load).
+	PPCRecompilerState.recompilerSpinlock.lock();
+	ppcRecompiler_reservedBlockMask[blockIndex] = true;
+	PPCRecompilerState.recompilerSpinlock.unlock();
 }
 
 void PPCRecompiler_allocateRange(uint32 startAddress, uint32 size)
