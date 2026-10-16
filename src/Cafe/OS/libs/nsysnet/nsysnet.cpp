@@ -1186,7 +1186,8 @@ void _translateFDSet(fd_set* hostSet, struct wu_fd_set* fdset, sint32 nfds, int 
 #endif
 
 	uint32 mask = fdset->mask;
-	for (sint32 i = 0; i < nfds; i++)
+	// the mask has 32 bits, and a shift by 32 or more is undefined
+	for (sint32 i = 0; i < nfds && i < 32; i++)
 	{
 		if( ((mask>>i)&1) == 0 )
 			continue;
