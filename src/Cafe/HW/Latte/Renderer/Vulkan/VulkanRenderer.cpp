@@ -1173,16 +1173,6 @@ VulkanRenderer::~VulkanRenderer()
 
 	vkDestroyPipelineCache(m_logicalDevice, m_pipeline_cache, nullptr);
 
-	if(!m_backbufferBlitDescriptorSetCache.empty())
-	{
-		std::vector<VkDescriptorSet> freeVector;
-		freeVector.reserve(m_backbufferBlitDescriptorSetCache.size());
-		std::transform(m_backbufferBlitDescriptorSetCache.begin(), m_backbufferBlitDescriptorSetCache.end(), std::back_inserter(freeVector), [](auto& i) {
-		  return i.second;
-		});
-		vkFreeDescriptorSets(m_logicalDevice, m_descriptorPool, freeVector.size(), freeVector.data());
-	}
-
 	vkDestroyDescriptorPool(m_logicalDevice, m_descriptorPool, nullptr);
 	m_descriptorPool = VK_NULL_HANDLE; // destroying the pool freed every set in it; objects released later must not free theirs again
 
@@ -4160,6 +4150,10 @@ void VulkanRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutpu
 	vkCmdSetScissor(m_state.currentCommandBuffer, 0, 1, &scissor);
 
 	auto descriptSet = backbufferBlit_createDescriptorSet(m_swapchainDescriptorSetLayout, texViewVk, useLinearTexFilter);
+	// The image view, its sampler and the descriptor set above are sampled by this command buffer. Nothing else marked
+	// them, so a scan buffer deleted right after this (resolution change, texture eviction under memory pressure) could
+	// be destroyed while the GPU was still drawing it to the screen.
+	texViewVk->GetViewRGBA()->flagForCurrentCommandBuffer();
 
 	vkCmdBeginRenderPass(m_state.currentCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -4219,13 +4213,13 @@ void VulkanRenderer::CreateDescriptorPool()
 
 VkDescriptorSet VulkanRenderer::backbufferBlit_createDescriptorSet(VkDescriptorSetLayout descriptor_set_layout, LatteTextureViewVk* texViewVk, bool useLinearTexFilter)
 {
-	uint64 hash = 0;
-	hash += (uint64)texViewVk->GetViewRGBA();
-	hash += (uint64)texViewVk->GetDefaultTextureSampler(useLinearTexFilter);
-
-	const auto it = m_backbufferBlitDescriptorSetCache.find(hash);
-	if (it != m_backbufferBlitDescriptorSetCache.cend())
-		return it->second;
+	// Kept on the view object instead of in a renderer-wide map keyed on the sum of the view and sampler pointers: entries
+	// there were never removed, so each scan buffer that was ever replaced left a descriptor set behind, and a new view
+	// allocated at a freed one's address could be handed the old set, which still pointed at the destroyed image view.
+	VKRObjectTextureView* viewObj = texViewVk->GetViewRGBA();
+	VkDescriptorSet& cachedSet = viewObj->m_backbufferBlitDescriptorSet[useLinearTexFilter ? 1 : 0];
+	if (cachedSet != VK_NULL_HANDLE)
+		return cachedSet;
 
 	VkDescriptorSetAllocateInfo allocInfo = {};
 	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -4271,7 +4265,7 @@ VkDescriptorSet VulkanRenderer::backbufferBlit_createDescriptorSet(VkDescriptorS
 	vkUpdateDescriptorSets(m_logicalDevice, std::size(descriptorWrites), descriptorWrites, 0, nullptr);
 	performanceMonitor.vk.numDescriptorSamplerTextures.increment();
 
-	m_backbufferBlitDescriptorSetCache[hash] = result;
+	cachedSet = result;
 	return result;
 }
 
@@ -5113,6 +5107,17 @@ VKRObjectTextureView::VKRObjectTextureView(VKRObjectTexture* tex, VkImageView vi
 VKRObjectTextureView::~VKRObjectTextureView()
 {
 	auto logicalDevice = VulkanRenderer::GetInstance()->GetLogicalDevice();
+	const VkDescriptorPool descriptorPool = VulkanRenderer::GetInstance()->GetDescriptorPool();
+	for (auto& ds : m_backbufferBlitDescriptorSet)
+	{
+		if (ds != VK_NULL_HANDLE && descriptorPool != VK_NULL_HANDLE)
+		{
+			vkFreeDescriptorSets(logicalDevice, descriptorPool, 1, &ds);
+			performanceMonitor.vk.numDescriptorSets.decrement();
+			performanceMonitor.vk.numDescriptorSamplerTextures.decrement();
+		}
+		ds = VK_NULL_HANDLE;
+	}
 	if (m_textureDefaultSampler[0] != VK_NULL_HANDLE)
 		vkDestroySampler(logicalDevice, m_textureDefaultSampler[0], nullptr);
 	if (m_textureDefaultSampler[1] != VK_NULL_HANDLE)
