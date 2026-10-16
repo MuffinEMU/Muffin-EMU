@@ -210,6 +210,15 @@ void VPADController::update_touch(VPADStatus_t& status)
 	{
 		glm::ivec2 image_pos, image_size;
 		LatteRenderTarget_getScreenImageArea(&image_pos.x, &image_pos.y, &image_size.x, &image_size.y, nullptr, nullptr, pad_view);
+		// The output area is empty while its surface has no size yet (before the first layout, or a screen
+		// that is being torn down). Dividing by it would give NaN or infinity, and converting that to uint16
+		// below is undefined, so the touch is left out until there is somewhere to put it.
+		if (image_size.x <= 0 || image_size.y <= 0)
+		{
+			status.tpProcessed1 = status.tpData;
+			status.tpProcessed2 = status.tpData;
+			return;
+		}
 
 		glm::vec2 relative_mouse_pos = left_mouse.value() - image_pos;
 		relative_mouse_pos = { std::min(relative_mouse_pos.x, (float)image_size.x), std::min(relative_mouse_pos.y, (float)image_size.y) };

@@ -1016,8 +1016,17 @@ void InputManager::update_thread()
         for (auto& pad : m_wpad) { if (pad) pad->update(); }
         lock.unlock();
 
+#if BOOST_OS_IOS
+        // On iOS this thread only steps the GamePad's rumble pattern (VPADController::update), which
+        // advances at most once per 1000/60 ms, and the GameController device itself has no update()
+        // work: buttons, sticks and motion are read when the title polls. Waking 1000 times a second for
+        // that only costs battery and heat, so it wakes every 8 ms, which still lands every rumble step
+        // on time (two wakes per step).
+        std::this_thread::sleep_for(std::chrono::milliseconds(8));
+#else
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
         std::this_thread::yield();
+#endif
     }
 }
 
