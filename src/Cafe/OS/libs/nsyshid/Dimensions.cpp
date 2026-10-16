@@ -409,7 +409,12 @@ namespace nsyshid
 
 	Device::ReadResult DimensionsToypadDevice::Read(ReadMessage* message)
 	{
-		memcpy(message->data, g_dimensionstoypad.GetStatus().data(), message->length);
+		// the status is 32 bytes; a longer read used to copy past it
+		const auto status = g_dimensionstoypad.GetStatus();
+		const uint32 copyLength = std::min<uint32>(message->length, (uint32)status.size());
+		memcpy(message->data, status.data(), copyLength);
+		if (message->length > copyLength)
+			memset(message->data + copyLength, 0, message->length - copyLength);
 		message->bytesRead = message->length;
 		return Device::ReadResult::Success;
 	}
