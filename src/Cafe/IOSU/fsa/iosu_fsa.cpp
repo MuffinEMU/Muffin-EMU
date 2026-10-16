@@ -520,10 +520,7 @@ namespace iosu
 			FSCVirtualFile* fscFile = sFileHandleTable.GetByHandle(fileHandle);
 			if (!fscFile)
 				return FSA_RESULT::INVALID_FILE_HANDLE;
-			// the element count below divides by the element size, which the guest controls (FSWriteFile with size 0)
-			if (transferElementSize == 0)
-				return FSA_RESULT::OK;
-			cemu_assert_debug((transferSize % transferElementSize) == 0);
+			cemu_assert_debug(transferElementSize == 0 || (transferSize % transferElementSize) == 0);
 			uint32 bytesToWrite = transferSize;
 			// check for write permission (should this happen before or after setting file position?)
 			if (!fsc_isWritable(fscFile))
@@ -536,6 +533,10 @@ namespace iosu
 				fsc_setFileSeek(fscFile, filePos);
 			uint32 bytesSuccessfullyWritten = fsc_writeFile(fscFile, destPtr, bytesToWrite);
 			debug_printf("FSAProcessCmd_write(): Writing 0x%08x bytes (bytes actually written: 0x%08x)\n", bytesToWrite, bytesSuccessfullyWritten);
+			// the element size is the guest's (FSWriteFile with size 0): only the division is skipped, so the permission
+			// check and the position update above still happen, as in the read path
+			if (transferElementSize == 0)
+				return FSA_RESULT::OK;
 			return (FSA_RESULT)(bytesSuccessfullyWritten / transferElementSize); // return number of elements read
 		}
 
