@@ -425,7 +425,9 @@ struct ALUClauseTemporariesState
 				else
 					continue;
 				// track GPR read
-				if ((registerChannelWriteMask[(readGPRIndex * 4 + aluInstruction.sourceOperand[f].chan) / 8] & (1 << ((readGPRIndex * 4 + aluInstruction.sourceOperand[f].chan) % 8))) != 0)
+				// check the channel actually read: for a PS alias the operand's chan is not the aliased GPR channel, and the
+				// temporary below is keyed by readGPRChannel too. Checking the wrong one let a same-group write clobber the PS value.
+				if ((registerChannelWriteMask[(readGPRIndex * 4 + readGPRChannel) / 8] & (1 << ((readGPRIndex * 4 + readGPRChannel) % 8))) != 0)
 				{
 					// register is overwritten by previous instruction, a temporary variable is required
 					if (GetTemporaryForGPR(readGPRIndex, readGPRChannel) < 0)
