@@ -48,12 +48,26 @@ private:
 
     // Restarts output after an audio interruption (call, Siri, alarm): iOS stops the unit and
     // deactivates the session, and nothing else brings them back. Observer tokens, retained.
-    void RestartAfterInterruption(const char* why, bool onlyIfStopped = false);
+    void RestartAfterInterruption(const char* why, bool onlyIfStopped = false, bool skipIfInterrupted = false);
+    void NoteInterruptionBegan();
+    // Between an interruption beginning and ending (or the app coming back to the foreground).
+    // Main queue only, under s_liveDevicesMutex.
+    bool m_interrupted = false;
     void* m_interruptionObserver = nullptr;
     void* m_becameActiveObserver = nullptr;
+    void* m_routeChangeObserver = nullptr;
+
+    // How much audio to keep queued: the audio delay setting, but never less than one hardware
+    // callback plus one block, so a callback never finds only part of what it asks for.
+    size_t TargetQueuedBytes() const;
 
     AudioRingBuffer m_buffer;
     std::atomic_bool m_isPlaying = false;
+    // Frames iOS asked for in the most recent render callback (the hardware IO buffer, in our rate).
+    std::atomic<uint32> m_callbackFrames{0};
+    // Render thread only. Set at start and after an underrun: output stays silent until the queue
+    // has refilled to TargetQueuedBytes(), instead of playing each scrap as it arrives (crackle).
+    bool m_priming = true;
 };
 
 #endif // TARGET_OS_IOS

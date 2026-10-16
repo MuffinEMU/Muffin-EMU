@@ -67,6 +67,9 @@ IOSAudioAPI::IOSAudioAPI(uint32 samplerate,
     [session setPreferredSampleRate:samplerate error:&error];
     [session setPreferredIOBufferDuration:(double)samples_per_block / samplerate error:&error];
     [session setActive:YES error:&error];
+    // What iOS actually granted (it rounds the preferred duration, and other audio can hold it higher).
+    // Refreshed by every render callback; this is only the starting guess for the first prime.
+    m_callbackFrames = (uint32)std::clamp<long>(std::lround(session.IOBufferDuration * samplerate), 0, 8192);
     
     AudioComponentDescription desc{};
     desc.componentType = kAudioUnitType_Output;
@@ -124,7 +127,9 @@ IOSAudioAPI::IOSAudioAPI(uint32 samplerate,
     id interruption = [center addObserverForName:AVAudioSessionInterruptionNotification object:nil
                                            queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification* note) {
         NSNumber* type = note.userInfo[AVAudioSessionInterruptionTypeKey];
-        if (type && type.unsignedIntegerValue == AVAudioSessionInterruptionTypeEnded)
+        if (type && type.unsignedIntegerValue == AVAudioSessionInterruptionTypeBegan)
+            device->NoteInterruptionBegan();
+        else if (type && type.unsignedIntegerValue == AVAudioSessionInterruptionTypeEnded)
             device->RestartAfterInterruption("interruption ended");
     }];
     // Backstop: an interruption that ends while the app is in the background does not always post
@@ -133,14 +138,38 @@ IOSAudioAPI::IOSAudioAPI(uint32 samplerate,
                                            queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification*) {
         device->RestartAfterInterruption("app became active", /*onlyIfStopped*/ true);
     }];
+    // A route or category change (headphones, Bluetooth, AirPlay, the microphone being switched on)
+    // usually leaves the unit running, but not always, and nothing else would start it again.
+    // Routes also change during a call (receiver, headset); the unit is meant to stay stopped then,
+    // so a route change inside an interruption is left to the "ended" and foreground paths.
+    id routeChange = [center addObserverForName:AVAudioSessionRouteChangeNotification object:nil
+                                          queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification*) {
+        device->RestartAfterInterruption("route changed", /*onlyIfStopped*/ true, /*skipIfInterrupted*/ true);
+    }];
     m_interruptionObserver = (void*)CFBridgingRetain(interruption);
     m_becameActiveObserver = (void*)CFBridgingRetain(becameActive);
+    m_routeChangeObserver = (void*)CFBridgingRetain(routeChange);
 }
 
-void IOSAudioAPI::RestartAfterInterruption(const char* why, bool onlyIfStopped)
+void IOSAudioAPI::NoteInterruptionBegan()
 {
     std::lock_guard lock(s_liveDevicesMutex);
-    if (s_liveDevices.find(this) == s_liveDevices.end() || !m_audioUnit || !m_isPlaying)
+    if (s_liveDevices.find(this) != s_liveDevices.end())
+        m_interrupted = true;
+}
+
+void IOSAudioAPI::RestartAfterInterruption(const char* why, bool onlyIfStopped, bool skipIfInterrupted)
+{
+    std::lock_guard lock(s_liveDevicesMutex);
+    if (s_liveDevices.find(this) == s_liveDevices.end())
+        return;
+    if (skipIfInterrupted && m_interrupted)
+        return;
+    // "Ended" and coming back to the foreground both mean the interruption is over (the second is
+    // the backstop for an "ended" that never arrives).
+    if (!skipIfInterrupted)
+        m_interrupted = false;
+    if (!m_audioUnit || !m_isPlaying)
         return;
     if (onlyIfStopped)
     {
@@ -170,8 +199,11 @@ IOSAudioAPI::~IOSAudioAPI()
         [center removeObserver:(id)CFBridgingRelease(m_interruptionObserver)];
     if (m_becameActiveObserver)
         [center removeObserver:(id)CFBridgingRelease(m_becameActiveObserver)];
+    if (m_routeChangeObserver)
+        [center removeObserver:(id)CFBridgingRelease(m_routeChangeObserver)];
     m_interruptionObserver = nullptr;
     m_becameActiveObserver = nullptr;
+    m_routeChangeObserver = nullptr;
     if (m_audioUnit) {
         m_isPlaying = false;
         AudioOutputUnitStop(m_audioUnit);
@@ -207,9 +239,19 @@ bool IOSAudioAPI::Stop()
     return true;
 }
 
+size_t IOSAudioAPI::TargetQueuedBytes() const
+{
+    const size_t bytesPerFrame = (size_t)m_channels * (m_bitsPerSample / 8);
+    const size_t fromSetting = (size_t)GetTargetQueuedBlocks() * m_bytesPerBlock;
+    const size_t oneCallback = (size_t)m_callbackFrames.load(std::memory_order_relaxed) * bytesPerFrame;
+    // Room for one more block is always left, or the queue could never reach the target.
+    const size_t ceiling = m_buffer.capacity() - m_bytesPerBlock;
+    return std::min(std::max(fromSetting, oneCallback + m_bytesPerBlock), ceiling);
+}
+
 bool IOSAudioAPI::NeedAdditionalBlocks() const
 {
-    return m_buffer.size() < (size_t)GetTargetQueuedBlocks() * m_bytesPerBlock;
+    return m_buffer.size() < TargetQueuedBytes();
 }
 
 bool IOSAudioAPI::FeedBlock(sint16* data)
@@ -251,10 +293,44 @@ OSStatus IOSAudioAPI::RenderCallback(
         return noErr;
     
     auto& outputBuffer = ioData->mBuffers[0];
-    const auto bytesNeeded = std::min<size_t>((size_t)inNumberFrames * self->m_channels * (self->m_bitsPerSample / 8), outputBuffer.mDataByteSize);
+    const size_t bytesPerFrame = (size_t)self->m_channels * (self->m_bitsPerSample / 8);
+    const auto bytesNeeded = std::min<size_t>((size_t)inNumberFrames * bytesPerFrame, outputBuffer.mDataByteSize);
+    self->m_callbackFrames.store(inNumberFrames, std::memory_order_relaxed);
+    const size_t target = self->TargetQueuedBytes();
+    const size_t queued = self->m_buffer.size();
+
+    // Underrun handling. Playing whatever scraps have arrived, padded with silence, turns one late
+    // block into a run of tiny gaps (crackle) until the queue happens to build up again. Instead the
+    // output stays silent until a full target's worth is queued, then plays on from there.
+    if (self->m_priming)
+    {
+        if (queued < target)
+        {
+#if MUFFIN_AUDIT_HOOKS
+            cemu_audit_audio_note_render(self, static_cast<const int16_t*>(outputBuffer.mData), 0,
+                                         (uint32_t)bytesNeeded, (uint32_t)self->m_channels, (uint32_t)self->m_bitsPerSample);
+#endif
+            return noErr; // already zeroed above
+        }
+        self->m_priming = false;
+    }
+
+    // Latency cap. After a hitch (a shader compile, say) the emulator catches up by producing audio
+    // faster than real time, and everything it produces lands on top of the queue. Nothing ever
+    // drains that surplus, so the sound would stay that far behind the picture for the rest of the
+    // session. Past one callback plus kTrimSlackBlocks of surplus, the oldest audio is dropped back
+    // down to the target; this only follows a stall, which was already audible.
+    constexpr size_t kTrimSlackBlocks = 6; // 72 ms at 48 kHz
+    const size_t highWater = target + (size_t)inNumberFrames * bytesPerFrame + kTrimSlackBlocks * self->m_bytesPerBlock;
+    if (queued > highWater)
+        self->m_buffer.skip(queued - target);
+
     const auto copied = self->m_buffer.read(static_cast<std::uint8_t*>(outputBuffer.mData), bytesNeeded);
     if (copied < bytesNeeded)
+    {
         std::memset(static_cast<std::uint8_t*>(outputBuffer.mData) + copied, 0, bytesNeeded - copied);
+        self->m_priming = true;
+    }
     // TV / GamePad volume. iOS used to ignore it and always played at full level, so 50 (the default) keeps
     // exactly that level; 0 is silent and 100 doubles it, clipped. The desktop backends use volume/100.
     const sint32 volume = std::clamp<sint32>(self->m_volume, 0, 100);
