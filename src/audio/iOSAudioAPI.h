@@ -51,6 +51,7 @@ private:
     void RestartAfterInterruption(const char* why, bool onlyIfStopped = false);
     void* m_interruptionObserver = nullptr;
     void* m_becameActiveObserver = nullptr;
+    void* m_routeChangeObserver = nullptr;
 
     // How much audio to keep queued: the audio delay setting, but never less than one hardware
     // callback plus one block, so a callback never finds only part of what it asks for.

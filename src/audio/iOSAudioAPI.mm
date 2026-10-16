@@ -136,8 +136,15 @@ IOSAudioAPI::IOSAudioAPI(uint32 samplerate,
                                            queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification*) {
         device->RestartAfterInterruption("app became active", /*onlyIfStopped*/ true);
     }];
+    // A route or category change (headphones, Bluetooth, AirPlay, the microphone being switched on)
+    // usually leaves the unit running, but not always, and nothing else would start it again.
+    id routeChange = [center addObserverForName:AVAudioSessionRouteChangeNotification object:nil
+                                          queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification*) {
+        device->RestartAfterInterruption("route changed", /*onlyIfStopped*/ true);
+    }];
     m_interruptionObserver = (void*)CFBridgingRetain(interruption);
     m_becameActiveObserver = (void*)CFBridgingRetain(becameActive);
+    m_routeChangeObserver = (void*)CFBridgingRetain(routeChange);
 }
 
 void IOSAudioAPI::RestartAfterInterruption(const char* why, bool onlyIfStopped)
@@ -173,8 +180,11 @@ IOSAudioAPI::~IOSAudioAPI()
         [center removeObserver:(id)CFBridgingRelease(m_interruptionObserver)];
     if (m_becameActiveObserver)
         [center removeObserver:(id)CFBridgingRelease(m_becameActiveObserver)];
+    if (m_routeChangeObserver)
+        [center removeObserver:(id)CFBridgingRelease(m_routeChangeObserver)];
     m_interruptionObserver = nullptr;
     m_becameActiveObserver = nullptr;
+    m_routeChangeObserver = nullptr;
     if (m_audioUnit) {
         m_isPlaying = false;
         AudioOutputUnitStop(m_audioUnit);
