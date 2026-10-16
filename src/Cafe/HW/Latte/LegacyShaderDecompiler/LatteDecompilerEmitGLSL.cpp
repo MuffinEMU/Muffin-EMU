@@ -425,7 +425,9 @@ struct ALUClauseTemporariesState
 				else
 					continue;
 				// track GPR read
-				if ((registerChannelWriteMask[(readGPRIndex * 4 + aluInstruction.sourceOperand[f].chan) / 8] & (1 << ((readGPRIndex * 4 + aluInstruction.sourceOperand[f].chan) % 8))) != 0)
+				// check the channel actually read: for a PS alias the operand's chan is not the aliased GPR channel, and the
+				// temporary below is keyed by readGPRChannel too. Checking the wrong one let a same-group write clobber the PS value.
+				if ((registerChannelWriteMask[(readGPRIndex * 4 + readGPRChannel) / 8] & (1 << ((readGPRIndex * 4 + readGPRChannel) % 8))) != 0)
 				{
 					// register is overwritten by previous instruction, a temporary variable is required
 					if (GetTemporaryForGPR(readGPRIndex, readGPRChannel) < 0)
@@ -2177,17 +2179,17 @@ void _emitTEXSampleCoordInputComponent(LatteDecompilerShaderContext* shaderConte
 	const char* resultElemTable[4] = {"x","y","z","w"};
 	if(interpretSrcAsType == LATTE_DECOMPILER_DTYPE_SIGNED_INT )
 	{
-		if( elementSel == 4 )
-			src->add("floatBitsToInt(0.0)");
-		else if( elementSel == 5 )
+		if( elementSel == 5 )
 			src->add("floatBitsToInt(1.0)");
+		else
+			src->add("floatBitsToInt(0.0)"); // 4, and 6/7 (masked) so the expression is never left empty
 	}
 	else if(interpretSrcAsType == LATTE_DECOMPILER_DTYPE_FLOAT )
 	{
-		if( elementSel == 4 )
-			src->add("0.0");
-		else if( elementSel == 5 )
+		if( elementSel == 5 )
 			src->add("1.0");
+		else
+			src->add("0.0"); // 4, and 6/7 (masked) so the expression is never left empty
 	}
 }
 
@@ -2550,6 +2552,10 @@ void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContext, Latt
 				src->add(")");
 				src->addFmt(")");
 				src->addFmt(",cubeMapArrayIndex{})", texInstruction->textureFetch.textureIndex); // cubemap index
+				// compare value: x/y are the face coordinates and z the face id, so w is the only component left for it.
+				// samplerCubeArrayShadow takes it as a separate argument; without it the shader does not compile.
+				src->add(",");
+				_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 3, LATTE_DECOMPILER_DTYPE_FLOAT);
 			}
 			else if (texDim == Latte::E_DIM::DIM_1D)
 			{
@@ -2840,15 +2846,11 @@ void _emitTEXGetCompTexLodCode(LatteDecompilerShaderContext* shaderContext, Latt
 void _emitTEXSetCubemapIndexCode(LatteDecompilerShaderContext* shaderContext, LatteDecompilerTEXInstruction* texInstruction)
 {
 	StringBuf* src = shaderContext->shaderSource;
-	src->addFmt("cubeMapArrayIndex{}", texInstruction->textureFetch.textureIndex);
-	const char* resultElemTable[4] = {"x","y","z","w"};
-
-	if (shaderContext->typeTracker.defaultDataType == LATTE_DECOMPILER_DTYPE_SIGNED_INT)
-		src->addFmt(" = intBitsToFloat(R{}i.{});" _CRLF, texInstruction->srcGpr, resultElemTable[texInstruction->textureFetch.srcSel[0]]);
-	else if (shaderContext->typeTracker.defaultDataType == LATTE_DECOMPILER_DTYPE_FLOAT)
-		src->addFmt(" = R{}f.{};" _CRLF, texInstruction->srcGpr, resultElemTable[texInstruction->textureFetch.srcSel[0]]);
-	else
-		cemu_assert_unimplemented();
+	src->addFmt("cubeMapArrayIndex{} = ", texInstruction->textureFetch.textureIndex);
+	// Read through the shared helper rather than spelling out "R{n}i": that name does not exist when the shader keeps its
+	// registers in an array (any relative GPR write), and a constant selector (4/5) would index past a 4-entry swizzle table.
+	_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 0, LATTE_DECOMPILER_DTYPE_FLOAT);
+	src->add(";" _CRLF);
 }
 
 void _emitTEXGetGradientsHV(LatteDecompilerShaderContext* shaderContext, LatteDecompilerTEXInstruction* texInstruction)
