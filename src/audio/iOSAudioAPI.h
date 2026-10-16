@@ -48,7 +48,11 @@ private:
 
     // Restarts output after an audio interruption (call, Siri, alarm): iOS stops the unit and
     // deactivates the session, and nothing else brings them back. Observer tokens, retained.
-    void RestartAfterInterruption(const char* why, bool onlyIfStopped = false);
+    void RestartAfterInterruption(const char* why, bool onlyIfStopped = false, bool skipIfInterrupted = false);
+    void NoteInterruptionBegan();
+    // Between an interruption beginning and ending (or the app coming back to the foreground).
+    // Main queue only, under s_liveDevicesMutex.
+    bool m_interrupted = false;
     void* m_interruptionObserver = nullptr;
     void* m_becameActiveObserver = nullptr;
     void* m_routeChangeObserver = nullptr;

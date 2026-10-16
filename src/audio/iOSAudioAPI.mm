@@ -127,7 +127,9 @@ IOSAudioAPI::IOSAudioAPI(uint32 samplerate,
     id interruption = [center addObserverForName:AVAudioSessionInterruptionNotification object:nil
                                            queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification* note) {
         NSNumber* type = note.userInfo[AVAudioSessionInterruptionTypeKey];
-        if (type && type.unsignedIntegerValue == AVAudioSessionInterruptionTypeEnded)
+        if (type && type.unsignedIntegerValue == AVAudioSessionInterruptionTypeBegan)
+            device->NoteInterruptionBegan();
+        else if (type && type.unsignedIntegerValue == AVAudioSessionInterruptionTypeEnded)
             device->RestartAfterInterruption("interruption ended");
     }];
     // Backstop: an interruption that ends while the app is in the background does not always post
@@ -138,19 +140,36 @@ IOSAudioAPI::IOSAudioAPI(uint32 samplerate,
     }];
     // A route or category change (headphones, Bluetooth, AirPlay, the microphone being switched on)
     // usually leaves the unit running, but not always, and nothing else would start it again.
+    // Routes also change during a call (receiver, headset); the unit is meant to stay stopped then,
+    // so a route change inside an interruption is left to the "ended" and foreground paths.
     id routeChange = [center addObserverForName:AVAudioSessionRouteChangeNotification object:nil
                                           queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification*) {
-        device->RestartAfterInterruption("route changed", /*onlyIfStopped*/ true);
+        device->RestartAfterInterruption("route changed", /*onlyIfStopped*/ true, /*skipIfInterrupted*/ true);
     }];
     m_interruptionObserver = (void*)CFBridgingRetain(interruption);
     m_becameActiveObserver = (void*)CFBridgingRetain(becameActive);
     m_routeChangeObserver = (void*)CFBridgingRetain(routeChange);
 }
 
-void IOSAudioAPI::RestartAfterInterruption(const char* why, bool onlyIfStopped)
+void IOSAudioAPI::NoteInterruptionBegan()
 {
     std::lock_guard lock(s_liveDevicesMutex);
-    if (s_liveDevices.find(this) == s_liveDevices.end() || !m_audioUnit || !m_isPlaying)
+    if (s_liveDevices.find(this) != s_liveDevices.end())
+        m_interrupted = true;
+}
+
+void IOSAudioAPI::RestartAfterInterruption(const char* why, bool onlyIfStopped, bool skipIfInterrupted)
+{
+    std::lock_guard lock(s_liveDevicesMutex);
+    if (s_liveDevices.find(this) == s_liveDevices.end())
+        return;
+    if (skipIfInterrupted && m_interrupted)
+        return;
+    // "Ended" and coming back to the foreground both mean the interruption is over (the second is
+    // the backstop for an "ended" that never arrives).
+    if (!skipIfInterrupted)
+        m_interrupted = false;
+    if (!m_audioUnit || !m_isPlaying)
         return;
     if (onlyIfStopped)
     {
