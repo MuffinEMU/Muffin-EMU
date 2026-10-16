@@ -37,14 +37,14 @@ struct JITEnablerSection: View {
                     .autocorrectionDisabled(true)
                     .keyboardType(.URL)
                 if !customURL.isEmpty && !customValid {
-                    Text("The link needs {bundleId} in it, and has to be a valid URL.")
+                    Text("The link must be a valid URL and include {bundleId}.")
                         .font(.footnote)
                         .foregroundColor(MuffinTheme.cautionText)
                 }
             }
 
             if enabler != .none {
-                Button("Test it now") { test() }
+                Button("Test enabler") { test() }
                     .disabled(enabler == .custom && !customValid)
                 if let testNote {
                     Text(testNote)
@@ -53,9 +53,9 @@ struct JITEnablerSection: View {
                 }
             }
         } header: {
-            SettingsSectionHeader("JIT enabler", icon: "bolt.fill", accent: .core)
+            SettingsSectionHeader("JIT", icon: "bolt.fill", accent: .core)
         } footer: {
-            Text("When JIT isn't active, MuffinEMU asks once each time it opens, and offers to open the enabler. It never asks during a game. A custom link is filled in with MuffinEMU's bundle ID wherever it says {bundleId}.")
+            Text("JIT lets MuffinEMU run games at full speed, and iOS only allows it with the help of an enabler app. When JIT isn't active, MuffinEMU asks once each time it opens and offers to open the enabler. It doesn't ask during a game. In a custom link, {bundleId} is replaced with MuffinEMU's bundle ID.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         .onAppear { active = JITStatus.isActive }

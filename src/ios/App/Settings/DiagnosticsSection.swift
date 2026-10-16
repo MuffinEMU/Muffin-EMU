@@ -37,7 +37,7 @@ struct DeviceReportSection: View {
                       systemImage: deviceReportCopied ? "checkmark" : "doc.on.doc")
             }
         } header: {
-            SettingsSectionHeader("This Device", icon: "iphone", accent: .system)
+            SettingsSectionHeader("Device report", icon: "iphone", accent: .system)
         } footer: {
             InfoButton.footer("Send this with any bug report. It lists your chip, memory and app build.")
         }

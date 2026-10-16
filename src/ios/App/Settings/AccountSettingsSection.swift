@@ -44,9 +44,9 @@ struct AccountSettingsSection: View {
                 text: OnlineReadiness.howToFix + "\n\nImport from Wii U accepts account.dat, its 800000XX folder, otp.bin and seeprom.bin. MuffinEMU can't create a linked account itself.")
         } else if let activeAccount, !activeAccount.isValidOnline {
             InfoButton.footer(
-                "This account has no cached NNID/PNID login, so it can't play online yet.",
+                "This account has no saved Nintendo Network ID (NNID) or Pretendo Network ID (PNID) login, so it can't play online yet.",
                 title: "Account",
-                text: "Online play needs an account with a saved NNID or PNID login. Sign in on a real console and copy its account.dat here; MuffinEMU can't create one.")
+                text: "Online play needs an account with a saved Nintendo Network ID (NNID) or Pretendo Network ID (PNID) login. Sign in on a real console and copy its account.dat here; MuffinEMU can't create one.")
         }
     }
 
@@ -68,10 +68,10 @@ struct AccountSettingsSection: View {
             .disabled(locked || accounts.isEmpty)
 
             HStack {
-                Button("Create") { accountSheets.showingCreateAccount = true }
+                Button("New account") { accountSheets.showingCreateAccount = true }
                     .disabled(locked || !cemu_bridge_accounts_has_free_slot())
                 Spacer()
-                Button("Delete", role: .destructive) { accountToDelete = activeAccount }
+                Button("Delete account", role: .destructive) { accountToDelete = activeAccount }
                     .disabled(locked || accounts.count <= 1 || activeAccount == nil)
             }
             .buttonStyle(.borderless)
@@ -105,10 +105,10 @@ struct AccountSettingsSection: View {
             Button("Cancel", role: .cancel) { accountToDelete = nil }
         } message: {
             if let account = accountToDelete {
-                Text("Are you sure you want to delete \(account.displayName) (\(account.persistentIdHex))?")
+                Text("This removes \(account.displayName) (\(account.persistentIdHex)) from MuffinEMU.")
             }
         }
-        .alert("Error", isPresented: Binding(
+        .alert("Account error", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
         )) {
@@ -141,7 +141,7 @@ struct NetworkServiceSettingsSection: View {
     /// The one-line status at the top of the section.
     private var readinessLine: String {
         let missing = OnlineReadiness.missingItems(accountId: activePersistentId)
-        if selectedService == .offline { return "Online play is off. Pick a Network Service to use it." }
+        if selectedService == .offline { return "Online play is off. Pick an online service to turn it on." }
         if selectedService == .custom { return customAvailable ? "Ready for online play (custom server)" : "Not ready for online play. Missing: a valid network_services.xml." }
         return missing.isEmpty ? "Ready for online play" : "Not ready for online play. Missing: " + missing.joined(separator: ", ") + "."
     }
@@ -180,12 +180,12 @@ struct NetworkServiceSettingsSection: View {
                           || (service == .nintendo && selectedService != .nintendo))
             }
         } header: {
-            SettingsSectionHeader("Network Service\(activeAccountName.map { " (\($0))" } ?? "")",
+            SettingsSectionHeader("Online service\(activeAccountName.map { " (\($0))" } ?? "")",
                                   icon: "network", accent: .content)
         } footer: {
             InfoButton.footer(
-                locked ? "The Network Service can't be changed while a game is running. Close the game first." : selectedService.accountHelp,
-                title: "Network Service",
+                locked ? "The online service can't be changed while a game is running. Close the game first." : selectedService.accountHelp,
+                title: "Online service",
                 text: "Pretendo is a community-run replacement for Nintendo's Wii U online services. Its server addresses are built in, so there's nothing to configure.\n\nNintendo's own servers have been shut down, so that option can't be selected.\n\nCustom works with a network_services.xml file. Add one under Custom servers above. It needs no linked account or otp.bin and seeprom.bin.\n\n" + OnlineReadiness.howToFix)
         }
         .foregroundColor(MuffinTheme.brownDarkest)

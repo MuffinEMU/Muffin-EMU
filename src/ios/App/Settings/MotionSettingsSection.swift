@@ -77,7 +77,7 @@ struct MotionSettingsSection: View {
         case MotionSettings.statusUnavailable:
             return "This device has no motion sensors, so the GamePad will stay still."
         default:
-            return "Motion is off. Games see a GamePad that never moves."
+            return "Motion is off. Games see a GamePad that doesn't move."
         }
     }
 
@@ -89,7 +89,7 @@ struct MotionSettingsSection: View {
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text(motionEnabled
                          ? "Tilt and turn the device to aim, like the GamePad."
-                         : "Stick only. The GamePad never moves.")
+                         : "Sticks only. The GamePad doesn't move.")
                         .font(.system(size: 12))
                         .foregroundColor(MuffinTheme.secondaryText)
                 }
@@ -105,11 +105,11 @@ struct MotionSettingsSection: View {
                 }
             }
         } header: {
-            SettingsSectionHeader("Motion & Aiming", icon: "gyroscope", accent: .io)
+            SettingsSectionHeader("Motion and aiming", icon: "gyroscope", accent: .io)
         } footer: {
             InfoButton.footer(
                 "For games that aim with the GamePad's gyro, such as Splatoon.",
-                title: "Motion & Aiming",
+                title: "Motion and aiming",
                 text: fullText)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
@@ -149,7 +149,7 @@ struct MotionSettingsSection: View {
                 .onChange(of: invertVertical) { _ in MotionSettings.applyToBridge() }
             Toggle("Log motion values", isOn: $logValues)
                 .onChange(of: logValues) { _ in MotionSettings.applyToBridge() }
-            Text("Leave these off unless aiming turns the wrong way. The log writes one line a second to the engine log, to report when something looks off.")
+            Text("Leave these off unless aiming turns the wrong way. The log writes one line a second to the app log, for bug reports.")
                 .font(.system(size: 12))
                 .foregroundColor(MuffinTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)

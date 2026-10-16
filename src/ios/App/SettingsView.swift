@@ -131,8 +131,8 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .library: return "Library layout changes how your games are shown. Wii U keys are used to open encrypted game files."
         case .accountOnline: return "An account is optional. The online service decides which servers online games talk to."
         case .appearance: return "Looks only. None of this changes how games run."
-        case .storage: return "Back up your settings before a big change or an update. Move to another device exports your games, saves and settings."
-        case .support: return "Share the device report or diagnostics when you ask for help."
+        case .storage: return "Back up your settings before a big change or an update (Advanced mode). Move to another device exports your saves and settings, and your games if you choose."
+        case .support: return "Copy the device report and send it when you ask for help."
         }
     }
 
@@ -179,7 +179,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     /// The hub's titled groups.
     static let groups: [(title: String, categories: [SettingsCategory])] = [
         ("Playing games", [.emulation, .controls, .screenAndSound]),
-        ("Games and account", [.library, .accountOnline]),
+        ("Library and online", [.library, .accountOnline]),
         ("The app", [.appearance, .storage, .support]),
     ]
 

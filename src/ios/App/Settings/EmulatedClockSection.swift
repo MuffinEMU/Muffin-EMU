@@ -35,7 +35,7 @@ struct EmulatedClockSection: View {
 
     var body: some View {
         Section {
-            Picker("Speed", selection: speedChoice) {
+            Picker("Clock speed", selection: speedChoice) {
                 ForEach(TimebaseScale.allCases) { scale in
                     Text(scale.title).tag(scale.rawValue)
                 }
@@ -58,11 +58,11 @@ struct EmulatedClockSection: View {
                     .foregroundColor(MuffinTheme.secondaryText)
             }
         } header: {
-            SettingsSectionHeader("Emulated Clock", icon: "clock", accent: .core)
+            SettingsSectionHeader("Emulated clock", icon: "clock", accent: .core)
         } footer: {
             InfoButton.footer(
                 "\(timebase.summary) Changes how fast the game thinks time passes; it doesn't change how fast MuffinEMU runs.",
-                title: "Emulated Clock",
+                title: "Emulated clock",
                 text: "Until you choose a value, MuffinEMU picks one itself: if a game hasn't started drawing after 12 seconds, it slows its clock a step (down to 1/64). Choosing a value here turns that off.\n\nWithout the recompiler the emulated CPU is much slower than the console's, so games can fall behind their own timers and never draw a frame. Slowing the game's clock gives them room. Emulation accuracy isn't affected.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)

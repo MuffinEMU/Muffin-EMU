@@ -24,7 +24,7 @@ struct PreviewPadSection: View {
     @State private var showingColourExporter = false
     @State private var showingColourImporter = false
     @State private var previewFileErrorMessage: String?
-    @State private var previewFileAlertTitle = "Error"
+    @State private var previewFileAlertTitle = "Import failed"
     @State private var showingResetAdjustmentsConfirmation = false
 
     private var previewLayoutPresetBinding: Binding<String> {
@@ -49,7 +49,7 @@ struct PreviewPadSection: View {
 
     private var toggleCaption: String {
         if previewPadEnabled && otherPadChosen {
-            return "Not showing: Melo-Controller or a control style is chosen under On-screen Controls, and wins over this."
+            return "Not active: Melo-Controller or a control style is chosen under On-screen controls, and takes priority."
         }
         return previewPadEnabled
             ? "Replaces the normal pad. If controls don't respond, turn this off."
@@ -60,7 +60,7 @@ struct PreviewPadSection: View {
         Section {
             Toggle(isOn: $previewPadEnabled) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Use the new pad system")
+                    Text("Use the new pad")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text(toggleCaption)
                         .font(.system(size: 12))
@@ -74,12 +74,12 @@ struct PreviewPadSection: View {
                 previewControls
             }
         } header: {
-            SettingsSectionHeader("Preview: New Pad System",
+            SettingsSectionHeader("New pad (preview)",
                                   icon: "wrench.and.screwdriver", accent: .preview)
         } footer: {
             InfoButton.footer(
                 "Try a new movable, resizable pad layout. It replaces the normal pad while on, so turn it off if controls stop responding.",
-                title: "Preview: New Pad System",
+                title: "New pad (preview)",
                 text: "Every group (shoulders, sticks, d-pad, A/B/X/Y, Start, Select, HOME) can be dragged and pinch-resized. Tap the move icon in the top bar during a game.\n\nFit floats the controls over the screen. Native sizes the picture to fit around the controls: small on a phone, life-size on an iPad.\n\nThis pad is experimental.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
@@ -105,8 +105,8 @@ struct PreviewPadSection: View {
         } message: { message in
             Text(message)
         }
-        .confirmationDialog("Reset dragged/resized groups?", isPresented: $showingResetAdjustmentsConfirmation, titleVisibility: .visible) {
-            Button("Reset dragged/resized groups", role: .destructive) {
+        .confirmationDialog("Reset moved and resized groups?", isPresented: $showingResetAdjustmentsConfirmation, titleVisibility: .visible) {
+            Button("Reset moved and resized groups", role: .destructive) {
                 PreviewPadStore.shared.resetAdjustments()
             }
             Button("Cancel", role: .cancel) { }
@@ -147,7 +147,7 @@ struct PreviewPadSection: View {
         Button(role: .destructive) {
             showingResetAdjustmentsConfirmation = true
         } label: {
-            DestructiveSettingsLabel(title: "Reset dragged/resized groups", systemImage: "arrow.counterclockwise")
+            DestructiveSettingsLabel(title: "Reset moved and resized groups", systemImage: "arrow.counterclockwise")
         }
 
         Button {
@@ -187,7 +187,7 @@ struct PreviewPadSection: View {
         do {
             let url = try result.get()
             guard url.startAccessingSecurityScopedResource() else {
-                previewFileAlertTitle = "Error"
+                previewFileAlertTitle = "Import failed"
                 previewFileErrorMessage = "Couldn't access that file."
                 return
             }
@@ -196,7 +196,7 @@ struct PreviewPadSection: View {
             let file = try MuffinLayoutFile.decode(data)
             PreviewPadStore.shared.applyImportedLayout(file)
         } catch {
-            previewFileAlertTitle = "Error"
+            previewFileAlertTitle = "Import failed"
             previewFileErrorMessage = "Couldn't import that .muffinlyt file: \(error.localizedDescription)"
         }
     }
@@ -205,7 +205,7 @@ struct PreviewPadSection: View {
         do {
             let url = try result.get()
             guard url.startAccessingSecurityScopedResource() else {
-                previewFileAlertTitle = "Error"
+                previewFileAlertTitle = "Import failed"
                 previewFileErrorMessage = "Couldn't access that file."
                 return
             }
@@ -214,7 +214,7 @@ struct PreviewPadSection: View {
             let file = try MuffinColourFile.decode(data)
             PreviewPadStore.shared.applyImportedColours(file)
         } catch {
-            previewFileAlertTitle = "Error"
+            previewFileAlertTitle = "Import failed"
             previewFileErrorMessage = "Couldn't import that .muffinclr file: \(error.localizedDescription)"
         }
     }

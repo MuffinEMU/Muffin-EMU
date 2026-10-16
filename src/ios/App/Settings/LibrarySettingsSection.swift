@@ -82,7 +82,7 @@ struct LibrarySettingsSection: View {
                         Text(filter.title).tag(filter.rawValue)
                     }
                 } label: {
-                    Label("Show", systemImage: "line.3.horizontal.decrease.circle")
+                    Label("Filter", systemImage: "line.3.horizontal.decrease.circle")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                 }
             }
@@ -90,7 +90,7 @@ struct LibrarySettingsSection: View {
             NavigationLink {
                 GraphicPacksView()
             } label: {
-                Label("Graphic Packs", systemImage: "wand.and.stars")
+                Label("Graphic packs", systemImage: "wand.and.stars")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
             Button(role: .destructive) {
@@ -108,11 +108,11 @@ struct LibrarySettingsSection: View {
                 }
                 NotificationCenter.default.post(name: .muffinCoverArtSourcesChanged, object: nil)
             } label: {
-                Label("Reset library layout", systemImage: "arrow.counterclockwise")
+                Label("Reset layout and covers", systemImage: "arrow.counterclockwise")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
         } header: {
-            SettingsSectionHeader("Library", icon: "books.vertical", accent: .content)
+            SettingsSectionHeader("Library layout", icon: "books.vertical", accent: .content)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }

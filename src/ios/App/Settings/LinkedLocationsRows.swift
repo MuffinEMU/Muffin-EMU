@@ -31,7 +31,7 @@ struct LinkedLocationsRows: View {
                 Label("Link a game file\u{2026}", systemImage: "link")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
-            Text("Linked games stay where they are. MuffinEMU never copies, moves or deletes them. A game on a drive that isn't connected stays in the library until you plug the drive back in.")
+            Text("Linked games stay where they are. MuffinEMU doesn't copy, move or delete them. A game on a drive that isn't connected stays in the library until you plug the drive back in.")
                 .font(.system(size: 12, design: .rounded))
                 .foregroundColor(MuffinTheme.brownMid)
         }
@@ -48,7 +48,7 @@ struct LinkedLocationsRows: View {
         } message: { location in
             Text("\"\(location.name)\" stops appearing in your library. Nothing on the drive or in the folder is deleted. Your saves and options are kept.")
         }
-        .alert("Couldn't link that", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+        .alert("Couldn't link that location", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(errorMessage ?? "")

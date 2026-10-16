@@ -25,7 +25,7 @@ struct EmulatedDevicesSettingsSection: View {
     var body: some View {
         Section {
             Toggle(isOn: $skylanderPortalEnabled) {
-                Text("Skylanders Portal")
+                Text("Skylanders portal")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
             .tint(MuffinTheme.accentText)
@@ -33,7 +33,7 @@ struct EmulatedDevicesSettingsSection: View {
                 cemu_bridge_set_emulate_skylander_portal(newValue)
             }
             Toggle(isOn: $infinityBaseEnabled) {
-                Text("Disney Infinity Base")
+                Text("Disney Infinity base")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
             .tint(MuffinTheme.accentText)
@@ -41,22 +41,22 @@ struct EmulatedDevicesSettingsSection: View {
                 cemu_bridge_set_emulate_infinity_base(newValue)
             }
             Toggle(isOn: $dimensionsToypadEnabled) {
-                Text("LEGO Dimensions Toypad")
+                Text("LEGO Dimensions toypad")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
             .tint(MuffinTheme.accentText)
             .onChange(of: dimensionsToypadEnabled) { newValue in
                 cemu_bridge_set_emulate_dimensions_toypad(newValue)
             }
-            NavigationLink("Manage Figures") {
+            NavigationLink("Manage figures") {
                 EmulatedDevicesView()
             }
         } header: {
-            SettingsSectionHeader("Emulated Devices", icon: "square.stack.3d.up", accent: .content)
+            SettingsSectionHeader("Figure portals", icon: "square.stack.3d.up", accent: .content)
         } footer: {
             InfoButton.footer(
-                "Emulates a Skylanders Portal, Disney Infinity Base or LEGO Dimensions Toypad. Changes apply the next time you start a game.",
-                title: "Emulated Devices",
+                "Emulates a Skylanders portal, Disney Infinity base or LEGO Dimensions toypad. Changes apply the next time you start a game.",
+                title: "Figure portals",
                 text: fullText)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
@@ -66,7 +66,7 @@ struct EmulatedDevicesSettingsSection: View {
         """
         Some games (Skylanders, Disney Infinity, LEGO Dimensions) read toy figures from a USB portal, base or toypad. Turn on the one your game uses; it applies the next time you start a game.
 
-        Manage Figures lets you load a figure dump you own, create a new save for a figure, or clear a slot. No figure data is included with MuffinEMU.
+        Manage figures lets you load a figure dump you own, create a new save for a figure, or clear a slot. No figure data is included with MuffinEMU.
         """
     }
 }

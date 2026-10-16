@@ -19,7 +19,7 @@ enum RendererAPI: Int, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .metal:  return "Metal"
-        case .vulkan: return "Vulkan (Experimental)"
+        case .vulkan: return "Vulkan (experimental)"
         }
     }
 
@@ -43,7 +43,7 @@ enum ScaleFilter: Int, CaseIterable, Identifiable {
         case .linear:         return "Linear"
         case .bicubic:        return "Bicubic"
         case .bicubicHermite: return "Bicubic Hermite"
-        case .nearestNeighbor: return "Nearest Neighbor"
+        case .nearestNeighbor: return "Nearest neighbour"
         }
     }
 }
@@ -172,7 +172,7 @@ struct GraphicsSettingsSection: View {
                 // The renderer picker is Advanced mode only, so Basic doesn't describe it.
                 advanced
                     ? "Metal is the default renderer. Vulkan (MoltenVK) may work better for some games; it applies on the next launch."
-                    : "A lower Resolution uses less memory.",
+                    : "A lower resolution uses less memory.",
                 title: "Graphics",
                 text: fullText)
         }
@@ -266,8 +266,8 @@ struct GraphicsSettingsSection: View {
                 Text("Steady frame rate")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                 Text(fullSpeedRenders
-                     ? "Rendering comes first: steady frames at the game's own Wii U frame rate, never faster."
-                     : "Off: frames are shown the moment they're ready.")
+                     ? "Rendering comes first: frames are paced at the game's own Wii U frame rate."
+                     : "Frames are shown the moment they're ready.")
                     .font(.system(size: 12))
                     .foregroundColor(MuffinTheme.secondaryText)
             }
@@ -370,7 +370,7 @@ struct GraphicsSettingsSection: View {
             .onChange(of: emulateMissingEffects) { newValue in
                 cemu_bridge_set_emulate_missing_effects(newValue)
             }
-            Text("Draws effects that this device's GPU can't run natively. Experimental, and off by default. Takes effect on the next game launch.")
+            Text("Draws effects that this device's GPU can't run natively. Experimental, and off by default. Applies the next time you start a game.")
                 .font(.system(size: 12))
                 .foregroundColor(MuffinTheme.secondaryText)
         }
@@ -390,7 +390,7 @@ struct GraphicsSettingsSection: View {
     private var overrideGammaSlider: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text("Override gamma")
+                Text("Override gamma value")
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                 Spacer()
                 Text(String(format: "%.1f", overrideGammaValue))
@@ -401,7 +401,7 @@ struct GraphicsSettingsSection: View {
                 value: $overrideGammaValue,
                 in: OverrideGammaSetting.minValue...OverrideGammaSetting.maxValue
             )
-            .accessibilityLabel("Override gamma")
+            .accessibilityLabel("Override gamma value")
             .onChange(of: overrideGammaValue) { newValue in
                 cemu_bridge_set_override_gamma_value(Float(newValue))
             }
@@ -416,7 +416,7 @@ struct GraphicsSettingsSection: View {
 
     @ViewBuilder private var meshShaderNote: some View {
         if meshShadersUnsupported {
-            Text("This device doesn't support mesh shaders, so some graphic packs may not render correctly. See Graphic Packs under Library.")
+            Text("This device doesn't support mesh shaders, so some graphic packs may not render correctly. See Graphic packs under Library layout.")
                 .font(.system(size: 12))
                 .foregroundColor(MuffinTheme.secondaryText)
         }
@@ -424,13 +424,13 @@ struct GraphicsSettingsSection: View {
 
     private var fullText: String {
         """
-        Steady frame rate puts rendering ahead of everything else MuffinEMU does: the graphics thread gets first call on the fastest cores, each frame is shown at the game's own Wii U frame rate (steady, and never faster than the console), and debugging extras are skipped. Every shader the game has used before is built while the game loads, so those never cause a hitch or a flicker. The first time something brand new appears, its shader has to be built: "Wait for it" holds the frame until it's ready (a short hitch, never a missing object), "Keep going" draws without it once (no hitch, but it can be missing for a moment). Either way it's saved, so it happens only once. This choice wins over Favour accuracy, Favour performance and Compile shaders in the background. Takes effect the next time you start a game.
+        Steady frame rate puts rendering ahead of everything else MuffinEMU does: the graphics thread gets first call on the fastest cores, each frame is shown at the game's own Wii U frame rate (steady, and not faster than the console), and debugging extras are skipped. Every shader the game has used before is built while the game loads, so those never cause a hitch or a flicker. The first time something brand new appears, its shader has to be built: "Wait for it" holds the frame until it's ready (a short hitch, nothing missing), "Keep going" draws without it once (no hitch, but it can be missing for a moment). Either way it's saved, so it happens only once. This choice wins over Favour accuracy, Favour performance and Compile shaders in the background. Takes effect the next time you start a game.
 
         Metal is the default renderer. Vulkan (MoltenVK) goes through a translation layer and may work better for some games, at some cost to speed. Takes effect the next time you launch a game.
 
         MoltenVK is the layer that turns Vulkan into Metal, so it only matters with the Vulkan renderer. 1.4.3 is the default; 1.2.8 is an older build that some games run better on. A change applies the next time MuffinEMU starts.
 
-        Filter when enlarging is used when MuffinEMU draws the game's picture larger than the game rendered it; Filter when shrinking is used when drawing it smaller. Bicubic (the default for enlarging) is smoother than linear; Bicubic Hermite sharpens that further; Nearest Neighbor keeps hard pixel edges with no blending at all. Linear is the default for shrinking.
+        Filter when enlarging is used when MuffinEMU draws the game's picture larger than the game rendered it; Filter when shrinking is used when drawing it smaller. Bicubic (the default for enlarging) is smoother than linear; Bicubic Hermite sharpens that further; Nearest neighbour keeps hard pixel edges with no blending at all. Linear is the default for shrinking.
 
         \(renderScale.summary)
 
@@ -438,15 +438,15 @@ struct GraphicsSettingsSection: View {
 
         Stretch picture to fill the screen fills the screen's own shape instead of keeping the Wii U's 1280x720 proportions, which otherwise letterboxes with bars on two sides. Off keeps the picture undistorted; on trades that for using every pixel. Takes effect on the very next frame.
 
-        There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Steady frame rate at the top of this page.
+        There's no VSync switch because iOS syncs frames to the screen's own refresh, so the picture doesn't tear and there is nothing to turn off. For even frame pacing, use Steady frame rate at the top of this page.
 
-        Flip screen upside down turns both Wii U screens vertically before they reach the screen. Off for everyone except a panel or capture rig that presents the image inverted. Takes effect on the next frame.
+        Flip screen upside down turns both Wii U screens vertically before they reach the screen. Leave it off unless your screen or capture setup shows the image inverted. Takes effect on the next frame.
 
         Fast blending lets some Metal shaders blend using the picture already on screen instead of an extra step, which is quicker. It is on by default, Metal only, and takes effect the next time you launch a game.
 
         Display gamma adjusts how bright the mid-tones look without changing pure black or pure white. 2.2 is the standard display gamma and the default; lower looks flatter and brighter in the mids, higher looks more contrasty and darker in the mids. Takes effect on the next frame.
 
-        Override the game's gamma and Override gamma are a separate stage from Display gamma above, not a second copy of it: some games ask for their own gamma value, and this either adds Override gamma on top of that request (off) or replaces the game's request with Override gamma entirely (on) - before Display gamma is applied to the result. Off by default; most games never ask for a specific gamma at all, so this has nothing to override until one does.
+        Override the game's gamma and Override gamma value are a separate stage from Display gamma above, not a second copy of it: some games ask for their own gamma value, and this either adds Override gamma value on top of that request (off) or replaces the game's request with Override gamma value entirely (on) - before Display gamma is applied to the result. Off by default; most games never ask for a specific gamma at all, so this has nothing to override until one does.
         """
         + (meshShadersUnsupported ? "\n\nThis device doesn't support mesh shaders, so graphic packs that rely on geometry shaders or post-processing (RECTS) draws may not render correctly. Everything else works normally." : "")
     }

@@ -26,7 +26,7 @@ struct CoverDataSettingsSection: View {
             SettingsRow(label: "Art packs installed", value: "\(packs.installed.count)", icon: "shippingbox")
             SettingsRow(label: "Games with data", value: "\(data.matchedCount) of \(gameManager.games.count)", icon: "doc.text.magnifyingglass")
         } header: {
-            SettingsSectionHeader("Cover + data scraping", icon: "photo.stack", accent: .content)
+            SettingsSectionHeader("Cover art", icon: "photo.stack", accent: .content)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }
@@ -50,7 +50,7 @@ struct CoverDataSettingsView: View {
             scrapeSection
             creditsSection
         }
-        .navigationTitle("Cover + data scraping")
+        .navigationTitle("Covers and game data")
         .muffinOpaqueNavigationBar(MuffinTheme.formGround)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
@@ -105,7 +105,7 @@ struct CoverDataSettingsView: View {
     private var scrapeSection: some View {
         Section {
             SettingsRow(label: "Games with data", value: "\(data.matchedCount) of \(gameManager.games.count)", icon: "doc.text.magnifyingglass")
-            SettingsRow(label: "Last scraped", value: data.lastScrape.map { ShaderCacheInfo.formatDate($0) } ?? "never", icon: "clock")
+            SettingsRow(label: "Last updated", value: data.lastScrape.map { ShaderCacheInfo.formatDate($0) } ?? "Never", icon: "clock")
             if data.isScraping {
                 VStack(alignment: .leading, spacing: 6) {
                     ProgressView(value: data.fraction)
@@ -118,7 +118,7 @@ struct CoverDataSettingsView: View {
                 Button {
                     data.scrape(games: gameManager.games)
                 } label: {
-                    Label("Scrape now", systemImage: "arrow.down.doc")
+                    Label("Download game data", systemImage: "arrow.down.doc")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                 }
                 .disabled(gameManager.games.isEmpty)
@@ -130,12 +130,12 @@ struct CoverDataSettingsView: View {
                 Text(error).font(.system(size: 12)).foregroundColor(.red).fixedSize(horizontal: false, vertical: true)
             }
         } header: {
-            SettingsSectionHeader("Data scraping", icon: "doc.text.magnifyingglass", accent: .content)
+            SettingsSectionHeader("Game data", icon: "doc.text.magnifyingglass", accent: .content)
         } footer: {
             InfoButton.footer(
                 "Reads GameTDB's Wii U database and keeps the entries for the games you have: summary, release dates, publisher and more.",
-                title: "Data scraping",
-                text: "MuffinEMU downloads GameTDB's Wii U database (about 2 MB), reads it one entry at a time and keeps only your games' entries, so the saved file stays small.\n\nEach game is matched in this order: its exact GameTDB ID worked out from the title ID, then its product code, then its title in any language, always preferring the entry for the game's own region. Every match records how sure it is, and each game's Info screen lets you pick a different entry if one is wrong.\n\nIt also runs by itself in the background for new games. Everything is stored per install, so two copies of one game can match differently."
+                title: "Game data",
+                text: "MuffinEMU downloads GameTDB's Wii U database (about 2 MB), reads it one entry at a time and keeps only your games' entries, so the saved file stays small.\n\nEach game is matched in this order: its exact GameTDB ID worked out from the title ID, then its product code, then its title in any language, preferring the entry for the game's own region. Every match records how sure it is, and each game's Info screen lets you pick a different entry if one is wrong.\n\nIt also runs by itself in the background for new games. Everything is stored per install, so two copies of one game can match differently."
             )
         }
     }

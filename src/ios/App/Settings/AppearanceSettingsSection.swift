@@ -25,7 +25,7 @@ struct AppearanceSettingsSection: View {
     var body: some View {
         Section {
             Button(action: { showingIconPicker = true }) {
-                Label("App Icon", systemImage: "app.badge")
+                Label("App icon", systemImage: "app.badge")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
             .foregroundColor(MuffinTheme.brownDarkest)
@@ -66,7 +66,7 @@ struct AppearanceSettingsSection: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Use Classic UI")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text("The v2.0 look: flat cards, plain headers, system-font rows.")
+                    Text("The v2.0 look: flat cards, plain headers and the standard iOS font.")
                         .font(.system(size: 12))
                         .foregroundColor(MuffinTheme.secondaryText)
                 }
@@ -78,7 +78,7 @@ struct AppearanceSettingsSection: View {
             InfoButton.footer(
                 "Both change how MuffinEMU looks, not what it does.",
                 title: "Appearance",
-                text: "Flat surfaces removes the soft highlights on cards and buttons.\n\nClassic UI restores the flat v2.0 styling: plain cards, text headers, system-font rows. It turns on flat surfaces too. All settings and screens are still there; newer screens just have no classic form.")
+                text: "Flat surfaces removes the soft highlights on cards and buttons.\n\nClassic UI restores the flat v2.0 styling: plain cards, text headers and the standard iOS font. It turns on flat surfaces too. All settings and screens are still there; newer screens just have no classic form.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }

@@ -30,13 +30,13 @@ struct WiiUMenuSettingsSection: View {
                         value: status.menuInstalled
                             ? status.installedRegions.map(\.displayName).joined(separator: ", ")
                             : "Not installed")
-            SettingsRow(label: "Shared data (0005001b)", value: status.hasSharedData ? "Found" : "Missing")
-            SettingsRow(label: "cafeLibs", value: "\(status.cafeLibsPresent) of \(WiiUMenu.cafeLibNames.count)")
+            SettingsRow(label: "Shared system data", value: status.hasSharedData ? "Found" : "Missing")
+            SettingsRow(label: "System libraries (cafeLibs)", value: "\(status.cafeLibsPresent) of \(WiiUMenu.cafeLibNames.count)")
             if !status.incompleteTitles.isEmpty {
-                SettingsRow(label: "Incomplete system titles", value: "\(status.incompleteTitles.count)")
+                SettingsRow(label: "Incomplete system apps", value: "\(status.incompleteTitles.count)")
             }
-            SettingsRow(label: "otp.bin", value: status.hasOTP ? "Found" : "Missing")
-            SettingsRow(label: "seeprom.bin", value: status.hasSeeprom ? "Found" : "Missing")
+            SettingsRow(label: "Console keys (otp.bin)", value: status.hasOTP ? "Found" : "Missing")
+            SettingsRow(label: "Console data (seeprom.bin)", value: status.hasSeeprom ? "Found" : "Missing")
 
             Button(action: { importMode = .menuFolder; showingImporter = true }) {
                 Label("Import Wii U Menu", systemImage: "folder.badge.plus")
@@ -66,7 +66,7 @@ struct WiiUMenuSettingsSection: View {
             InfoButton.footer(
                 "Experimental. Files must be dumped from your own Wii U. Nothing is included.",
                 title: "Wii U Menu",
-                text: "Experimental. The Wii U Menu and its support files must come from your own Wii U, dumped with Dumpling. MuffinEMU includes none of them.\n\nImport Wii U Menu: pick the package folder (the one containing mlc01 and cafeLibs), an mlc01 folder, a sys folder, a cafeLibs folder, or the Menu's own title folder. Files are merged one by one into MuffinEMU's storage; anything replaced is saved first, and your saves are never touched.\n\nImport console files: pick otp.bin and seeprom.bin. Only online features need them; the Menu may start without.\n\nOnce the Menu is installed it appears at the top of the library. Games in your library show up in it. You can show it as a card in the game grid instead, or hide it from the library; hiding doesn't uninstall it.\n\nUninstall Wii U Menu deletes only the Menu itself. Shared data, system apps, cafeLibs, otp.bin and seeprom.bin stay, since games can use them. Your saves and your games are never touched.")
+                text: "Experimental. The Wii U Menu and its support files must come from your own Wii U, dumped with Dumpling. MuffinEMU includes none of them.\n\nImport Wii U Menu: pick the package folder (the one containing mlc01 and cafeLibs), an mlc01 folder, a sys folder, a cafeLibs folder, or the Menu's own title folder. Files are merged one by one into MuffinEMU's storage; anything replaced is saved first, and your saves aren't touched.\n\nImport console files: pick otp.bin and seeprom.bin. Only online features need them; the Menu may start without them.\n\nOnce the Menu is installed it appears at the top of the library. Games in your library show up in it. You can show it as a card in the game grid instead, or hide it from the library; hiding doesn't uninstall it.\n\nUninstall Wii U Menu deletes only the Menu itself. Shared data, system apps, cafeLibs, otp.bin and seeprom.bin stay, since games can use them. Your saves and your games aren't touched.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         // One importer for both buttons: two .fileImporter modifiers on the same view only
@@ -121,7 +121,7 @@ struct WiiUMenuSettingsSection: View {
 
         Toggle(isOn: $hideMenu) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Hide the installed Wii U Menu")
+                Text("Hide the Wii U Menu")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                 Text("Takes it out of the library. It stays installed; turn this off to bring it back.")
                     .font(.system(size: 12))
