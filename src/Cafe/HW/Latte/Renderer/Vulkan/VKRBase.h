@@ -133,6 +133,9 @@ public:
 
 	VkImageView m_textureImageView{ VK_NULL_HANDLE };
 	VkSampler m_textureDefaultSampler[2] = { VK_NULL_HANDLE, VK_NULL_HANDLE }; // relict from LatteTextureViewVk, get rid of it eventually
+	// descriptor set for drawing this view to the screen (VulkanRenderer::backbufferBlit_createDescriptorSet), one per filter like the samplers.
+	// It refers to this view's image view and sampler, so it lives and dies with this object
+	VkDescriptorSet m_backbufferBlitDescriptorSet[2] = { VK_NULL_HANDLE, VK_NULL_HANDLE };
 };
 
 
