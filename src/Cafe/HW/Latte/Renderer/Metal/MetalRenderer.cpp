@@ -4791,6 +4791,8 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
         sint32 samplerBinding = shader->resourceMapping.textureUnitToSamplerBindingPoint[relative_textureUnit];
         
         auto textureView = m_state.m_textures[hostTextureUnit];
+        // The shader samples this unit with sample_compare (a depth texture type); otherwise a compare is emulated or absent
+        const bool depthTexture = shader->textureUsesDepthCompare[relative_textureUnit] && IsValidDepthTextureType(textureDim);
         MTL::SamplerState* sampler = m_nearestSampler;
         uint32 stageSamplerIndex = shader->textureUnitSamplerAssignment[relative_textureUnit];
         if (samplerBinding >= 0 && stageSamplerIndex != LATTE_DECOMPILER_SAMPLER_NONE)
@@ -4800,7 +4802,7 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
             if (textureView && textureView->baseTexture->overwriteInfo.anisotropicLevel >= 0)
                 samplerWords->WORD0.set_MAX_ANISO_RATIO(textureView->baseTexture->overwriteInfo.anisotropicLevel);
             const uint64 samplerStart = PerfTelemetry::SampleStart();
-            sampler = m_samplerCache->GetSamplerState(LatteGPUState.contextNew, shader->shaderType, stageSamplerIndex, samplerWords);
+            sampler = m_samplerCache->GetSamplerState(LatteGPUState.contextNew, shader->shaderType, stageSamplerIndex, samplerWords, depthTexture);
             PerfTelemetry::SampleEnd(telemetry.gpuSamplerLookupNs, samplerStart);
             PerfTelemetry::SampleCount(telemetry.gpuSamplerLookups);
         }
@@ -4821,7 +4823,6 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
         MTL::Texture* mtlTexture = nullptr;
         bool textureViewFailed = false;
         const bool integerTexture = shader->textureIsIntegerFormat[relative_textureUnit];
-        const bool depthTexture = shader->textureUsesDepthCompare[relative_textureUnit] && IsValidDepthTextureType(textureDim);
         MTL::Texture* nullTexture = GetNullSampledTexture(textureDim, integerTexture, depthTexture);
         if (!textureView)
         {
