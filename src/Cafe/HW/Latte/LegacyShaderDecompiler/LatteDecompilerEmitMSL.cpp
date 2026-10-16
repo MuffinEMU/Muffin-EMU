@@ -2224,14 +2224,9 @@ static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContex
 		}
 	}
 	// texture sampler opcode
+	// (GLSL turns SAMPLE_C_LZ into SAMPLE_C in vertex shaders because its shadow samplers lack some textureLod overloads.
+	// MSL has no such gap: sample_compare with level(0) is valid in every stage, so the opcode is kept as is.)
 	uint32 texOpcode = texInstruction->opcode;
-	// TODO: is this needed?
-	if (shaderContext->shaderType == LatteConst::ShaderType::Vertex)
-	{
-		// vertex shader forces LOD to zero, but certain sampler types don't support textureLod(...) API
-		if (texOpcode == GPU7_TEX_INST_SAMPLE_C_LZ)
-			texOpcode = GPU7_TEX_INST_SAMPLE_C;
-	}
 	// check if offset is used
 	bool hasOffset = false;
 	if( texInstruction->textureFetch.offsetX != 0 || texInstruction->textureFetch.offsetY != 0 || texInstruction->textureFetch.offsetZ != 0 )
@@ -2269,9 +2264,18 @@ static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContex
 			src->add(" = (");
 	}
 
-	bool isCompare = shaderContext->shader->textureUsesDepthCompare[texInstruction->textureFetch.textureIndex];
-	bool emulateCompare = (isCompare && !IsValidDepthTextureType(texDim));
+	// Whether this instruction compares is a property of the opcode. Whether the texture is a depth texture is a property of the
+	// unit: _emitTextureTypeMSL declares it depth2d/depth2d_array/depthcube_array as soon as any instruction compares against it.
+	// A shadow map is often read both ways in one shader (FETCH4 or SAMPLE for manual filtering next to SAMPLE_C), so the two
+	// must not be confused: emitting sample_compare/gather_compare for the plain reads leaves them without a compare value and the
+	// whole pipeline fails to compile, which drops every draw that uses it.
+	const bool isCompareOp = (texOpcode == GPU7_TEX_INST_SAMPLE_C || texOpcode == GPU7_TEX_INST_SAMPLE_C_L || texOpcode == GPU7_TEX_INST_SAMPLE_C_LZ);
+	const bool isDepthTexture = shaderContext->shader->textureUsesDepthCompare[texInstruction->textureFetch.textureIndex] && IsValidDepthTextureType(texDim);
+	bool emulateCompare = (isCompareOp && !IsValidDepthTextureType(texDim));
 	bool isGather = (texOpcode == GPU7_TEX_INST_FETCH4);
+	// Every depth texture read except gather returns a scalar, and so does the emulated compare. Broadcast it to float4 so the
+	// destination swizzle below can pick any component.
+	const bool isScalarResult = (isDepthTexture && !isGather) || emulateCompare;
 
 	bool unnormalizationHandled = false;
 	bool useTexelCoordinates = false;
@@ -2301,9 +2305,8 @@ static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContex
 	}
 	else
 	{
-	    // sample_compare returns a float, need to convert to float4
-	    if (isCompare)
-			src->addFmt("float4(");
+	    if (isScalarResult)
+			src->add("float4(");
 
     	if (emulateCompare)
     	{
@@ -2330,7 +2333,7 @@ static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContex
          			src->add("gather");
           		else
                     src->add("sample");
-           	    if (isCompare)
+           	    if (isCompareOp)
          			src->add("_compare");
           		src->addFmt("(samplr{}, ", texInstruction->textureFetch.textureIndex);
            	}
@@ -2617,10 +2620,11 @@ static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContex
     	// lod bias (TODO: wht?)
 
         src->add(")");
-    }
 
-    if (isCompare)
-        src->add(")");
+        // close the float4 broadcast (inside this branch: the framebuffer fetch path above never opens one)
+        if (isScalarResult)
+            src->add(")");
+    }
 
    	if (texOpcode == GPU7_TEX_INST_SAMPLE_C || texOpcode == GPU7_TEX_INST_SAMPLE_C_LZ)
    	{
