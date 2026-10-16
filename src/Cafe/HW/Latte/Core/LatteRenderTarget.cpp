@@ -97,6 +97,13 @@ void LatteMRT::NotifyTextureDeletion(LatteTexture* texture)
 			sLatteCurrentRendertargets.colorBuffer[i].view = nullptr;
 		}
 	}
+	// The depth attachment too. UpdateCurrentFBO() leaves it untouched when depth is enabled but its address register is 0,
+	// and ApplyCurrentState() would then build the FBO key from (and look up FBOs in) the deleted view.
+	if (sLatteCurrentRendertargets.depthBuffer.view && sLatteCurrentRendertargets.depthBuffer.view->baseTexture == texture)
+	{
+		sLatteCurrentRendertargets.depthBuffer.view = nullptr;
+		sLatteCurrentRendertargets.depthBuffer.hasStencil = false;
+	}
 }
 
 LatteCachedFBO* LatteMRT::CreateCachedFBO(uint64 key)

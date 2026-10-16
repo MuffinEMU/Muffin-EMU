@@ -961,7 +961,7 @@ VIEWCOMPATIBILITY LatteTexture_CanTextureBeRepresentedAsView(LatteTexture* baseT
 // deletes any related textures that have become redundant (aka textures that can also be represented entirely as a view into the new texture)
 void LatteTexture_DeleteAbsorbedSubtextures(LatteTexture* texture)
 {
-	for(size_t i=0; i<texture->list_compatibleRelations.size(); i++)
+	for(size_t i=0; i<texture->list_compatibleRelations.size();)
 	{
 		LatteTextureRelation* textureRelation = texture->list_compatibleRelations[i];
 		LatteTexture* relatedTexture = (textureRelation->baseTexture!=texture)? textureRelation->baseTexture:textureRelation->subTexture;
@@ -972,7 +972,13 @@ void LatteTexture_DeleteAbsorbedSubtextures(LatteTexture* texture)
 		{
 			LatteTexture_Delete(relatedTexture);
 			LatteGPUState.repeatTextureInitialization = true;
+			// deleting removed this relation (and any other to relatedTexture) from the list, which shifted the entries
+			// after it down; stepping on from i skipped the next one and left that redundant copy alive. Start over:
+			// the entries already checked give the same answer again, and every pass that gets here deletes a texture.
+			i = 0;
+			continue;
 		}
+		i++;
 	}
 }
 
