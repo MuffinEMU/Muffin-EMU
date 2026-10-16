@@ -502,7 +502,10 @@ namespace iosu
 			if (transferElementSize == 0)
 				return FSA_RESULT::OK;
 
-			LatteBufferCache_notifyDCFlush(destPtr.GetMPTR(), bytesToRead);
+			// only the bytes the read wrote can have changed: a read that stops at the end of the file (a game asking for
+			// a large buffer's worth) used to mark the whole requested range stale in the GPU buffer cache
+			if (bytesSuccessfullyRead != 0)
+				LatteBufferCache_notifyDCFlush(destPtr.GetMPTR(), bytesSuccessfullyRead);
 
 			return (FSA_RESULT)(bytesSuccessfullyRead / transferElementSize); // return number of elements read
 		}
@@ -517,6 +520,9 @@ namespace iosu
 			FSCVirtualFile* fscFile = sFileHandleTable.GetByHandle(fileHandle);
 			if (!fscFile)
 				return FSA_RESULT::INVALID_FILE_HANDLE;
+			// the element count below divides by the element size, which the guest controls (FSWriteFile with size 0)
+			if (transferElementSize == 0)
+				return FSA_RESULT::OK;
 			cemu_assert_debug((transferSize % transferElementSize) == 0);
 			uint32 bytesToWrite = transferSize;
 			// check for write permission (should this happen before or after setting file position?)
@@ -585,7 +591,12 @@ namespace iosu
 			FSCDirEntry fscDirEntry;
 			if (fsc_nextDir(fscFile, &fscDirEntry) == false)
 				return FSA_RESULT::END_OF_DIRECTORY;
-			strcpy(dirEntryOut->name, fscDirEntry.path);
+			// FSC names can be up to 255 bytes (host folders: saves, graphic pack files), the guest's field holds 128. A
+			// longer host name used to be copied whole and overran the response into the guest memory after it
+			size_t nameLen = strnlen(fscDirEntry.path, sizeof(fscDirEntry.path));
+			nameLen = std::min(nameLen, sizeof(dirEntryOut->name) - 1);
+			memcpy(dirEntryOut->name, fscDirEntry.path, nameLen);
+			dirEntryOut->name[nameLen] = '\0';
 			FSFlag statFlag = FSFlag::NONE;
 			dirEntryOut->stat.size = 0;
 			if (fscDirEntry.isDirectory)
