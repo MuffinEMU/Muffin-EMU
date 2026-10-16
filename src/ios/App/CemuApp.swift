@@ -103,15 +103,9 @@ struct CemuApp: App {
 extension View {
     /// Turns off iOS 26's scroll edge effect for every scroll view inside this view.
     @ViewBuilder func muffinScrollEdgeBlurHidden() -> some View {
-        #if compiler(>=6.2)
-        if #available(iOS 26.0, *) {
-            self.scrollEdgeEffectHidden(true, for: .all)
-        } else {
-            self
-        }
-        #else
-        self
-        #endif
+        // With Liquid Glass on, the soft scroll edge effect is what keeps content legible
+        // under the glass bars, so it stays (see LiquidGlass.swift); otherwise it is hidden.
+        modifier(ScrollEdgeForGlassModifier())
     }
 }
 
@@ -137,5 +131,14 @@ enum PipelineCacheFlusher {
                 }
             }
         }
+    }
+}
+
+/// Re-evaluates when the player flips the Liquid Glass or Classic UI switch.
+private struct ScrollEdgeForGlassModifier: ViewModifier {
+    @ObservedObject private var style = UIStyleStore.shared
+
+    func body(content: Content) -> some View {
+        content.muffinScrollEdgeForGlass()
     }
 }
