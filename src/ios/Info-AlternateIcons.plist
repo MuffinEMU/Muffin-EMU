@@ -101,7 +101,7 @@
 	<array>
 		<dict>
 			<key>UTTypeIdentifier</key>
-			<string>com.kiddreads.muffin.layout</string>
+			<string>com.void.muffinemu.layout</string>
 			<key>UTTypeDescription</key>
 			<string>Muffin Layout</string>
 			<key>UTTypeConformsTo</key>
@@ -118,7 +118,7 @@
 		</dict>
 		<dict>
 			<key>UTTypeIdentifier</key>
-			<string>com.kiddreads.muffin.colour</string>
+			<string>com.void.muffinemu.colour</string>
 			<key>UTTypeDescription</key>
 			<string>Muffin Colours</string>
 			<key>UTTypeConformsTo</key>
@@ -163,7 +163,7 @@
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.kiddreads.muffin.layout</string>
+				<string>com.void.muffinemu.layout</string>
 			</array>
 		</dict>
 		<dict>
@@ -175,7 +175,7 @@
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.kiddreads.muffin.colour</string>
+				<string>com.void.muffinemu.colour</string>
 			</array>
 		</dict>
 	</array>

@@ -44,7 +44,7 @@ struct PreviewPadSection: View {
     private static let customColourTag = "custom"
 
     private var otherPadChosen: Bool {
-        useMeloControls || TouchLabSettings.isTouchLab(touchLabScheme)
+        (useMeloControls && MeloControlsSetting.isAvailable) || TouchLabSettings.isTouchLab(touchLabScheme)
     }
 
     private var toggleCaption: String {

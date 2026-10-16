@@ -97,7 +97,7 @@ print("ok: channels are separated; legacy auto-<sha> experiments are accepted by
 
 # 2. Shape of the experimental feed.
 app = f["experimental.json"]["apps"][0]
-assert app["name"] == "MuffinEMU Experimental" and app["bundleIdentifier"] == "com.kiddreads.MuffinEMU"
+assert app["name"] == "MuffinEMU Experimental" and app["bundleIdentifier"] == "com.void.muffinemu"
 # The warning lives in the source's description (what SideStore shows above the app list), in a sentence.
 src_text = f["experimental.json"].get("description", "") + " " + app["localizedDescription"]
 assert "unfinished test builds" in src_text.lower() and "Stable" in src_text

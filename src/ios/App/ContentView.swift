@@ -1861,7 +1861,7 @@ struct EmulatorViewOptimized: View {
     private var padSystem: PadSystem {
         // Melo-Controller wins outright when chosen - it replaces both of MuffinEMU's own
         // pads, exactly as it did before this enum existed.
-        if useMeloControls { return .melo }
+        if useMeloControls && MeloControlsSetting.isAvailable { return .melo }
         // A TouchLab style is an explicit choice, so it beats the experimental preview pad.
         // An empty or unknown stored id is not a TouchLab style and falls through, so a bad
         // value can never leave the player without a pad.
@@ -2304,15 +2304,17 @@ struct EmulatorViewOptimized: View {
                         // overlay it was held on disappears cannot report its own
                         // release any more, and the other pad's own buttons don't
                         // know a press exists that they never started.
-                        Button(action: {
-                            useMeloControls.toggle()
-                            cemu_bridge_release_all_buttons()
-                        }) {
-                            Image(systemName: useMeloControls ? "checkmark.rectangle.stack.fill" : "rectangle.stack")
-                                .font(.system(size: 12, weight: .semibold))
+                        if MeloControlsSetting.isAvailable {
+                            Button(action: {
+                                useMeloControls.toggle()
+                                cemu_bridge_release_all_buttons()
+                            }) {
+                                Image(systemName: useMeloControls ? "checkmark.rectangle.stack.fill" : "rectangle.stack")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                            .buttonStyle(MuffinBarButtonStyle())
+                            .accessibilityLabel(useMeloControls ? "Switch to \(otherPadName)" : "Switch to Melo-Controller")
                         }
-                        .buttonStyle(MuffinBarButtonStyle())
-                        .accessibilityLabel(useMeloControls ? "Switch to \(otherPadName)" : "Switch to Melo-Controller")
 
                         // Reachable without leaving the game, same reasoning as the
                         // move-controls and pad-hide buttons around it: reachable
@@ -2539,7 +2541,7 @@ struct EmulatorViewOptimized: View {
             // Melo-Controller's pad, when chosen, takes the place of both of MuffinEMU's.
             if !padControlsHidden {
                 Group {
-                if useMeloControls {
+                if useMeloControls && MeloControlsSetting.isAvailable {
                     // Upright, Melo-Controller gets only the area under the picture; it lays its
                     // buttons out itself, so that is all that can be done for it.
                     belowPicture {

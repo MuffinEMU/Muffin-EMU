@@ -1,5 +1,8 @@
 #include "Common/unix/FileStream_unix.h"
 #include <cstdarg>
+#include <cerrno>
+#include <cstring>
+#include <atomic>
 
 FileStream* FileStream::openFile(std::string_view path)
 {
@@ -104,7 +107,15 @@ void FileStream::extract(std::vector<uint8>& data)
 bool FileStream::Flush()
 {
     m_fileStream.flush();
-    return !m_fileStream.fail();
+    if (m_fileStream.fail())
+    {
+        // A game's save can fail here without the game being told; once per process is enough to show it.
+        static std::atomic<bool> s_logged{false};
+        if (!s_logged.exchange(true))
+            cemuLog_log(LogType::Force, "FileStream: flush failed (errno {}: {}); a save or other write may not have reached storage", errno, strerror(errno));
+        return false;
+    }
+    return true;
 }
 
 uint32 FileStream::readData(void* data, uint32 length)
@@ -152,7 +163,14 @@ sint32 FileStream::writeData(const void* data, sint32 length)
 	SyncReadWriteSeek(true);
 	m_fileStream.write((const char*)data, length);
 	// a full disk or I/O error sets failbit; callers compare the result with the length they asked for
-	return m_fileStream.fail() ? 0 : length;
+	if (m_fileStream.fail())
+	{
+		static std::atomic<bool> s_logged{false};
+		if (!s_logged.exchange(true))
+			cemuLog_log(LogType::Force, "FileStream: write of {} bytes failed (errno {}: {}); the game is told 0 bytes were written", length, errno, strerror(errno));
+		return 0;
+	}
+	return length;
 }
 
 void FileStream::writeU64(uint64 v)
@@ -195,6 +213,12 @@ FileStream::~FileStream()
 	if (m_isValid)
 	{
 		m_fileStream.close();
+		if (m_fileStream.fail())
+		{
+			static std::atomic<bool> s_logged{false};
+			if (!s_logged.exchange(true))
+				cemuLog_log(LogType::Force, "FileStream: closing a file failed (errno {}: {}); its last writes may be missing", errno, strerror(errno));
+		}
 	}
 	//	CloseHandle(m_hFile);
 }

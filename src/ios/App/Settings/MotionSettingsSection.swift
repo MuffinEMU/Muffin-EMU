@@ -28,7 +28,10 @@ enum MotionSettings {
     /// Match CemuBridgeMotionSource / CemuBridgeMotionStatus in IOSMotion.h.
     static let sourceDevice = 0
     static let sourceController = 1
-    static let defaultSource = sourceDevice
+    /// A controller with motion sensors wins when one is connected; with none, the device is used
+    /// anyway. Defaulting to the device would leave a DualShock 4 or Joy-Con unused unless the
+    /// player found the picker, which only shows in Advanced mode.
+    static let defaultSource = sourceController
     static let statusOff = 0
     static let statusDevice = 1
     static let statusController = 2

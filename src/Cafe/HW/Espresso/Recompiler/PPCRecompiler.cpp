@@ -32,6 +32,7 @@
 #include <dlfcn.h>
 #include <stdlib.h>
 #include <sys/sysctl.h>
+#include <sys/proc.h>
 #endif
 #endif
 
@@ -160,11 +161,34 @@ static bool PPCRecompiler_shouldUseDualMapByDefault()
 #endif
 }
 
+// True while a debugger is attached to this process right now (P_TRACED). CS_DEBUGGED is not
+// enough: it stays set after a JIT enabler detaches, and on a TXM device the brk #0xf00d calls below
+// only return when an attached debugger answers them; with none, they are a SIGTRAP crash.
+static bool PPCRecompiler_isDebuggerAttached()
+{
+    struct kinfo_proc info = {};
+    size_t size = sizeof(info);
+    int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid() };
+    if (sysctl(mib, 4, &info, &size, nullptr, 0) != 0)
+        return false;
+    return (info.kp_proc.p_flag & P_TRACED) != 0;
+}
+
 bool PPCRecompiler_readTXMEnvVar()
 {
     if (!s_dualMapJITEnabled) { return false; }
+    if (PPCRecompiler_readBoolEnvVar("HAS_TXM") != 1) { return false; }
 
-    return PPCRecompiler_readBoolEnvVar("HAS_TXM") == 1;
+    // Without a debugger the TXM mapping calls cannot succeed, so leave them out; the arena then
+    // fails to allocate and PPCRecompiler_Init26 falls back to the interpreter instead of crashing.
+    if (!PPCRecompiler_isDebuggerAttached())
+    {
+        static std::atomic<bool> s_logged{false};
+        if (!s_logged.exchange(true))
+            cemuLog_log(LogType::Force, "Recompiler: TXM device with no debugger attached, so no JIT mapping; using the interpreter");
+        return false;
+    }
+    return true;
 }
 
 static void PPCRecompiler_finishJitMappingSession()
@@ -1384,6 +1408,20 @@ bool PPCRecompiler_Init26() {
     
     if (!s_dualMapJITEnabled)
         return true;
+
+#if defined(__APPLE__) && defined(__aarch64__)
+    // On a TXM device the arena can only be mapped through a debugger, whatever the CPU mode says.
+    // With none attached now (a JIT enabler that never attached, or one that already detached),
+    // go to the interpreter here instead of reaching the brk in BreakGetJITMapping.
+    if (PPCRecompiler_readBoolEnvVar("HAS_TXM") == 1 && !PPCRecompiler_isDebuggerAttached())
+    {
+        cemuLog_log(LogType::Force, "Recompiler: TXM device and no debugger attached, so JIT can't map memory; using the interpreter");
+        s_dualMapJITEnabled = false;
+        ppcRecompilerEnabled = false;
+        PPCCore_InitializePointer(ppcRecompilerEnabled);
+        return false;
+    }
+#endif
     
     if (s_jitArena.region.rxAlias)
         return true;

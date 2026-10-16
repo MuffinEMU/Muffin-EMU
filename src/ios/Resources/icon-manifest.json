@@ -1,6 +1,6 @@
 {
   "app": "Muffin EMU",
-  "repo": "kiddreads/MuffinEMU",
+  "repo": "MuffinEMU/Muffin-EMU",
   "note": "Icon set for an alternate-app-icon picker. Free icons ship with the app; Pro icons gate behind the paid plan.",
   "icons": [
     { "id": "original",         "name": "Original",          "tier": "free", "file": "muffin-emu-icon.svg", "tagline": "The OG muffin — warm, golden, and ready to boot up your library." },

@@ -159,10 +159,11 @@
           <a href="../docs/themes.html">Themes &amp; Icons</a>
           <a href="../docs/troubleshooting.html">Troubleshooting</a>
           <a href="../docs/faq.html">FAQ</a>
+          <a href="../docs/compatibility.html">Compatibility</a>
         </div>
       </details>
       <a href="https://github.com/MuffinEMU/Muffin-EMU">GitHub</a>
-      <a href="https://muffinemu.github.io/MuffinEMU/discord.html">Discord</a>
+      <a href="https://muffinemu.github.io/MuffinEMU/discord">Discord</a>
       <button class="nav-theme" type="button" data-palette-open="theme "><span class="theme-dot" aria-hidden="true"></span>Theme: <span data-theme-name>Bakery (Original)</span></button>
     </nav>
     <div class="header-tools">
@@ -188,6 +189,7 @@
       <a href="themes.html">Themes &amp; Icons</a>
       <a href="troubleshooting.html">Troubleshooting</a>
       <a href="faq.html">FAQ</a>
+      <a href="compatibility.html">Compatibility</a>
     </nav>
   </aside>
   <main class="docs-content" id="main" tabindex="-1">
@@ -260,7 +262,7 @@
     <h3>Experimental builds (for testers)</h3>
     <p>Unfinished test builds of work in progress, published by hand. Experimental sources: <span class="url">https://muffinemu.github.io/MuffinEMU/experimental.json</span> (SideStore, AltStore, LiveContainer) and <span class="url">https://muffinemu.github.io/MuffinEMU/experimental-trollstore.json</span> (TrollStore). Every experiment is listed as its own version, newest first. Each one replaces an installed MuffinEMU (same bundle identifier, so your games and saves carry over) and can misbehave; they never appear in the standard or nightly sources. For normal play use the standard source.</p>
 
-    <p>MuffinEMU uses its own bundle identifier (<code>com.kiddreads.MuffinEMU</code>), Every build of <code>main</code> is published as a numbered release going up by 0.1 — after .9 comes the next whole number: 1.0, 1.1 … 1.9, 2.0.</p>
+    <p>MuffinEMU's bundle identifier is <code>com.void.muffinemu</code>. Versions up to 10.3 used a different identifier, so iOS treats 10.4 and later as a separate app: install it next to the old one, move your games and saves over, then delete the old copy. Every build of <code>main</code> is published as a numbered release going up by 0.1 — after .9 comes the next whole number: 1.0, 1.1 … 1.9, 2.0.</p>
 
     <h2 id="jit">3. Turn on JIT</h2>
     <p class="symptom-answer">The AArch64 recompiler needs two things at once. You need both, or MuffinEMU uses the interpreter.</p>
@@ -319,7 +321,7 @@ xcodebuild -project MuffinEMU.xcodeproj -scheme MuffinEMU -sdk iphoneos -configu
         <a href="../docs/faq.html">FAQ</a>
         <a href="../docs/licenses.html">Licences</a>
         <a href="https://github.com/MuffinEMU/Muffin-EMU">GitHub</a>
-      <a href="https://muffinemu.github.io/MuffinEMU/discord.html">Discord</a>
+      <a href="https://muffinemu.github.io/MuffinEMU/discord">Discord</a>
         <a href="https://github.com/MuffinEMU/Muffin-EMU/issues">Report an issue</a>
       </nav>
     </div>

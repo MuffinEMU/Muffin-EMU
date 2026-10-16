@@ -173,7 +173,7 @@ struct SaveStateSheet: View {
                             .foregroundColor(MuffinTheme.brownMid)
                             .textCase(nil)
                     } footer: {
-                        Text("Swipe a slot left, or press and hold it, to delete.\n\nA save state loads back only while the game keeps running from the launch it was saved in. After you quit or relaunch the game or the app, older saves stay in their slots but can't be loaded yet. Delete them, or save over them.\n\nAfter loading, some textures may briefly flash their old contents.")
+                        Text("Save states are lost when the game or the app closes, including when iOS closes the app to free memory. For anything you want to keep, use the game's own save.\n\nSwipe a slot left, or press and hold it, to delete.\n\nA save state loads back only while the game keeps running from the launch it was saved in. After you quit or relaunch the game or the app, older saves stay in their slots but can't be loaded yet. Delete them, or save over them.\n\nAfter loading, some textures may briefly flash their old contents.")
                     }
                 }
             }

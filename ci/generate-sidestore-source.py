@@ -42,7 +42,7 @@ import os
 import plistlib, os, re, sys, urllib.request, urllib.error, urllib.parse, argparse
 
 PAGES = "https://muffinemu.github.io/MuffinEMU"
-BUNDLE_ID = "com.kiddreads.MuffinEMU"
+BUNDLE_ID = "com.void.muffinemu"
 # vX.Y, or vX.Y.Z for a point release. X.Y.Z sorts after X.Y (patch counts as 0 when absent).
 VERSION_TAG = re.compile(r"^v(\d+)\.(\d+)(?:\.(\d+))?$")
 
@@ -455,7 +455,7 @@ def build_source_shell(ident, name, subtitle, app_subtitle, extra_note, asset_na
         "apps": [{
             "name": "MuffinEMU",
             "bundleIdentifier": BUNDLE_ID,
-            "developerName": "MuffinEMU Official",
+            "developerName": "Void",
             "subtitle": app_subtitle,
             "localizedDescription": APP_DESCRIPTION,
             "iconURL": f"{PAGES}/icon.png",
@@ -609,11 +609,11 @@ def main():
 
 def run(repo, token, rels, out_dir):
     feeds = [
-        ("apps.json", "MuffinEMU.ipa", "com.kiddreads.MuffinEMU.source", "MuffinEMU",
+        ("apps.json", "MuffinEMU.ipa", "com.void.muffinemu.source", "MuffinEMU",
          "The Wii U, in your hands.",
          "Wii U, the way it should be.",
          ""),
-        ("trollstore.json", "MuffinEMU-fakesigned.ipa", "com.kiddreads.MuffinEMU.trollstore",
+        ("trollstore.json", "MuffinEMU-fakesigned.ipa", "com.void.muffinemu.trollstore",
          "MuffinEMU (TrollStore)",
          "The Wii U, in your hands. TrollStore edition.",
          "Wii U, the way it should be. TrollStore edition.",
@@ -622,13 +622,13 @@ def run(repo, token, rels, out_dir):
     ]
 
     nightlies = [
-        ("nightly.json", "MuffinEMU.ipa", "com.kiddreads.MuffinEMU.nightly",
+        ("nightly.json", "MuffinEMU.ipa", "com.void.muffinemu.nightly",
          "MuffinEMU Nightly",
          "The newest MuffinEMU build, rebuilt on every change.",
          "Wii U emulator - nightly build",
          NIGHTLY_NOTE),
         ("nightly-trollstore.json", "MuffinEMU-fakesigned.ipa",
-         "com.kiddreads.MuffinEMU.nightly.trollstore",
+         "com.void.muffinemu.nightly.trollstore",
          "MuffinEMU Nightly (TrollStore)",
          "The newest MuffinEMU build - TrollStore.",
          "Wii U emulator - nightly TrollStore build",
@@ -637,13 +637,13 @@ def run(repo, token, rels, out_dir):
     ]
 
     experimentals = [
-        ("experimental.json", "MuffinEMU.ipa", "com.kiddreads.MuffinEMU.experimental",
+        ("experimental.json", "MuffinEMU.ipa", "com.void.muffinemu.experimental",
          "MuffinEMU Experimental",
          "Unfinished test builds, for testers.",
          "Wii U emulator - experimental test builds",
          EXPERIMENTAL_NOTE),
         ("experimental-trollstore.json", "MuffinEMU-fakesigned.ipa",
-         "com.kiddreads.MuffinEMU.experimental.trollstore",
+         "com.void.muffinemu.experimental.trollstore",
          "MuffinEMU Experimental (TrollStore)",
          "Unfinished test builds - TrollStore.",
          "Wii U emulator - experimental TrollStore builds",
