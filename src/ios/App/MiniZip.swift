@@ -188,16 +188,21 @@ struct MiniZip {
             guard let parts = try MiniZip.safeComponents(entry.name) else { continue }
             if entry.isSymlink { continue } // never materialise links from an archive
 
-            var target = directory
-            for part in parts { target.appendPathComponent(part) }
+            // One pool per entry: the whole archive is unpacked in one synchronous call on a
+            // background thread, so anything Foundation autoreleases per file (URLs, paths,
+            // bridged buffers) would otherwise pile up until the last of thousands of entries.
+            try autoreleasepool {
+                var target = directory
+                for part in parts { target.appendPathComponent(part) }
 
-            if entry.isDirectory {
-                try fm.createDirectory(at: target, withIntermediateDirectories: true)
-            } else {
-                let bytes = try read(entry)
-                try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try bytes.write(to: target, options: .atomic)
-                written += 1
+                if entry.isDirectory {
+                    try fm.createDirectory(at: target, withIntermediateDirectories: true)
+                } else {
+                    let bytes = try read(entry)
+                    try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try bytes.write(to: target, options: .atomic)
+                    written += 1
+                }
             }
             progress?(Double(index + 1) / Double(entries.count))
         }
@@ -247,7 +252,8 @@ struct MiniZip {
     func verify(progress: ((Double) -> Void)? = nil, isCancelled: (() -> Bool)? = nil) throws {
         for (index, entry) in entries.enumerated() where !entry.isDirectory && !entry.isSymlink {
             if isCancelled?() == true { throw CancellationError() }
-            _ = try read(entry)
+            // Same per-entry pool as extract(): each read decompresses a whole file into memory.
+            try autoreleasepool { _ = try read(entry) }
             progress?(Double(index + 1) / Double(entries.count))
         }
     }

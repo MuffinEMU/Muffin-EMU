@@ -204,6 +204,8 @@ struct GameMatchPickerView: View {
     private var results: [TitleIndexRecord] { data.search(query, preferring: regions) }
 
     var body: some View {
+        // Searched once per update: the list and the footer below both read it.
+        let results = self.results
         NavigationView {
             List {
                 if !data.hasTitleIndex {
