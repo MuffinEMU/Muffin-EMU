@@ -63,13 +63,15 @@ bool LatteTextureReadback_Update(bool forceStart)
 void LatteTextureReadback_NotifyTextureDeletion(LatteTexture* texture)
 {
 	// delete from queue
+	// Entries are unique per view, not per texture: two slices or mips of one texture can both be waiting. All of them go,
+	// otherwise the next LatteTextureReadback_Update() starts a transfer from a view that was deleted with the texture.
 	for (size_t i = 0; i < sTextureScheduledReadbacks.size(); i++)
 	{
 		LatteTextureReadbackQueueEntry& entry = sTextureScheduledReadbacks[i];
 		if (entry.textureView->baseTexture == texture)
 		{
 			vectorRemoveByIndex(sTextureScheduledReadbacks, i);
-			break;
+			i--;
 		}
 	}
 }
@@ -132,9 +134,14 @@ void LatteTextureReadback_UpdateFinishedTransfers(bool forceFinish)
 					// rerun logic since ->ForceFinish() can recurively call this function and thus modify the queue
 					continue;
 				}
-				// The GPU never delivered this readback. Use whatever the buffer holds rather than
-				// looping here forever and freezing the picture.
-				cemuLog_log(LogType::Force, "Latte: texture readback did not finish in time, using stale data");
+				// The GPU never delivered this readback. Drop it rather than looping here forever and freezing the picture.
+				// Its staging memory holds no finished data from this copy (on Metal it is a region of a shared readback
+				// buffer, so it can still hold an earlier transfer's pixels), and writing it out would put that into guest
+				// memory; the guest keeps what it had instead.
+				cemuLog_log(LogType::Force, "Latte: texture readback did not finish in time, dropping it");
+				delete readbackInfo;
+				sTextureActiveReadbackQueue.pop();
+				continue;
 			}
 		}
 		else
@@ -198,7 +205,12 @@ bool LatteTextureReadback_ReadbackToLinearBlocking(LatteTextureView* sourceView,
 	info->StartTransfer();
 	info->ForceFinish();
 	if (!info->IsFinished())
-		cemuLog_log(LogType::Force, "Latte: blocking texture readback did not finish in time, using stale data");
+	{
+		// same as in LatteTextureReadback_UpdateFinishedTransfers(): the staging memory holds no finished data from this copy
+		cemuLog_log(LogType::Force, "Latte: blocking texture readback did not finish in time, leaving the destination unchanged");
+		delete info;
+		return false;
+	}
 
 	uint8* data = info->GetData(); // returned pixel format should match Latte format
 	uint32 bpp = Latte::GetFormatBits(sourceView->baseTexture->format) / 8;

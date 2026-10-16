@@ -37,6 +37,7 @@
 // own duration so a device log shows where the time (or the failure) went.
 #include "Cafe/CafeSystem.h"
 #include "Cafe/HW/MMU/MMU.h"
+#include "Cafe/HW/Espresso/PPCState.h"
 #include "Cafe/HW/Espresso/Recompiler/PPCRecompiler.h"
 #include "Cafe/HW/Latte/Core/LatteWaitInfo.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Thread.h"
@@ -1022,9 +1023,11 @@ namespace
 		fclose(f);
 
 		// The code at any address may now be entirely different from what was JIT-compiled
-		// for the pre-load state. Safe under both the interpreter and the recompiler:
-		// PPCRecompiler_invalidateRange() is a no-op when the recompiler isn't active.
+		// or decoded for the pre-load state. Safe under both the interpreter and the recompiler:
+		// PPCRecompiler_invalidateRange() is a no-op when the recompiler isn't active, and the
+		// interpreter's block cache must be dropped too or it keeps running the old image's code.
 		PPCRecompiler_invalidateRange(PPC_REC_CODE_AREA_START, PPC_REC_CODE_AREA_END);
+		PPCInterpreter_invalidateBlockCache();
 		cemuLog_log(LogType::Force, "IOSSaveState: restored {} in {} ms", Megabytes(totalBytes), ElapsedMs(restoreStart));
 		return true;
 	}

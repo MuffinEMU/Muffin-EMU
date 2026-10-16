@@ -35,7 +35,12 @@ namespace coreinit
 	void __ghs_flock_create(ghs_flock* flock);
 	ghs_flock* __ghs_flock_ptr(iobbuf* iob);
 
-	std::recursive_mutex g_ghsLock;
+	// __ghsLock is a guest lock: the guest holds it across ordinary guest code, where its thread can be preempted and
+	// resumed on another host thread, or another guest thread can be run on the same host thread. A host mutex is the
+	// wrong owner for that (a second guest thread on the same host thread acquired it "recursively", and an unlock from a
+	// different host thread was refused, leaving it held for good), so it is an OSMutex, which is owned per guest thread
+	// and is recursive per guest thread like the GHS lock
+	SysAllocator<coreinit::OSMutex> g_ghsMutex;
 	std::recursive_mutex g_ghsLockFlock;
 
 	SysAllocator<coreinit::OSMutex, GHS_FOPEN_MAX> _flockMutexArray;
@@ -52,6 +57,7 @@ namespace coreinit
 		g_ghs_data->__gh_FOPEN_MAX = GHS_FOPEN_MAX;
 		g_ghs_data->ghs_Errno = 0;
 
+		coreinit::OSInitMutex(g_ghsMutex.GetPtr());
 		for (sint32 i = 0; i < GHS_FOPEN_MAX; i++)
 			_flockMutexMask[i] = false;
 		// init stdin/stdout/stderr
@@ -128,15 +134,12 @@ namespace coreinit
 
 	void __ghsLock()
 	{
-		while (!g_ghsLock.try_lock())
-		{
-			PPCCore_switchToScheduler();
-		}
+		OSLockMutex(g_ghsMutex.GetPtr());
 	}
 
 	void __ghsUnlock()
 	{
-		g_ghsLock.unlock();
+		OSUnlockMutex(g_ghsMutex.GetPtr());
 	}
 
 	void* __get_eh_init_block()
@@ -234,18 +237,24 @@ namespace coreinit
 			assert_dbg();
 
 		// check if we need to allocate additional TLS blocks for this thread
-		if (_swapEndianU16(tlsIndex->tlsModuleIndex) >= _swapEndianU32(currentThread->numAllocatedTLSBlocks))
+		// numAllocatedTLSBlocks is a 16-bit big-endian field. It used to be read with a 32-bit swap, which turns any
+		// non-zero count into a huge one (3 reads as 0x30000): the table was then never grown, and a thread that used TLS
+		// before a module with TLS was loaded indexed past the end of its table
+		const uint32 numAllocatedTLSBlocks = _swapEndianU16(currentThread->numAllocatedTLSBlocks);
+		if (_swapEndianU16(tlsIndex->tlsModuleIndex) >= numAllocatedTLSBlocks)
 		{
-			uint32 allocSize = (RPLLoader_GetMaxTLSModuleIndex() + 1) * sizeof(OSTLSBlock); // __OSDynLoad_gTLSHeader.ukn00 * 8;
+			// sized for every module index handed out so far, and never smaller than the index being looked up
+			const uint32 newNumTLSBlocks = std::max<uint32>(RPLLoader_GetMaxTLSModuleIndex(), _swapEndianU16(tlsIndex->tlsModuleIndex)) + 1;
+			uint32 allocSize = newNumTLSBlocks * sizeof(OSTLSBlock); // __OSDynLoad_gTLSHeader.ukn00 * 8;
 			MPTR allocMem = coreinit_allocFromSysArea(allocSize, 4);
 			memset(memory_getPointerFromVirtualOffset(allocMem), 0, allocSize);
-			if (_swapEndianU32(currentThread->numAllocatedTLSBlocks) != 0)
+			if (numAllocatedTLSBlocks != 0)
 			{
 				// keep previously allocated blocks
-				memcpy(memory_getPointerFromVirtualOffset(allocMem), memory_getPointerFromVirtualOffset(_swapEndianU32(currentThread->tlsBlocksMPTR)), _swapEndianU32(currentThread->numAllocatedTLSBlocks) * 8);
+				memcpy(memory_getPointerFromVirtualOffset(allocMem), memory_getPointerFromVirtualOffset(_swapEndianU32(currentThread->tlsBlocksMPTR)), std::min<uint32>(numAllocatedTLSBlocks * sizeof(OSTLSBlock), allocSize));
 			}
 			currentThread->tlsBlocksMPTR = _swapEndianU32(allocMem);
-			currentThread->numAllocatedTLSBlocks = _swapEndianU16(RPLLoader_GetMaxTLSModuleIndex() + 1);
+			currentThread->numAllocatedTLSBlocks = _swapEndianU16((uint16)newNumTLSBlocks);
 		}
 		// look up TLS address based on moduleIndex
 		OSTLSBlock* tlsBlock = (OSTLSBlock*)memory_getPointerFromVirtualOffsetAllowNull(_swapEndianU32(currentThread->tlsBlocksMPTR) + sizeof(OSTLSBlock) * (uint32)_swapEndianU16(tlsIndex->tlsModuleIndex));

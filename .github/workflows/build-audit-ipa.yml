@@ -274,17 +274,22 @@ jobs:
           xcrun --sdk iphoneos --show-sdk-path
           brew install xcodegen ninja
 
+      # The same key build-ios-app.yml and vcpkg-cache.yml use (ci/vcpkg-cache-key.sh), computed by this
+      # workflow's own copy of the script over the ref under test, which may predate the script.
       - name: Identify the pinned vcpkg
         id: vcpkg
-        run: echo "rev=$(git -C dependencies/vcpkg rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        run: |
+          set -eo pipefail
+          audit-src/ci/vcpkg-cache-key.sh "$GITHUB_WORKSPACE" | tee -a "$GITHUB_OUTPUT"
 
       - name: Restore vcpkg binary cache
+        id: vcpkgcache
         uses: actions/cache/restore@v4
         with:
           path: .vcpkg-archives
-          key: vcpkg-arm64-ios-${{ steps.vcpkg.outputs.rev }}-${{ hashFiles('vcpkg.json', 'triplets/**', 'dependencies/vcpkg_overlay_ports/**', 'dependencies/vcpkg_overlay_ports_mac/**') }}
+          key: ${{ steps.vcpkg.outputs.key }}
           restore-keys: |
-            vcpkg-arm64-ios-${{ steps.vcpkg.outputs.rev }}-
+            ${{ steps.vcpkg.outputs.prefix }}
 
       # The same configure as build-ios-app.yml plus the one flag that makes this core an audit core.
       - name: Configure the core for iOS with the audit hooks
@@ -313,12 +318,16 @@ jobs:
             sleep $((attempt * 30))
           done
 
+      # Right after a SUCCESSFUL configure only (no always()): this step comes before the core build, so
+      # always() could only ever add a save after a failed configure, whose set is partial and, under the
+      # exact key, would be restored as a hit and never completed. Skipped on an exact hit, which is
+      # already saved.
       - name: Save vcpkg binary cache
-        if: always()
+        if: steps.vcpkgcache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: .vcpkg-archives
-          key: vcpkg-arm64-ios-${{ steps.vcpkg.outputs.rev }}-${{ hashFiles('vcpkg.json', 'triplets/**', 'dependencies/vcpkg_overlay_ports/**', 'dependencies/vcpkg_overlay_ports_mac/**') }}
+          key: ${{ steps.vcpkg.outputs.key }}
 
       - name: Build Cemu.framework (core + bridge + audit hooks)
         run: |

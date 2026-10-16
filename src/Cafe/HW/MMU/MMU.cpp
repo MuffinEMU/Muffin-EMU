@@ -1,4 +1,5 @@
 #include "Cafe/HW/MMU/MMU.h"
+#include "Cafe/HW/Espresso/PPCState.h"
 #include "Cafe/GraphicPack/GraphicPack2.h"
 #include "Cemu/Logging/CemuLogging.h"
 #include "WindowSystem.h"
@@ -386,6 +387,10 @@ void memory_mapForCurrentTitle()
 
 void memory_unmapForCurrentTitle()
 {
+	// The guest pages are about to be replaced, so every block the interpreter decoded from them is stale. Host
+	// threads that outlive the title (anything that ran guest code but isn't a joined core thread) would otherwise
+	// run the previous game's code at the same addresses in the next one.
+	PPCInterpreter_invalidateBlockCache();
 	s_keptRangeCount = 0;
     for (auto& itr : g_mmuRanges)
     {

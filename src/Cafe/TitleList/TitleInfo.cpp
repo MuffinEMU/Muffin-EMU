@@ -582,8 +582,12 @@ bool TitleInfo::Mount(std::string_view virtualPath, std::string_view subfolder, 
 		if (!r)
 		{
 			cemuLog_log(LogType::Force, "Failed to mount {} to {}", virtualPath, subfolder);
-			delete m_wudVolume;
-			m_wudVolume = nullptr;
+			// the volume is shared by every mount point of this title: only release it when no earlier mount still uses it
+			if (m_mountpoints.empty())
+			{
+				delete m_wudVolume;
+				m_wudVolume = nullptr;
+			}
 			return false;
 		}
 	}
@@ -599,8 +603,11 @@ bool TitleInfo::Mount(std::string_view virtualPath, std::string_view subfolder, 
 		if (!r)
 		{
 			cemuLog_log(LogType::Force, "Failed to mount {} to {}", virtualPath, subfolder);
-			_ZArchivePool_ReleaseInstance(m_fullPath, m_zarchive);
-			m_zarchive = nullptr;
+			if (m_mountpoints.empty()) // still in use by an earlier mount point otherwise (see the WUD case above)
+			{
+				_ZArchivePool_ReleaseInstance(m_fullPath, m_zarchive);
+				m_zarchive = nullptr;
+			}
 			return false;
 		}
 	}
@@ -616,8 +623,11 @@ bool TitleInfo::Mount(std::string_view virtualPath, std::string_view subfolder, 
 		if (!r)
 		{
 			cemuLog_log(LogType::Force, "Failed to mount {} to {}", virtualPath, subfolder);
-			delete m_wuhbreader;
-			m_wuhbreader = nullptr;
+			if (m_mountpoints.empty()) // still in use by an earlier mount point otherwise (see the WUD case above)
+			{
+				delete m_wuhbreader;
+				m_wuhbreader = nullptr;
+			}
 			return false;
 		}
 	}

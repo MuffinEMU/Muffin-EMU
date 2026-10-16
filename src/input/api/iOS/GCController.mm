@@ -35,6 +35,18 @@ GCControllerDevice::GCControllerDevice(size_t player_index,
     // to calibrate away and a held button at boot would otherwise stay dead for the session.
     m_is_calibrated = true;
     m_default_state = ControllerState{};
+
+    // No stick deadzone in the core. Both sources already have one: the on-screen pads send values that
+    // went through the player's own deadzone, curve and fine-tuning (SharedStick in the app), and the
+    // bridge gives a physical controller's thumbsticks the core's old 0.25 scaled deadzone itself
+    // (ios_physical_stick_deadzone in CemuBridge.mm), so a controller feels exactly as it did. The core
+    // default (meant for raw desktop controllers with a settings page to change it) was applied on top of
+    // the on-screen pads' own, so nothing moved until about 30% of the way out whatever the deadzone
+    // slider said. The core still drops an axis below 0.1 (kAxisThreshold in update_state, which
+    // get_axis_value needs), so that is the least either axis can send. Triggers keep the default: the
+    // GamePad's ZL/ZR are digital here and never read the trigger axis.
+    m_settings.axis.deadzone = 0.0f;
+    m_settings.rotation.deadzone = 0.0f;
 }
 
 GCControllerDevice::~GCControllerDevice()

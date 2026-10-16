@@ -395,7 +395,9 @@ RPLUncompressedSection* RPLLoader_LoadUncompressedSection(RPLModule* rplLoaderCo
 	if ((sectionFlags & SHF_RPL_COMPRESSED) != 0)
 	{
 		// decompress
-		if (!RPLLoader_CheckBounds(rplLoaderContext, section->fileOffset, sizeof(uint32be)) )
+		// the raw data starts with the 4-byte uncompressed size. A smaller section would make the zlib input length
+		// below wrap around to about 4 GiB and inflate would read past the file
+		if ((uint32)section->sectionSize < sizeof(uint32be) || !RPLLoader_CheckBounds(rplLoaderContext, section->fileOffset, sizeof(uint32be)) )
 		{
 			cemuLog_log(LogType::Force, "RPLLoader: Uncompressed data of section {} is too large", sectionIndex);
 			rplLoaderContext->hasError = true;
@@ -432,6 +434,14 @@ RPLUncompressedSection* RPLLoader_LoadUncompressedSection(RPLModule* rplLoaderCo
 				delete uSection;
 				return nullptr;
 			}
+		}
+		else
+		{
+			// leaving the section empty here would load it as if it had no data
+			cemuLog_log(LogType::Force, "RPLLoader: Could not initialise zlib for section {} (error {})", sectionIndex, ret);
+			rplLoaderContext->hasError = true;
+			delete uSection;
+			return nullptr;
 		}
 	}
 	else
@@ -471,9 +481,9 @@ bool RPLLoader_LoadSingleSection(RPLModule* rplLoaderContext, sint32 sectionInde
 	std::copy(uncompressedSection->sectionData.begin(), uncompressedSection->sectionData.end(), sectionAddressPtr);
 
 	// update size in section (todo - use separate field)
-	if (uncompressedSection->sectionData.size() < section->sectionSize)
-		cemuLog_log(LogType::Force, "RPLLoader: Section {} uncompresses to {} bytes but sectionSize is {}", sectionIndex, uncompressedSection->sectionData.size(), (uint32)section->sectionSize);
-
+	// There is no size check here: for a compressed section sectionSize still holds the on-disk (compressed) size at this
+	// point, so comparing it with the uncompressed size only flagged small sections that zlib made bigger, and inflate
+	// above already fails unless exactly the declared uncompressed size came out
 	section->sectionSize = uncompressedSection->sectionData.size();
 
 	delete uncompressedSection;
@@ -1691,6 +1701,7 @@ void RPLLoader_FlushMemory(RPLModule* rpl)
 {
 	// invalidate recompiler cache
 	PPCRecompiler_invalidateRange(rpl->regionMappingBase_text.GetMPTR(), rpl->regionMappingBase_text.GetMPTR() + rpl->regionSize_text);
+    PPCInterpreter_invalidateBlockCacheRange(rpl->regionMappingBase_text.GetMPTR(), rpl->regionSize_text);
 	rpl->heapTrampolineArea.forEachBlock([](void* mem, uint32 size)
 	{
 		MEMPTR<void> memVirtual = mem;

@@ -502,7 +502,10 @@ namespace iosu
 			if (transferElementSize == 0)
 				return FSA_RESULT::OK;
 
-			LatteBufferCache_notifyDCFlush(destPtr.GetMPTR(), bytesToRead);
+			// only the bytes the read wrote can have changed: a read that stops at the end of the file (a game asking for
+			// a large buffer's worth) used to mark the whole requested range stale in the GPU buffer cache
+			if (bytesSuccessfullyRead != 0)
+				LatteBufferCache_notifyDCFlush(destPtr.GetMPTR(), bytesSuccessfullyRead);
 
 			return (FSA_RESULT)(bytesSuccessfullyRead / transferElementSize); // return number of elements read
 		}
@@ -517,7 +520,7 @@ namespace iosu
 			FSCVirtualFile* fscFile = sFileHandleTable.GetByHandle(fileHandle);
 			if (!fscFile)
 				return FSA_RESULT::INVALID_FILE_HANDLE;
-			cemu_assert_debug((transferSize % transferElementSize) == 0);
+			cemu_assert_debug(transferElementSize == 0 || (transferSize % transferElementSize) == 0);
 			uint32 bytesToWrite = transferSize;
 			// check for write permission (should this happen before or after setting file position?)
 			if (!fsc_isWritable(fscFile))
@@ -530,6 +533,10 @@ namespace iosu
 				fsc_setFileSeek(fscFile, filePos);
 			uint32 bytesSuccessfullyWritten = fsc_writeFile(fscFile, destPtr, bytesToWrite);
 			debug_printf("FSAProcessCmd_write(): Writing 0x%08x bytes (bytes actually written: 0x%08x)\n", bytesToWrite, bytesSuccessfullyWritten);
+			// the element size is the guest's (FSWriteFile with size 0): only the division is skipped, so the permission
+			// check and the position update above still happen, as in the read path
+			if (transferElementSize == 0)
+				return FSA_RESULT::OK;
 			return (FSA_RESULT)(bytesSuccessfullyWritten / transferElementSize); // return number of elements read
 		}
 
@@ -585,7 +592,12 @@ namespace iosu
 			FSCDirEntry fscDirEntry;
 			if (fsc_nextDir(fscFile, &fscDirEntry) == false)
 				return FSA_RESULT::END_OF_DIRECTORY;
-			strcpy(dirEntryOut->name, fscDirEntry.path);
+			// FSC names can be up to 255 bytes (host folders: saves, graphic pack files), the guest's field holds 128. A
+			// longer host name used to be copied whole and overran the response into the guest memory after it
+			size_t nameLen = strnlen(fscDirEntry.path, sizeof(fscDirEntry.path));
+			nameLen = std::min(nameLen, sizeof(dirEntryOut->name) - 1);
+			memcpy(dirEntryOut->name, fscDirEntry.path, nameLen);
+			dirEntryOut->name[nameLen] = '\0';
 			FSFlag statFlag = FSFlag::NONE;
 			dirEntryOut->stat.size = 0;
 			if (fscDirEntry.isDirectory)

@@ -48,13 +48,26 @@ public:
         return size;
     }
     
+    // Consumer side only: drops up to maxSize of the oldest bytes without copying them anywhere.
+    size_t skip(size_t maxSize)
+    {
+        const size_t readPosition = m_read.load(std::memory_order_relaxed);
+        const size_t writePosition = m_write.load(std::memory_order_acquire);
+        const size_t size = std::min(maxSize, writePosition - readPosition);
+        if (size != 0)
+            m_read.store(readPosition + size, std::memory_order_release);
+        return size;
+    }
+
     size_t size() const
     {
         const size_t writePosition = m_write.load(std::memory_order_acquire);
         const size_t readPosition = m_read.load(std::memory_order_acquire);
         return writePosition - readPosition;
     }
-    
+
+    size_t capacity() const { return m_capacity; }
+
 private:
     void copyIn(size_t position, const std::uint8_t* data, size_t size)
     {

@@ -108,12 +108,14 @@ GDBServer::ExecutionBreakpoint::ExecutionBreakpoint(MPTR address, BreakpointType
 	this->m_origOpCode = memory_readU32(address);
 	memory_writeU32(address, DEBUGGER_BP_T_GDBSTUB_TW);
 	PPCRecompiler_invalidateRange(address, address + 4);
+	PPCInterpreter_invalidateBlockCacheRange(address, 4);
 }
 
 GDBServer::ExecutionBreakpoint::~ExecutionBreakpoint()
 {
 	memory_writeU32(this->m_address, this->m_origOpCode);
 	PPCRecompiler_invalidateRange(this->m_address, this->m_address + 4);
+	PPCInterpreter_invalidateBlockCacheRange(this->m_address, 4);
 }
 
 uint32 GDBServer::ExecutionBreakpoint::GetVisibleOpCode() const
@@ -128,6 +130,7 @@ void GDBServer::ExecutionBreakpoint::RemoveTemporarily()
 {
 	memory_writeU32(this->m_address, this->m_origOpCode);
 	PPCRecompiler_invalidateRange(this->m_address, this->m_address + 4);
+	PPCInterpreter_invalidateBlockCacheRange(this->m_address, 4);
 	this->m_restoreAfterInterrupt = true;
 }
 
@@ -135,6 +138,7 @@ void GDBServer::ExecutionBreakpoint::Restore()
 {
 	memory_writeU32(this->m_address, DEBUGGER_BP_T_GDBSTUB_TW);
 	PPCRecompiler_invalidateRange(this->m_address, this->m_address + 4);
+	PPCInterpreter_invalidateBlockCacheRange(this->m_address, 4);
 	this->m_restoreAfterInterrupt = false;
 }
 

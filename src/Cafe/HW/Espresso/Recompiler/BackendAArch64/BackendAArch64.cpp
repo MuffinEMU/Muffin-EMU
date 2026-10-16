@@ -1704,15 +1704,6 @@ catch (const std::exception& error)
     return false;
 }
 
-void PPCRecompiler_cleanupAArch64Code(void* code, size_t size)
-{
-#if defined(_WIN32)
-    VirtualFree(code, 0, MEM_RELEASE);
-#else
-    munmap(code, size);
-#endif
-}
-
 void AArch64GenContext_t::enterRecompilerCode()
 {
 	constexpr size_t STACK_SIZE = 160 /* x19 .. x30 + v8.d[0] .. v15.d[0] */;

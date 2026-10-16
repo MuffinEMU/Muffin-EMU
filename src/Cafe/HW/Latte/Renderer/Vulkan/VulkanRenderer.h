@@ -276,6 +276,7 @@ public:
 	// resource destruction queue
 	void ReleaseDestructibleObject(VKRDestructibleObject* destructibleObject);
 	void ProcessDestructionQueue();
+	void DrainDestructionQueue();
 
 	// Delayed frees (iOS page-fault mitigation): a destructible object or a released staging/index/vertex allocation is kept
 	// for at least m_delayedFreeFrames presented frames after the command buffer using it finished. 0 = no extra delay.
@@ -473,7 +474,7 @@ private:
 
 	VkRenderPass m_imguiRenderPass = VK_NULL_HANDLE;
 
-	VkDescriptorPool m_descriptorPool;
+	VkDescriptorPool m_descriptorPool{ VK_NULL_HANDLE };
 
   public:
 	struct QueueFamilyIndices
@@ -656,7 +657,6 @@ private:
 	std::thread m_pipeline_cache_save_thread;
 	VkPipelineCache m_pipeline_cache{ nullptr };
 	std::unordered_map<uint64, VkPipeline> m_backbufferBlitPipelineCache;
-	std::unordered_map<uint64, VkDescriptorSet> m_backbufferBlitDescriptorSetCache;
 	VkPipelineLayout m_pipelineLayout{nullptr};
 	VkCommandPool m_commandPool{ nullptr };
 
