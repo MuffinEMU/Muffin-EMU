@@ -29,22 +29,22 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         case .emulatedClock: return "Emulated clock"
         case .onScreenControls: return "On-screen controls"
         case .motion: return "Motion and aiming"
-        case .emulatedDevices: return "Emulated devices"
+        case .emulatedDevices: return "Figure portals"
         case .display: return "Display"
         case .audio: return "Audio"
         case .overlay: return "Performance overlay"
         case .notifications: return "Notifications"
-        case .library: return "Library"
+        case .library: return "Library layout"
         case .coverArt: return "Cover art"
         case .keys: return "Wii U keys"
         case .wiiUMenu: return "Wii U Menu"
         case .account: return "Account"
-        case .network: return "Network service"
+        case .network: return "Online service"
         case .premium: return "Premium"
         case .appearance: return "Appearance"
         case .files: return "Files"
         case .backup: return "Back up settings"
-        case .migration: return "Migration"
+        case .migration: return "Move to another device"
         case .deviceReport: return "Device report"
         case .diagnostics: return "Diagnostics"
         case .about: return "About"
@@ -61,22 +61,22 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         case .emulatedClock: return "timing advanced clock speed"
         case .onScreenControls: return "pad gamepad touch layout buttons skin controller sticks"
         case .motion: return "gyro motion controller aim gyroscope"
-        case .emulatedDevices: return "controllers wiimote usb gamepad pro devices"
+        case .emulatedDevices: return "skylanders disney infinity lego dimensions toypad portal figures toys amiibo devices"
         case .display: return "screen external tv layout single screen gamepad position orientation"
         case .audio: return "sound volume latency channels music"
         case .overlay: return "fps counter stats hud"
         case .notifications: return "alerts messages banners"
-        case .library: return "games folders import sort list grid"
+        case .library: return "games sort list grid cards covers size tap layout"
         case .coverArt: return "covers images artwork box"
         case .keys: return "keys.txt decrypt online files"
         case .wiiUMenu: return "home menu launcher"
         case .account: return "mii profile sign in"
-        case .network: return "online pretendo nintendo network server"
+        case .network: return "online pretendo nintendo network service servers custom"
         case .premium: return "supporter unlock purchase restore"
         case .appearance: return "theme colours colors icon dark light classic flat"
         case .files: return "storage folders paths location"
         case .backup: return "backup restore export import reset defaults"
-        case .migration: return "import move transfer old version"
+        case .migration: return "migration export move transfer new device saves games"
         case .deviceReport: return "device info ram chip hardware"
         case .diagnostics: return "logs crash report debug"
         case .about: return "version credits licences licenses reset support"
@@ -112,12 +112,12 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     var blurb: String {
         switch self {
         case .emulation: return "CPU, JIT, graphics and shaders. What decides whether a game runs well."
-        case .controls: return "On-screen pad, motion aiming and the controllers the game sees."
+        case .controls: return "On-screen pad, motion aiming and figure portals."
         case .screenAndSound: return "Screen layout, audio, the performance overlay and alerts."
-        case .library: return "Where your games are, cover art, Wii U keys and the Wii U Menu."
-        case .accountOnline: return "Your profile, the online service and Premium."
-        case .appearance: return "Theme, colours and the app icon."
-        case .storage: return "Where files live, backups and moving over from another version."
+        case .library: return "How the library looks, cover art, Wii U keys and the Wii U Menu."
+        case .accountOnline: return "Your profile and the online service."
+        case .appearance: return "Theme, colours, the app icon and Premium."
+        case .storage: return "Where files live, settings backups and moving everything to another device."
         case .support: return "Device report, diagnostics, credits and reset."
         }
     }
@@ -126,12 +126,12 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     var intro: String {
         switch self {
         case .emulation: return "Start with CPU and Graphics. The defaults suit most games, so change one thing at a time. Switch Settings mode to Advanced on the main list to see the rest."
-        case .controls: return "Pad layout, skins and size are under On-screen controls."
+        case .controls: return "Button size, sticks and opacity are under On-screen controls. Figure portals are for Skylanders, Disney Infinity and LEGO Dimensions."
         case .screenAndSound: return "How the game is shown and heard. Display covers the TV and external screens."
-        case .library: return "Add your game folders first. Wii U keys are used to open encrypted game files."
+        case .library: return "Library layout changes how your games are shown. Wii U keys are used to open encrypted game files."
         case .accountOnline: return "An account is optional. The online service decides which servers online games talk to."
         case .appearance: return "Looks only. None of this changes how games run."
-        case .storage: return "Back up your settings before a big change or an update."
+        case .storage: return "Back up your settings before a big change or an update. Move to another device exports your games, saves and settings."
         case .support: return "Share the device report or diagnostics when you ask for help."
         }
     }
@@ -165,8 +165,8 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .controls: return [.onScreenControls, .motion, .emulatedDevices]
         case .screenAndSound: return [.display, .audio, .overlay, .notifications]
         case .library: return [.library, .coverArt, .keys, .wiiUMenu]
-        case .accountOnline: return [.account, .network, .premium]
-        case .appearance: return [.appearance]
+        case .accountOnline: return [.account, .network]
+        case .appearance: return [.appearance, .premium]
         case .storage: return [.files, .backup, .migration]
         case .support: return [.deviceReport, .diagnostics, .about]
         }
@@ -179,7 +179,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     /// The hub's titled groups.
     static let groups: [(title: String, categories: [SettingsCategory])] = [
         ("Playing games", [.emulation, .controls, .screenAndSound]),
-        ("Your stuff", [.library, .accountOnline]),
+        ("Games and account", [.library, .accountOnline]),
         ("The app", [.appearance, .storage, .support]),
     ]
 
