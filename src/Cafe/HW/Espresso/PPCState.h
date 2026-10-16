@@ -170,6 +170,10 @@ void PPCInterpreterSlim_executeInstruction(PPCInterpreter_t* hCPU);
 void PPCInterpreterSlim_executeTimeslice(PPCInterpreter_t* hCPU);
 void PPCInterpreterFull_executeInstruction(PPCInterpreter_t* hCPU);
 
+// Interpreter block cache (decoded guest code). Call after guest code changes, next to PPCRecompiler_invalidateRange.
+void PPCInterpreter_invalidateBlockCache();
+void PPCInterpreter_invalidateBlockCacheRange(uint32 addr, uint32 size);
+
 // misc
 
 uint32 PPCInterpreter_getXER(PPCInterpreter_t* hCPU);
