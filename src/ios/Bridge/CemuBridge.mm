@@ -2137,6 +2137,21 @@ namespace {
         }
     }
 
+    // A physical controller's thumbstick gets the scaled radial deadzone the core used to apply to every
+    // stick (0.25, rescaled so the edge of the deadzone is 0). GCControllerDevice sets the core's own stick
+    // deadzone to 0 because the on-screen sticks have already been through the player's deadzone, curve and
+    // fine-tuning. A controller's stick has no such setting, and a worn one can rest well off centre, so it
+    // keeps exactly the deadzone it had.
+    GCBridgeVec2 ios_physical_stick_deadzone(GCBridgeVec2 v)
+    {
+        constexpr float kDeadzone = 0.25f;
+        const float len = std::sqrt(v.x * v.x + v.y * v.y);
+        if (!(len > kDeadzone))
+            return GCBridgeVec2{};
+        const float scale = std::min((len - kDeadzone) / (1.0f - kDeadzone), 1.0f) / len;
+        return GCBridgeVec2{v.x * scale, v.y * scale};
+    }
+
     GCBridgeControllerState ios_poll_state(void* context)
     {
         (void)context;
@@ -2180,7 +2195,8 @@ namespace {
         for (int i = 0; i < 2; i++)
         {
             const GCBridgeVec2& touch = g_touchSticks[i];
-            const GCBridgeVec2 chosen = (touch.x != 0.0f || touch.y != 0.0f) ? touch : g_physicalSticks[i];
+            const GCBridgeVec2 chosen = (touch.x != 0.0f || touch.y != 0.0f)
+                ? touch : ios_physical_stick_deadzone(g_physicalSticks[i]);
             (i == 0 ? s.leftStick : s.rightStick) = chosen;
         }
         s.leftTrigger = std::max(g_physicalTriggers[0], (g_touchButtons & (1u << kBitZL)) ? 1.0f : 0.0f);
