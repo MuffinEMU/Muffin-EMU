@@ -149,9 +149,10 @@ struct MuffinBarButtonStyle: ButtonStyle {
     }
 
     private var tint: some View {
-        let shape = RoundedRectangle(cornerRadius: MuffinTheme.Radius.chip, style: .continuous)
+        let glass = MuffinGlass.isActive
+        let shape = RoundedRectangle(cornerRadius: glass ? 22 : MuffinTheme.Radius.chip, style: .continuous)
         return shape
-            .fill(MuffinTheme.pixelBlue.opacity(highlighted ? 0.28 : 0))
+            .fill(MuffinTheme.pixelBlue.opacity(highlighted ? (glass ? 0.4 : 0.28) : 0))
             .overlay(shape.strokeBorder(MuffinTheme.pixelBlue.opacity(highlighted ? 0.9 : 0), lineWidth: 1.5))
             .allowsHitTesting(false)
     }

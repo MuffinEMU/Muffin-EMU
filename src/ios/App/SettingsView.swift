@@ -69,14 +69,14 @@ struct SettingsView: View {
     /// Plain Form on iOS's grouped background. Hiding the background makes the text
     /// unreadable with the current colours.
     private var settingsForm: some View {
-        Form {
+        Form { Group {
             SettingsModeSection()
             formCore
             formInput
             formContent
             formApp
             formSystem
-        }
+        }.muffinGlassRows()}.muffinGlassFormGround()
     }
 
     var body: some View {

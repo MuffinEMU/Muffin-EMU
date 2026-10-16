@@ -65,8 +65,7 @@ struct LayoutPanelCard<Rows: View, Footer: View>: View {
                 }
                 .padding(14)
                 .frame(maxWidth: 420)
-                .background(Color.black.opacity(0.82))
-                .cornerRadius(14)
+                .muffinDarkGlassPanel(in: RoundedRectangle(cornerRadius: MuffinGlass.isActive ? 26 : 14, style: .continuous), fallbackOpacity: 0.82)
                 .padding(.top, 12)
 
                 Spacer(minLength: 0)

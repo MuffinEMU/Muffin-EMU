@@ -178,12 +178,14 @@ struct ScreenChip: View {
         Text(text)
             .font(.system(size: 11, weight: .semibold, design: .rounded))
             .foregroundColor(isMuted
-                             ? LegibleInk.ensure(MuffinTheme.brownMid, on: MuffinTheme.wrapper)
+                             ? (MuffinGlass.isActive ? Color.secondary : LegibleInk.ensure(MuffinTheme.brownMid, on: MuffinTheme.wrapper))
                              : LegibleInk.on(MuffinTheme.pixelBlue, light: MuffinTheme.sparkleCream))
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(
-                Capsule().fill(isMuted ? MuffinTheme.wrapper : MuffinTheme.pixelBlue)
+                Capsule().fill(MuffinGlass.isActive
+                               ? (isMuted ? Color.primary.opacity(0.1) : MuffinTheme.pixelBlue)
+                               : (isMuted ? MuffinTheme.wrapper : MuffinTheme.pixelBlue))
             )
     }
 }
@@ -222,13 +224,28 @@ extension View {
     /// don't reliably take a ButtonStyle, can share it.
     func screenRowActionChrome(isDestructive: Bool = false,
                               isProminent: Bool = false,
-                              isPressed: Bool = false) -> some View {
+                              isPressed: Bool = false) -> AnyView {
         let foreground: Color = isProminent
             ? LegibleInk.on(MuffinTheme.pixelBlue, light: MuffinTheme.sparkleCream)
             : LegibleInk.ensure(isDestructive ? MuffinTheme.blushPink : MuffinTheme.pixelBlue,
                                 on: MuffinTheme.wrapper)
 
-        return self
+        // Liquid Glass: an interactive glass capsule, tinted for the prominent action.
+        if MuffinGlass.isActive {
+            return AnyView(self
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundColor(isProminent
+                                 ? LegibleInk.on(MuffinTheme.pixelBlue, light: MuffinTheme.sparkleCream)
+                                 : (isDestructive ? MuffinTheme.alertText : Color.primary))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .muffinGlassOnly(in: Capsule(),
+                                 tint: isProminent ? MuffinTheme.pixelBlue : nil,
+                                 interactive: true)
+                .contentShape(Capsule()))
+        }
+
+        return AnyView(self
             .font(.system(size: 13, weight: .semibold, design: .rounded))
             .foregroundColor(foreground)
             .padding(.horizontal, 12)
@@ -239,7 +256,7 @@ extension View {
                     .opacity(isPressed ? 0.65 : 1.0)
             )
             // Makes the whole capsule tappable inside a List row.
-            .contentShape(Capsule())
+            .contentShape(Capsule()))
     }
 }
 

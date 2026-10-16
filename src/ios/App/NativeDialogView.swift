@@ -59,15 +59,15 @@ private struct DialogCardBackground: ViewModifier {
     func body(content: Content) -> some View {
         content
             .padding(16)
-            .background(
+            .muffinGlassBackground(in: RoundedRectangle(cornerRadius: 28, style: .continuous)) {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(Color(UIColor.secondarySystemBackground))
-            )
+            }
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+                    .stroke(Color.primary.opacity(MuffinGlass.isActive ? 0 : 0.12), lineWidth: 1)
             )
-            .shadow(color: .black.opacity(0.35), radius: 18, y: 6)
+            .shadow(color: .black.opacity(MuffinGlass.isActive ? 0.2 : 0.35), radius: 18, y: 6)
             .frame(maxWidth: 520)
             .padding(.horizontal, 16)
     }
@@ -78,14 +78,14 @@ private struct DialogButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 16, weight: prominent ? .semibold : .regular))
-            .foregroundColor(prominent ? .white : .accentColor)
+            .foregroundColor(prominent ? .white : (MuffinGlass.isActive ? Color.primary : .accentColor))
             .frame(maxWidth: .infinity, minHeight: 44)
             .padding(.horizontal, 8)
-            .background(
+            .muffinGlassBackground(in: Capsule(), tint: prominent ? Color.accentColor : nil, interactive: true) {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(prominent ? Color.accentColor : Color.accentColor.opacity(0.14))
-            )
-            .opacity(configuration.isPressed ? 0.7 : 1)
+            }
+            .opacity(MuffinGlass.isActive ? 1 : (configuration.isPressed ? 0.7 : 1))
     }
 }
 

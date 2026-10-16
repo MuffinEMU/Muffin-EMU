@@ -12,9 +12,8 @@ import Combine
 ///
 /// Styling is centralised in shared components (`SettingsSectionHeader`, `SettingsRow`,
 /// `ScreenChrome`, `MuffinTheme`), so flipping a flag there restyles the whole app without
-/// touching call sites. Classic UI implies Flat surfaces, not the reverse. There is no
-/// `.glassEffect` in the tree; `UIStyle.allowsLiquidGlass` is the gate any future one must sit
-/// behind.
+/// touching call sites. Classic UI implies Flat surfaces, not the reverse. Every `.glassEffect`
+/// lives in LiquidGlass.swift, and each sits behind `UIStyle.allowsLiquidGlass`.
 final class UIStyleStore: ObservableObject {
     static let shared = UIStyleStore()
 

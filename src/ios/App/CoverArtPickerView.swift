@@ -40,12 +40,12 @@ struct CoverArtPickerView: View {
             ZStack {
                 MuffinTheme.backgroundGradient.ignoresSafeArea()
 
-                Form {
+                Form { Group {
                     currentCoverSection
                     photosSection
                     filesSection
                     gameTdbSection
-                }
+                }.muffinGlassRows()}.muffinGlassFormGround()
             }
             .navigationTitle("Change Cover Art")
             .muffinOpaqueNavigationBar(MuffinTheme.formGround)

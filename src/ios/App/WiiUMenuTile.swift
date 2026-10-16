@@ -48,8 +48,9 @@ struct WiiUMenuTile: View {
                         .foregroundColor(MuffinTheme.accentText)
                 }
                 .padding(12)
-                .background(MuffinTheme.cream)
-                .cornerRadius(16)
+                .muffinGlassBackground(in: RoundedRectangle(cornerRadius: 16, style: .continuous), tint: MuffinTheme.pixelBlue, interactive: true) {
+                    MuffinTheme.cream.cornerRadius(16)
+                }
                 .overlay(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .stroke(MuffinTheme.pixelBlue, lineWidth: 2)
@@ -96,13 +97,15 @@ struct WiiUMenuCard: View {
                 cover
                 details(entry)
             }
-            .background(MuffinTheme.cream)
-            .cornerRadius(16)
+            .clipShape(RoundedRectangle(cornerRadius: MuffinGlass.isActive ? 20 : 16, style: .continuous))
+            .muffinGlassBackground(in: RoundedRectangle(cornerRadius: 20, style: .continuous), tint: MuffinTheme.pixelBlue) {
+                MuffinTheme.cream.cornerRadius(16)
+            }
             .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(MuffinTheme.pixelBlue, lineWidth: 2)
+                RoundedRectangle(cornerRadius: MuffinGlass.isActive ? 20 : 16, style: .continuous)
+                    .stroke(MuffinTheme.pixelBlue, lineWidth: MuffinGlass.isActive ? 1 : 2)
             )
-            .shadow(color: MuffinTheme.shadow.opacity(0.15), radius: 8, x: 0, y: 4)
+            .shadow(color: MuffinTheme.shadow.opacity(MuffinGlass.isActive ? 0 : 0.15), radius: 8, x: 0, y: 4)
             .wiiuMenuPreflightAlert(isPresented: $showingPreflight, missing: store.status.missingRequired) {
                 onLaunch(entry)
             }
@@ -146,7 +149,7 @@ struct WiiUMenuCard: View {
             .accessibilityLabel("Play the Wii U Menu, experimental")
         }
         .padding(12)
-        .background(MuffinTheme.cream)
+        .background(MuffinGlass.isActive ? Color.clear : MuffinTheme.cream)
     }
 
     private func attemptLaunch(_ entry: GameMetadata) {

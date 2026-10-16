@@ -151,7 +151,7 @@ struct SaveStateSheet: View {
             ZStack {
                 MuffinTheme.backgroundGradient.ignoresSafeArea()
 
-                List {
+                List { Group {
                     if let status {
                         Section {
                             // Refusals get a warning tone so they stand out from confirmations.
@@ -175,7 +175,7 @@ struct SaveStateSheet: View {
                     } footer: {
                         Text("Save states are lost when the game or the app closes, including when iOS closes the app to free memory. For anything you want to keep, use the game's own save.\n\nSwipe a slot left, or press and hold it, to delete.\n\nA save state loads back only while the game keeps running from the launch it was saved in. After you quit or relaunch the game or the app, older saves stay in their slots but can't be loaded yet. Delete them, or save over them.\n\nAfter loading, some textures may briefly flash their old contents.")
                     }
-                }
+                }.muffinGlassRows()}.muffinGlassFormGround()
             }
             .listStyle(.insetGrouped)
             .navigationTitle("Save States")

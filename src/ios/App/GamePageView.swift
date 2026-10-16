@@ -75,7 +75,7 @@ struct GamePageView: View {
         NavigationView {
             ZStack {
                 MuffinTheme.backgroundGradient.ignoresSafeArea()
-                Form {
+                Form { Group {
                     heroSection
                     GameInfoSections(game: live, gameManager: gameManager)
                     yourPlaySection
@@ -85,7 +85,7 @@ struct GamePageView: View {
                     GameShaderCacheSection(game: live)
                     saveStatesSection
                     removeSection
-                }
+                }.muffinGlassRows()}.muffinGlassFormGround()
             }
             .navigationTitle(live.cardName.name)
             .muffinOpaqueNavigationBar(MuffinTheme.formGround)

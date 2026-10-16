@@ -324,7 +324,7 @@ struct CustomServerFormView: View {
 
     var body: some View {
         NavigationView {
-            Form {
+            Form { Group {
                 Section("Name") {
                     TextField("Server name", text: $addresses.name)
                 }
@@ -350,7 +350,7 @@ struct CustomServerFormView: View {
                 if let errorMessage {
                     Section { Text(errorMessage).foregroundColor(MuffinTheme.alertText) }
                 }
-            }
+            }.muffinGlassRows()}.muffinGlassFormGround()
             .navigationTitle("Add server")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
