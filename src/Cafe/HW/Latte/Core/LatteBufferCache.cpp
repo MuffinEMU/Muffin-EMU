@@ -1850,13 +1850,41 @@ void LatteBufferCache_processDCFlushQueue()
     std::swap(s_DCFlushQueue, s_DCFlushQueueAlternate);
     s_DCFlushQueueEpoch.fetch_add(1, std::memory_order_relaxed);
     g_spinlockDCFlushQueue.unlock();
+    // Pages come out of the bitset grouped by their low 8 bits, so neighbours are never next to each other. The texture
+    // notify scans every texture in the 2 MB occupancy bucket it touches, which per 1 KB page meant the same bucket was
+    // scanned up to 2048 times for one large flush; it is called once per run of consecutive pages instead. A texture is
+    // flagged exactly when it overlaps one of the pages, as before. Only the GPU thread gets here, so the list is reused.
+    static std::vector<uint32> s_flushedPages;
+    s_flushedPages.clear();
     s_DCFlushQueueAlternate->ForAllAndClear([](uint32 index) {
         MPTR pageAddress = index * CACHE_PAGE_SIZE;
         LatteBufferCache_invalidatePage(pageAddress);
-        LatteTexture_NotifyDCFlush(pageAddress, CACHE_PAGE_SIZE);
+        s_flushedPages.emplace_back(index);
         if (s_hostVolTrackingEnabled)
             HostVol_markPage(pageAddress);
     });
+    std::sort(s_flushedPages.begin(), s_flushedPages.end());
+    for (size_t i = 0; i < s_flushedPages.size();)
+    {
+        const uint32 firstPage = s_flushedPages[i];
+        uint32 lastPage = firstPage;
+        i++;
+        while (i < s_flushedPages.size() && s_flushedPages[i] == lastPage + 1)
+        {
+            lastPage++;
+            i++;
+        }
+        // LatteTexture_NotifyDCFlush() ignores a range that starts at address 0 or whose end wraps past 4 GB. Per page that
+        // only ever dropped the first and the last page of the address space, so trim exactly those off the run.
+        uint64 runStart = (uint64)firstPage * CACHE_PAGE_SIZE;
+        uint64 runEnd = ((uint64)lastPage + 1) * CACHE_PAGE_SIZE;
+        if (runStart == 0)
+            runStart = CACHE_PAGE_SIZE;
+        if (runEnd > 0xFFFFFFFFull)
+            runEnd -= CACHE_PAGE_SIZE;
+        if (runEnd > runStart)
+            LatteTexture_NotifyDCFlush((MPTR)runStart, (uint32)(runEnd - runStart));
+    }
 }
 
 // Host-side bookkeeping that is not owned by any cache node: pages queued for invalidation and the volatility history
