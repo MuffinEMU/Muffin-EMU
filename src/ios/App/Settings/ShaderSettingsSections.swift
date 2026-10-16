@@ -21,12 +21,12 @@ struct ShaderCompilationSection: View {
                 cemu_bridge_set_async_shader_compile(newValue)
             }
         } header: {
-            SettingsSectionHeader("Shader Compilation", icon: "hammer", accent: .core)
+            SettingsSectionHeader("Shader compilation", icon: "hammer", accent: .core)
         } footer: {
             InfoButton.footer(
-                "On keeps the game running while a shader builds; things may flicker the first time they appear. Off waits for each shader and stutters instead.",
-                title: "Shader Compilation",
-                text: "On, the game keeps running while new shaders are built, and you may see something flicker or appear late the first time it is drawn. Off, the game waits for each one, which stutters instead.\n\nNano Assault Neo breaks with this on. Set it off for that game only: long-press it in your library.\n\nFavour accuracy (under CPU) always waits for each shader, whatever this is set to. It applies the next time you start a game.")
+                "On: effects may flicker the first time they appear. Off: the game pauses briefly instead.",
+                title: "Shader compilation",
+                text: "Shaders are the small programs your device uses to draw effects. On, the game keeps running while new ones are prepared, so an effect may flicker or appear late the first time. Off, the game pauses for each one instead.\n\nNano Assault Neo has problems with this on. Turn it off for that game only: press and hold it in your library.\n\nFavour accuracy (under CPU) always waits for each shader. This applies the next time you start a game.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }
@@ -66,7 +66,7 @@ struct ShaderCacheSection: View {
             }
             .disabled(compiledCacheBytes <= 0)
             Button(role: .destructive) { confirmClearLearned = true } label: {
-                DestructiveSettingsLabel(title: "Clear everything, including learned", systemImage: "trash")
+                DestructiveSettingsLabel(title: "Clear all shaders, including learned", systemImage: "trash")
             }
             .disabled(learnedCacheBytes <= 0 && compiledCacheBytes <= 0)
             if let cacheStatusMessage {
@@ -76,9 +76,9 @@ struct ShaderCacheSection: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         } header: {
-            SettingsSectionHeader("Shaders", icon: "externaldrive", accent: .core)
+            SettingsSectionHeader("Shader cache", icon: "externaldrive", accent: .core)
         } footer: {
-            InfoButton.footer("What every game has saved so it starts faster. To clear one game, open its options. Clearing needs the game closed.")
+            InfoButton.footer("Games save the shaders they need so they start faster and stutter less. Clear compiled shaders to free space; they rebuild the next time you play. Clear all also removes learned shaders, so games stutter until they relearn them. To clear one game, use its options. Close the game first.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         .onAppear(perform: refreshCacheStats)
@@ -88,11 +88,11 @@ struct ShaderCacheSection: View {
         } message: {
             Text("Each game is slow to start once while it rebuilds. Nothing else is lost.")
         }
-        .confirmationDialog("Clear learned shaders too?", isPresented: $confirmClearLearned, titleVisibility: .visible) {
-            Button("Clear everything", role: .destructive) { clear(includeLearned: true) }
+        .confirmationDialog("Clear all shaders for every game?", isPresented: $confirmClearLearned, titleVisibility: .visible) {
+            Button("Clear all shaders", role: .destructive) { clear(includeLearned: true) }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("This clears every game's shaders. Games will stutter while they rebuild them.")
+            Text("Games will stutter for a while until they build their shaders again.")
         }
     }
 
@@ -103,7 +103,7 @@ struct ShaderCacheSection: View {
             cacheStatusIsError = true
         } else {
             cacheStatusMessage = "Freed \(Self.formatBytes(freed)). "
-                + (includeLearned ? "Games will stutter while they relearn their shaders." : "The next launch of each game is slow once.")
+                + (includeLearned ? "Games will stutter while they relearn their shaders." : "Each game starts slowly once while it rebuilds.")
             cacheStatusIsError = false
         }
         refreshCacheStats()

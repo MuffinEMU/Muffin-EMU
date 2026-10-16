@@ -223,7 +223,7 @@ struct GamePageView: View {
             SettingsRow(label: "Size on disk", value: sizeOnDisk.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? "\u{2026}",
                         icon: "internaldrive")
         } header: {
-            SettingsSectionHeader("Your play", icon: "clock.arrow.circlepath", accent: .content)
+            SettingsSectionHeader("Play history", icon: "clock.arrow.circlepath", accent: .content)
         }
     }
 

@@ -62,17 +62,17 @@ struct AboutSettingsSection: View {
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         .confirmationDialog("Reset settings to defaults?", isPresented: $showingResetConfirmation, titleVisibility: .visible) {
-            Button("Reset Settings", role: .destructive) {
+            Button("Reset settings", role: .destructive) {
                 SettingsDefaults.reset(includingPerGameOverrides: false)
                 resetMessage = "Settings reset to defaults."
             }
-            Button("Reset Settings and Per-Game Options", role: .destructive) {
+            Button("Reset settings and per-game options", role: .destructive) {
                 SettingsDefaults.reset(includingPerGameOverrides: true)
                 resetMessage = "Settings and per-game options reset to defaults."
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("Puts every option in Settings back to its default, including controls, graphics, audio, overlay and appearance. Your library, favourites, keys.txt, accounts, theme, app icon and premium unlock are not affected. Per-game options stay unless you pick the second button.")
+            Text("Puts every option in Settings back to its default, including controls, graphics, audio, overlay and appearance. Your library, favourites, keys.txt, accounts, theme, app icon and premium unlock aren't affected. Per-game options stay unless you pick the second button.")
         }
     }
 }

@@ -313,10 +313,27 @@ struct HomeMenuOverlay: View {
 
     private var header: some View {
         VStack(spacing: 2) {
-            Text(headerTitle)
-                .font(MuffinTheme.Font.sectionTitle)
-                .foregroundColor(MuffinTheme.brownDarkest)
-                .accessibilityAddTraits(.isHeader)
+            ZStack {
+                Text(headerTitle)
+                    .font(MuffinTheme.Font.sectionTitle)
+                    .foregroundColor(MuffinTheme.brownDarkest)
+                    .accessibilityAddTraits(.isHeader)
+                // Layout and External display: a back arrow that stays in view when the rows scroll.
+                if page == .layout || page == .external {
+                    HStack {
+                        Button { show(.root) } label: {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundColor(MuffinTheme.accentText)
+                                .frame(width: 44, height: 36, alignment: .leading)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Back to the HOME menu")
+                        Spacer()
+                    }
+                }
+            }
             switch page {
             case .root:
                 Text(gameName)
