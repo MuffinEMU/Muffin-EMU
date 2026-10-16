@@ -433,7 +433,9 @@ struct LibrarySectionHeader: View {
         .padding(.vertical, 6)
         .padding(.horizontal, 4)
         .frame(maxWidth: .infinity)
-        .background(MuffinTheme.cream)
+        .muffinGlassBackground(in: RoundedRectangle(cornerRadius: 14, style: .continuous)) {
+            MuffinTheme.cream
+        }
         .accessibilityAddTraits(.isHeader)
     }
 }
@@ -471,10 +473,11 @@ private struct LibraryHeartButton: View {
         Button(action: action) {
             Image(systemName: isFavorite ? "heart.fill" : "heart")
                 .font(.system(size: size * 0.45, weight: .semibold))
-                .foregroundColor(isFavorite ? MuffinTheme.alertOnDark : MuffinTheme.sparkleCream)
+                .foregroundColor(isFavorite ? (MuffinGlass.isActive ? MuffinTheme.alertText : MuffinTheme.alertOnDark) : MuffinGlass.ink(MuffinTheme.sparkleCream))
                 .frame(width: size, height: size)
-                .background(Color.black.opacity(0.4))
-                .cornerRadius(10)
+                .muffinGlassBackground(in: Circle(), interactive: true) {
+                    Color.black.opacity(0.4).cornerRadius(10)
+                }
                 .frame(minWidth: 44, minHeight: 44)
                 .contentShape(Rectangle())
         }
@@ -494,10 +497,11 @@ private struct LibraryOptionsButton<Options: View>: View {
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: size * 0.45, weight: .semibold))
-                .foregroundColor(MuffinTheme.sparkleCream)
+                .foregroundColor(MuffinGlass.ink(MuffinTheme.sparkleCream))
                 .frame(width: size, height: size)
-                .background(Color.black.opacity(0.4))
-                .cornerRadius(10)
+                .muffinGlassBackground(in: Circle(), interactive: true) {
+                    Color.black.opacity(0.4).cornerRadius(10)
+                }
                 .frame(minWidth: 44, minHeight: 44)
                 .contentShape(Rectangle())
         }
@@ -507,13 +511,16 @@ private struct LibraryOptionsButton<Options: View>: View {
 
 private func libraryCardChrome<V: View>(_ view: V, radius: CGFloat = 16) -> some View {
     view
-        .background(MuffinTheme.cream)
-        .cornerRadius(radius)
-        .overlay(
-            RoundedRectangle(cornerRadius: radius, style: .continuous)
-                .stroke(MuffinTheme.wrapper, lineWidth: 1)
-        )
-        .shadow(color: MuffinTheme.shadow.opacity(0.15), radius: 8, x: 0, y: 4)
+        .clipShape(RoundedRectangle(cornerRadius: MuffinGlass.isActive ? radius + 4 : radius, style: .continuous))
+        .muffinGlassBackground(in: RoundedRectangle(cornerRadius: radius + 4, style: .continuous)) {
+            MuffinTheme.cream
+                .cornerRadius(radius)
+                .overlay(
+                    RoundedRectangle(cornerRadius: radius, style: .continuous)
+                        .stroke(MuffinTheme.wrapper, lineWidth: 1)
+                )
+                .shadow(color: MuffinTheme.shadow.opacity(0.15), radius: 8, x: 0, y: 4)
+        }
 }
 
 /// Picks the view for the chosen style. The standard style is the existing GameCardOptimized.
@@ -787,8 +794,9 @@ struct LibraryViewMenu: View {
         } label: {
             Image(systemName: CoverStylePreference(stored: coverRaw) == .threeD ? "cube" : (LibraryCardStyle(rawValue: styleRaw) ?? .standard).systemImage)
                 .font(.system(size: 20, weight: .semibold))
-                .foregroundColor(MuffinTheme.brownMid)
+                .foregroundColor(MuffinGlass.secondaryInk(MuffinTheme.brownMid))
                 .frame(width: 44, height: 44)
+                .muffinGlassOnly(in: Circle(), interactive: true)
         }
         .accessibilityLabel("Library layout")
     }

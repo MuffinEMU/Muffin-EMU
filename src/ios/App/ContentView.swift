@@ -449,13 +449,15 @@ struct LibraryActivityBanner: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background(MuffinTheme.cream)
-        .cornerRadius(14)
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(MuffinTheme.wrapper, lineWidth: 1)
-        )
-        .shadow(color: MuffinTheme.shadow.opacity(0.15), radius: 8, x: 0, y: 4)
+        .muffinGlassBackground(in: Capsule()) {
+            MuffinTheme.cream
+                .cornerRadius(14)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(MuffinTheme.wrapper, lineWidth: 1)
+                )
+                .shadow(color: MuffinTheme.shadow.opacity(0.15), radius: 8, x: 0, y: 4)
+        }
     }
 }
 
@@ -471,13 +473,15 @@ struct LaunchNoticeBanner: View {
             .multilineTextAlignment(.center)
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
-            .background(MuffinTheme.cream)
-            .cornerRadius(14)
-            .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(MuffinTheme.wrapper, lineWidth: 1)
-            )
-            .shadow(color: MuffinTheme.shadow.opacity(0.15), radius: 8, x: 0, y: 4)
+            .muffinGlassBackground(in: RoundedRectangle(cornerRadius: 18, style: .continuous)) {
+                MuffinTheme.cream
+                    .cornerRadius(14)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(MuffinTheme.wrapper, lineWidth: 1)
+                    )
+                    .shadow(color: MuffinTheme.shadow.opacity(0.15), radius: 8, x: 0, y: 4)
+            }
             .frame(maxWidth: 520)
     }
 }
@@ -729,7 +733,7 @@ struct GameBrowserView: View {
                         // the button style.
                         Image(systemName: showingFavorites ? "heart.fill" : "heart")
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(showingFavorites ? MuffinTheme.alertText : MuffinTheme.brownDark)
+                            .foregroundColor(showingFavorites ? MuffinTheme.alertText : MuffinGlass.ink(MuffinTheme.brownDark))
                     }
                     .buttonStyle(MuffinSecondaryButtonStyle())
                     .frame(minWidth: 44, minHeight: 44)
@@ -806,7 +810,7 @@ struct GameBrowserView: View {
                         // mode - it just does not depend on that propagation happening.
                         Image(systemName: "doc.badge.plus")
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(MuffinTheme.brownDark)
+                            .foregroundColor(MuffinGlass.ink(MuffinTheme.brownDark))
                     }
                     .buttonStyle(MuffinSecondaryButtonStyle())
                     .frame(minWidth: 44, minHeight: 44)
@@ -825,9 +829,13 @@ struct GameBrowserView: View {
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
-                    .background(MuffinTheme.cream, in: RoundedRectangle(cornerRadius: MuffinTheme.Radius.chip, style: .continuous))
+                    .muffinGlassBackground(in: RoundedRectangle(cornerRadius: MuffinTheme.Radius.chip, style: .continuous)) {
+                        RoundedRectangle(cornerRadius: MuffinTheme.Radius.chip, style: .continuous).fill(MuffinTheme.cream)
+                    }
                     .accessibilityElement(children: .combine)
                 }
+                // One glass container so the header's glass buttons share a sampling region.
+                .muffinGlassContainer(spacing: 10)
             }
         }
         .padding(20)
@@ -853,8 +861,9 @@ struct GameBrowserView: View {
                 } label: {
                     Image(systemName: "arrow.up.arrow.down.circle")
                         .font(.system(size: 20, weight: .semibold))
-                        .foregroundColor(MuffinTheme.brownMid)
+                        .foregroundColor(MuffinGlass.secondaryInk(MuffinTheme.brownMid))
                         .frame(width: 44, height: 44)
+                        .muffinGlassOnly(in: Circle(), interactive: true)
                 }
                 .accessibilityLabel("Sort games")
 
@@ -917,8 +926,11 @@ struct GameBrowserView: View {
         }
         .frame(maxHeight: .infinity)
         .background(
-            MuffinTheme.cream
-                .clipShape(RoundedCorner(radius: 28, corners: [.topLeft, .topRight]))
+            Color.clear
+                .muffinGlassBackground(in: RoundedCorner(radius: 28, corners: [.topLeft, .topRight])) {
+                    MuffinTheme.cream
+                        .clipShape(RoundedCorner(radius: 28, corners: [.topLeft, .topRight]))
+                }
                 .ignoresSafeArea(edges: .bottom)
         )
         // Lets the whole library area - loading, empty, or the grid itself -
@@ -1389,10 +1401,11 @@ struct GameCardOptimized<Options: View>: View {
                         } label: {
                             Image(systemName: "ellipsis")
                                 .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(MuffinTheme.sparkleCream)
+                                .foregroundColor(MuffinGlass.ink(MuffinTheme.sparkleCream))
                                 .frame(width: 32, height: 32)
-                                .background(Color.black.opacity(0.4))
-                                .cornerRadius(10)
+                                .muffinGlassBackground(in: Circle(), interactive: true) {
+                                    Color.black.opacity(0.4).cornerRadius(10)
+                                }
                                 .frame(width: 44, height: 44)
                                 .contentShape(Rectangle())
                         }
@@ -1402,12 +1415,13 @@ struct GameCardOptimized<Options: View>: View {
                         Button(action: onFavoriteTap) {
                             Image(systemName: game.isFavorite ? "heart.fill" : "heart")
                                 .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(game.isFavorite ? MuffinTheme.alertOnDark : MuffinTheme.sparkleCream)
+                                .foregroundColor(game.isFavorite ? (MuffinGlass.isActive ? MuffinTheme.alertText : MuffinTheme.alertOnDark) : MuffinGlass.ink(MuffinTheme.sparkleCream))
                                 .frame(width: 32, height: 32)
                                 // Black, not brownDarkest: brownDarkest turns cream in dark
                                 // mode, which put a cream heart on a cream patch.
-                                .background(Color.black.opacity(0.4))
-                                .cornerRadius(10)
+                                .muffinGlassBackground(in: Circle(), interactive: true) {
+                                    Color.black.opacity(0.4).cornerRadius(10)
+                                }
                                 // The visible circle stays 32x32 - the tappable area
                                 // around it grows to the standard 44x44 minimum without
                                 // changing how the button looks.
@@ -1464,15 +1478,17 @@ struct GameCardOptimized<Options: View>: View {
                 }
             }
             .padding(12)
-            .background(MuffinTheme.cream)
+            .background(MuffinGlass.isActive ? Color.clear : MuffinTheme.cream)
         }
-        .background(MuffinTheme.cream)
-        .cornerRadius(16)
+        .muffinGlassBackground(in: RoundedRectangle(cornerRadius: 20, style: .continuous)) {
+            MuffinTheme.cream
+        }
+        .cornerRadius(MuffinGlass.isActive ? 20 : 16)
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(MuffinTheme.wrapper, lineWidth: 1)
+                .stroke(MuffinGlass.isActive ? Color.clear : MuffinTheme.wrapper, lineWidth: 1)
         )
-        .shadow(color: MuffinTheme.shadow.opacity(0.15), radius: 8, x: 0, y: 4)
+        .shadow(color: MuffinTheme.shadow.opacity(MuffinGlass.isActive ? 0 : 0.15), radius: 8, x: 0, y: 4)
         // The whole card starts the game, not only the Play button. The heart, the "..." button and Play keep
         // their own taps (a child's gesture wins over this one), and VoiceOver still finds Play as a button.
         .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -1510,12 +1526,14 @@ struct SearchBarPolished: View {
         .frame(height: 44)
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 12)
-        .background(MuffinTheme.wrapper.opacity(0.5))
-        .cornerRadius(14)
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(MuffinTheme.wrapper, lineWidth: 1)
-        )
+        .muffinGlassBackground(in: Capsule()) {
+            MuffinTheme.wrapper.opacity(0.5)
+                .cornerRadius(14)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(MuffinTheme.wrapper, lineWidth: 1)
+                )
+        }
     }
 }
 
@@ -2277,7 +2295,7 @@ struct EmulatorViewOptimized: View {
                     if !isPhonePortrait {
                     Text(gameName)
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundColor(.white)
+                        .foregroundColor(MuffinGlass.ink(.white))
                         .lineLimit(1)
                         .frame(maxWidth: .infinity)
                     }
@@ -2469,8 +2487,12 @@ struct EmulatorViewOptimized: View {
                 // Sideways it keeps clear of an iPhone's notch side and rounded corners; the
                 // game view ignores the safe area, so the window is asked directly.
                 .padding(WindowSafeArea.padding(minimum: 12))
-                .background(Color.black.opacity(0.5))
-                .borderBottom(width: 0.5, color: Color.white.opacity(0.1))
+                // Liquid Glass: the strip is a glass bar with rounded lower corners; the dark
+                // backing and its hairline are for below iOS 26.
+                .muffinGlassBackground(in: RoundedCorner(radius: 24, corners: [.bottomLeft, .bottomRight])) {
+                    Color.black.opacity(0.5)
+                }
+                .borderBottom(width: 0.5, color: MuffinGlass.isActive ? Color.clear : Color.white.opacity(0.1))
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 0).updating($topBarTouched) { _, touched, _ in touched = true }
                 )
@@ -2485,11 +2507,14 @@ struct EmulatorViewOptimized: View {
                         OrganizedControllerSkinSelector(selectedSkin: $controllerSkin)
                         Text("The skin applies to every game.")
                             .font(.system(size: 11, design: .rounded))
-                            .foregroundColor(.white.opacity(0.65))
+                            .foregroundColor(MuffinGlass.isActive ? Color.secondary : .white.opacity(0.65))
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .padding(12)
-                    .background(Color.black.opacity(0.7))
+                    .muffinGlassBackground(in: RoundedRectangle(cornerRadius: 24, style: .continuous)) {
+                        Color.black.opacity(0.7)
+                    }
+                    .padding(.horizontal, MuffinGlass.isActive ? 12 : 0)
                     .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
@@ -2636,10 +2661,11 @@ struct EmulatorViewOptimized: View {
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
                         .opacity(0.85)
                 }
-                .foregroundColor(.white)
+                .foregroundColor(MuffinGlass.ink(.white))
                 .padding(28)
-                .background(Color.black.opacity(0.6))
-                .cornerRadius(20)
+                .muffinGlassBackground(in: RoundedRectangle(cornerRadius: 28, style: .continuous)) {
+                    Color.black.opacity(0.6).cornerRadius(20)
+                }
                 .transition(.opacity)
                 // Tappable, so a paused game can always be resumed even when the top bar is out of reach.
                 .contentShape(RoundedRectangle(cornerRadius: 20))
@@ -3090,8 +3116,9 @@ struct EmulatorViewOptimized: View {
         .foregroundColor(gameManager.frameRate >= 20 ? Color.green : MuffinTheme.alertOnDark)
         .frame(height: 40)
         .padding(.horizontal, 12)
-        .background(Color.white.opacity(0.08))
-        .cornerRadius(10)
+        .muffinGlassBackground(in: Capsule()) {
+            Color.white.opacity(0.08).cornerRadius(10)
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Frame rate")
         .accessibilityValue(gameManager.progress.hudText(wholeFramesPerSecond: gameManager.frameRate))
@@ -3102,7 +3129,7 @@ struct EmulatorViewOptimized: View {
     @ViewBuilder private var floatingFrameRate: some View {
         if topBarHidden {
             frameRatePill
-                .background(Color.black.opacity(0.5).cornerRadius(10))
+                .background(Color.black.opacity(MuffinGlass.isActive ? 0 : 0.5).cornerRadius(10))
                 .padding(WindowSafeArea.padding(minimum: 12))
                 .allowsHitTesting(false)
                 .dynamicTypeSize(...DynamicTypeSize.xLarge)
@@ -3179,20 +3206,20 @@ struct EmulatorViewOptimized: View {
         VStack(spacing: 10) {
             Text(stallTitle)
                 .font(.system(.subheadline, design: .rounded).weight(.semibold))
-                .foregroundColor(.white)
+                .foregroundColor(MuffinGlass.ink(.white))
                 .multilineTextAlignment(.center)
                 .accessibilityAddTraits(.isHeader)
             if gameManager.videoStalled {
                 Text(stallAdvice)
                     .font(.system(.caption, design: .rounded))
-                    .foregroundColor(.white.opacity(0.85))
+                    .foregroundColor(MuffinGlass.isActive ? Color.secondary : .white.opacity(0.85))
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if stallSaveRequested {
                 Text(saveStateBusySlot != nil ? "Saving..." : (saveStateStatus?.message ?? ""))
                     .font(.system(.caption, design: .rounded))
-                    .foregroundColor(.white.opacity(0.85))
+                    .foregroundColor(MuffinGlass.isActive ? Color.secondary : .white.opacity(0.85))
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -3212,7 +3239,9 @@ struct EmulatorViewOptimized: View {
             .buttonStyle(MuffinBarButtonStyle())
         }
         .padding(14)
-        .background(Color.black.opacity(0.78), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .muffinGlassBackground(in: RoundedRectangle(cornerRadius: 24, style: .continuous)) {
+            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.black.opacity(0.78))
+        }
         .frame(maxWidth: 420)
     }
 
