@@ -34,7 +34,14 @@ namespace snd_core
 			*tvAudioMode = 0;
 			break;
 		case kSurround:
+#if BOOST_OS_IOS
+			// iOS output is stereo: the audio session never asks the route for more than two channels,
+			// so a six-channel mix (centre dialogue included) has no proper way down to the speakers.
+			// Let the game make its own stereo mix instead, as it does for a stereo TV.
+			*tvAudioMode = 2;
+#else
 			*tvAudioMode = 3;
+#endif
 			break;
 		default:
 			*tvAudioMode = 2;
@@ -162,6 +169,66 @@ namespace snd_core
 	sint16 tempDRCChannelData[AX_SAMPLES_MAX * 6 * AX_FRAMES_PER_GROUP] = {};
 	sint32 tempDRCAudioBlockCounter = 0;
 
+	static sint16 _AXOutClampS16(sint32 v)
+	{
+		return (sint16)std::clamp<sint32>(v, -32768, 32767);
+	}
+
+	// Writes one AX frame (numSamples sample frames of srcChannels, big-endian) into a staging block as
+	// dstChannels, in host order. The two differ when the output device was opened with another layout
+	// than the one AX mixes in: the GamePad is always mixed in stereo whatever its channel setting says,
+	// and a channel setting can change while a title is running. Copied as they are, the samples would
+	// land in the wrong slots and play as noise.
+	static void _AXOutStageFrame(sint16* dst, const sint16* srcBE, sint32 numSamples, sint32 srcChannels, sint32 dstChannels)
+	{
+		if (srcChannels == dstChannels)
+		{
+			for (sint32 i = 0; i < numSamples * srcChannels; ++i)
+				dst[i] = _swapEndianS16(srcBE[i]);
+			return;
+		}
+		for (sint32 i = 0; i < numSamples; ++i)
+		{
+			const sint16* in = srcBE + i * srcChannels;
+			sint32 left, right;
+			if (srcChannels == 1)
+			{
+				left = right = _swapEndianS16(in[0]);
+			}
+			else if (srcChannels < 6)
+			{
+				left = _swapEndianS16(in[0]);
+				right = _swapEndianS16(in[1]);
+			}
+			else
+			{
+				// staging order is FL FR FC LFE BL BR (see AXOut_SubmitTVFrame). Centre and surrounds at -3 dB, LFE left out
+				const sint32 centre = (sint32)_swapEndianS16(in[2]) * 181 / 256;
+				left = (sint32)_swapEndianS16(in[0]) + centre + (sint32)_swapEndianS16(in[4]) * 181 / 256;
+				right = (sint32)_swapEndianS16(in[1]) + centre + (sint32)_swapEndianS16(in[5]) * 181 / 256;
+			}
+			sint16* out = dst + i * dstChannels;
+			if (dstChannels == 1)
+			{
+				out[0] = _AXOutClampS16((left + right) / 2);
+				continue;
+			}
+			out[0] = _AXOutClampS16(left);
+			out[1] = _AXOutClampS16(right);
+			for (sint32 c = 2; c < dstChannels; ++c)
+				out[c] = 0;
+		}
+	}
+
+	// Staging blocks hold AX_FRAMES_PER_GROUP frames of up to 6 channels; anything else fed to a device is out of range.
+	static sint32 _AXOutDeviceChannels(const AudioAPIPtr& device, sint32 srcChannels)
+	{
+		if (!device)
+			return srcChannels;
+		const sint32 channels = device->GetChannels();
+		return (channels >= 1 && channels <= 6) ? channels : srcChannels;
+	}
+
 	void AIInitDMA(sint16* sampleData, sint32 size)
 	{
 		sint32 sampleCount = size / sizeof(sint16); // sample count in total (summed up for all channels)
@@ -173,12 +240,10 @@ namespace snd_core
 
 		std::shared_lock lock(g_audioMutex);
 
-		const uint32 channels = g_tvAudio ? g_tvAudio->GetChannels() : AX_TV_CHANNEL_COUNT;
+		const sint32 srcChannels = sampleCount / AX_SAMPLES_PER_3MS_48KHZ;
+		const sint32 channels = _AXOutDeviceChannels(g_tvAudio, srcChannels);
 		sint16* outputChannel = tempTVChannelData + AX_SAMPLES_PER_3MS_48KHZ * tempAudioBlockCounter * channels;
-		for (sint32 i = 0; i < sampleCount; ++i)
-		{
-			outputChannel[i] = _swapEndianS16(sampleData[i]);
-		}
+		_AXOutStageFrame(outputChannel, sampleData, AX_SAMPLES_PER_3MS_48KHZ, srcChannels, channels);
 
 		tempAudioBlockCounter++;
 		if (tempAudioBlockCounter == AX_FRAMES_PER_GROUP)
@@ -309,12 +374,10 @@ namespace snd_core
 
 		std::shared_lock lock(g_audioMutex);
 
-		const uint32 channels = g_padAudio ? g_padAudio->GetChannels() : AX_DRC_CHANNEL_COUNT;
+		const sint32 srcChannels = sampleCount / AX_SAMPLES_PER_3MS_48KHZ;
+		const sint32 channels = _AXOutDeviceChannels(g_padAudio, srcChannels);
 		sint16* outputChannel = tempDRCChannelData + AX_SAMPLES_PER_3MS_48KHZ * tempDRCAudioBlockCounter * channels;
-		for (sint32 i = 0; i < sampleCount; ++i)
-		{
-			outputChannel[i] = _swapEndianS16(sampleData[i]);
-		}
+		_AXOutStageFrame(outputChannel, sampleData, AX_SAMPLES_PER_3MS_48KHZ, srcChannels, channels);
 
 		tempDRCAudioBlockCounter++;
 		if (tempDRCAudioBlockCounter == AX_FRAMES_PER_GROUP)
@@ -402,6 +465,18 @@ namespace snd_core
 		std::unique_lock lock(g_audioMutex);
 		auto& config = GetConfig();
 
+		// Output channel counts. On iOS both devices are opened as mono or stereo, to match the stereo
+		// route (see AVMGetTVAudioMode). Anything the device and the AX mix disagree on is converted
+		// when the frames are staged (_AXOutStageFrame).
+		auto deviceChannels = [](AudioChannels setting) -> sint32 {
+			const sint32 channels = CemuConfig::AudioChannelsToNChannels(setting);
+#if BOOST_OS_IOS
+			return std::min<sint32>(channels, 2);
+#else
+			return channels;
+#endif
+		};
+
 		if (!config.tv_audio_enabled && g_tvAudio)
 		{
 			g_tvAudio->Stop();
@@ -411,7 +486,7 @@ namespace snd_core
 		{
 			try
 			{
-				g_tvAudio = IAudioAPI::CreateDeviceFromConfig(IAudioAPI::AudioType::TV, 48000, snd_core::AX_SAMPLES_PER_3MS_48KHZ * AX_FRAMES_PER_GROUP, 16);
+				g_tvAudio = IAudioAPI::CreateDeviceFromConfig(IAudioAPI::AudioType::TV, 48000, deviceChannels(config.tv_channels), snd_core::AX_SAMPLES_PER_3MS_48KHZ * AX_FRAMES_PER_GROUP, 16);
 			}
 			catch (std::runtime_error& ex)
 			{
@@ -429,7 +504,7 @@ namespace snd_core
 		{
 			try
 			{
-				g_padAudio = IAudioAPI::CreateDeviceFromConfig(IAudioAPI::AudioType::Gamepad, 48000, snd_core::AX_SAMPLES_PER_3MS_48KHZ * AX_FRAMES_PER_GROUP, 16);
+				g_padAudio = IAudioAPI::CreateDeviceFromConfig(IAudioAPI::AudioType::Gamepad, 48000, deviceChannels(config.pad_channels), snd_core::AX_SAMPLES_PER_3MS_48KHZ * AX_FRAMES_PER_GROUP, 16);
 			}
 			catch (std::runtime_error& ex)
 			{
