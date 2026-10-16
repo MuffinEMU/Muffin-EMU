@@ -506,6 +506,9 @@ struct GameBrowserView: View {
     @AppStorage(CoverStylePreference.storageKey) private var coverModeRaw = CoverStylePreference.defaultValue.rawValue
     @AppStorage(LibraryGrouping.storageKey) private var groupingRaw = LibraryGrouping.defaultValue.rawValue
     @AppStorage(LibraryFilter.storageKey) private var filterRaw = LibraryFilter.defaultValue.rawValue
+    /// The Discord invite card shows once, and only after the welcome guide has been finished.
+    @AppStorage(DiscordInvite.dismissedKey) private var discordCardDismissed = false
+    @AppStorage(OnboardingState.completedKey) private var onboardingDone = false
     @Environment(\.scenePhase) private var scenePhase
     /// Set by "Remove game...". Deleting waits for the confirmation below.
     @State private var pendingGameRemoval: GameMetadata?
@@ -795,6 +798,9 @@ struct GameBrowserView: View {
                         Link(destination: Self.helpURL) {
                             Label("Help & troubleshooting", systemImage: "questionmark.circle")
                         }
+                        Link(destination: DiscordInvite.url) {
+                            Label("Discord", systemImage: "bubble.left.and.bubble.right")
+                        }
                     } label: {
                         // Same bug and same colour as the two buttons above, but stated
                         // explicitly rather than inherited. This is a Menu, not a Button,
@@ -862,6 +868,10 @@ struct GameBrowserView: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 16)
+
+            if onboardingDone && !discordCardDismissed && searchText.isEmpty && !showingFavorites {
+                DiscordInviteCard(onDismiss: { discordCardDismissed = true })
+            }
 
             // The Wii U Menu, when one is installed. Pinned above the grid, not part of it, so
             // sorting never moves it; it is hidden while searching or viewing favourites.
