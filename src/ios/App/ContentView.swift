@@ -717,6 +717,7 @@ struct GameBrowserView: View {
                     .buttonStyle(MuffinSecondaryButtonStyle())
                     .frame(minWidth: 44, minHeight: 44)
                     .accessibilityLabel("Settings")
+                    .accessibilityHint("Opens Settings, with search.")
 
                     Button(action: { showingFavorites.toggle() }) {
                         // Same fix as the gear above, with one difference: the ACTIVE
