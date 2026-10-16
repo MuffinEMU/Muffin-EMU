@@ -97,17 +97,16 @@ void PPCInterpreter_MCRXR(PPCInterpreter_t* hCPU, uint32 Opcode)
 {	
 	// used in Dont Starve: Giant Edition
 	// also used frequently by Web Browser (webkit?)
-	uint32 cr;
-	cr = (Opcode >> (31 - 8)) & 7;
-	cr >>= 2;
+	// crfD is the 3-bit field in bits 6-8, so (Opcode >> 23) & 7 already is the field index. The old code shifted it
+	// right by two more bits, which sent mcrxr cr1..cr7 to cr0 or cr1.
+	const uint32 cr = (Opcode >> (31 - 8)) & 7;
 
 	uint32 xer = PPCInterpreter_getXER(hCPU);
-	uint32 xerBits = (xer >> 28) & 0xF;
 
-	// Preserve the existing bit ordering: XER bit 28 becomes CR field bit 0.
-	const uint32 crField = ((xerBits & 1) << 3) | ((xerBits & 2) << 1) |
-		((xerBits & 4) >> 1) | ((xerBits & 8) >> 3);
-	ppc_setCRField(hCPU, cr, crField);
+	// XER[0-3] (SO, OV, CA, 0) go into the field in the same order: LT = SO, GT = OV, EQ = CA, SO = 0.
+	// The packed CR field has LT in its top bit, so the four XER bits copy across unchanged. The old code
+	// reversed them (LT = 0, GT = CA, EQ = OV, SO = SO).
+	ppc_setCRField(hCPU, cr, (xer >> 28) & 0xF);
 
 	// reset copied bits
 	PPCInterpreter_setXER(hCPU, xer&~0xF0000000);

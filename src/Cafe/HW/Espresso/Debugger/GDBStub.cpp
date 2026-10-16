@@ -848,6 +848,7 @@ void GDBServer::CMDWriteMemory(std::unique_ptr<CommandContext>& context)
 	PPCRecompiler_invalidateRange(
 		static_cast<uint32>(addr),
 		static_cast<uint32>(addr + length));
+	PPCInterpreter_invalidateBlockCacheRange(static_cast<uint32>(addr), static_cast<uint32>(length));
 	return context->QueueResponse(RESPONSE_OK);
 }
 
