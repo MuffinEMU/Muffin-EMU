@@ -35,7 +35,12 @@ namespace coreinit
 	void __ghs_flock_create(ghs_flock* flock);
 	ghs_flock* __ghs_flock_ptr(iobbuf* iob);
 
-	std::recursive_mutex g_ghsLock;
+	// __ghsLock is a guest lock: the guest holds it across ordinary guest code, where its thread can be preempted and
+	// resumed on another host thread, or another guest thread can be run on the same host thread. A host mutex is the
+	// wrong owner for that (a second guest thread on the same host thread acquired it "recursively", and an unlock from a
+	// different host thread was refused, leaving it held for good), so it is an OSMutex, which is owned per guest thread
+	// and is recursive per guest thread like the GHS lock
+	SysAllocator<coreinit::OSMutex> g_ghsMutex;
 	std::recursive_mutex g_ghsLockFlock;
 
 	SysAllocator<coreinit::OSMutex, GHS_FOPEN_MAX> _flockMutexArray;
@@ -52,6 +57,7 @@ namespace coreinit
 		g_ghs_data->__gh_FOPEN_MAX = GHS_FOPEN_MAX;
 		g_ghs_data->ghs_Errno = 0;
 
+		coreinit::OSInitMutex(g_ghsMutex.GetPtr());
 		for (sint32 i = 0; i < GHS_FOPEN_MAX; i++)
 			_flockMutexMask[i] = false;
 		// init stdin/stdout/stderr
@@ -128,15 +134,12 @@ namespace coreinit
 
 	void __ghsLock()
 	{
-		while (!g_ghsLock.try_lock())
-		{
-			PPCCore_switchToScheduler();
-		}
+		OSLockMutex(g_ghsMutex.GetPtr());
 	}
 
 	void __ghsUnlock()
 	{
-		g_ghsLock.unlock();
+		OSUnlockMutex(g_ghsMutex.GetPtr());
 	}
 
 	void* __get_eh_init_block()
