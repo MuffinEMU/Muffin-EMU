@@ -10,7 +10,7 @@ import SwiftUI
 /// While the bar is hidden, TopBarRevealHandle takes every touch in a 220 by 72 point rectangle at the top of the
 /// screen. Over the TV that costs nothing, but where the GamePad screen is on this device (both screens, the small
 /// GamePad, or dual screen) it is part of the touchscreen a game can use, and a tap there brought the bar back
-/// instead of reaching the game. This one is 96 by 44, and only taps and downward swipes count.
+/// instead of reaching the game. This one is 140 by 52, and only a tap counts.
 ///
 /// The frame itself is what limits the target (never negative padding: hit testing clips to the frame).
 struct CompactTopBarRevealHandle: View {
