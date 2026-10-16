@@ -1,19 +1,19 @@
 # MuffinEMU community stats
 
-Updated 2026-10-15 by the Community stats workflow. History: [history.jsonl](history.jsonl) and [traffic-daily.csv](traffic-daily.csv).
+Updated 2026-10-16 by the Community stats workflow. History: [history.jsonl](history.jsonl) and [traffic-daily.csv](traffic-daily.csv).
 
 | | |
 |---|---|
-| IPA downloads, all releases | **586** (+294 in 7 days) |
-| Stars | 3 (-2 in 7 days) |
+| IPA downloads, all releases | **626** (+329 in 7 days) |
+| Stars | 3 (-3 in 7 days) |
 | Forks | 0 (-1 in 7 days) |
-| Watchers | 0 |
+| Watchers | 1 |
 
 ## Downloads by channel
 
 | Channel | Downloads |
 |---|---|
-| stable | 538 |
+| stable | 578 |
 | other | 30 |
 | experimental | 17 |
 | audit | 1 |
@@ -23,7 +23,8 @@ Updated 2026-10-15 by the Community stats workflow. History: [history.jsonl](his
 
 | Release | Downloads |
 |---|---|
-| v10.2 | 5 |
+| v10.3 | 32 |
+| v10.2 | 10 |
 | v10.1 | 13 |
 | v10.0 | 16 |
 | v9.9 | 5 |
@@ -42,7 +43,6 @@ Updated 2026-10-15 by the Community stats workflow. History: [history.jsonl](his
 | v8.6 | 2 |
 | v8.5 | 6 |
 | v8.4 | 3 |
-| v8.3 | 1 |
 
 _Traffic (views, clones, referrers) is missing: HTTP 403 (no STATS_TOKEN secret). Add a STATS_TOKEN secret; see the workflow file._
 
