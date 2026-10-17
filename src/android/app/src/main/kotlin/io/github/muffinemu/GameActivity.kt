@@ -16,6 +16,7 @@ import android.view.SurfaceView
 import android.view.WindowManager
 import android.widget.EditText
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -72,6 +73,20 @@ class GameActivity : ComponentActivity() {
         }
         watchKeyboard()
         countFrames()
+        // Back (often an edge swipe, easy to make by accident with thumbs at the edges) asks first while a game
+        // runs; nothing on the screen is lost by asking. With no game up (it failed to start), back just leaves.
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (!booted || !NativeBridge.isTitleRunning()) { finish(); return }
+                NativeBridge.releaseAllButtons()
+                AlertDialog.Builder(this@GameActivity)
+                    .setTitle("Quit the game?")
+                    .setMessage("Anything not saved in the game is lost.")
+                    .setPositiveButton("Quit") { _, _ -> finish() }
+                    .setNegativeButton("Keep playing", null)
+                    .show()
+            }
+        })
 
         setContent {
             Box(Modifier.fillMaxSize()) {
