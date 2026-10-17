@@ -321,7 +321,12 @@ struct SettingsView: View {
         case .about: AboutSettingsSection()
         case .performance: PerformanceSettingsSection()
         case .cpu: CPUSettingsSection()
-        case .jit: JITEnablerSection()
+        case .jit:
+            // Built-in JIT first; the hand-off enabler stays as an alternative below it.
+            Group {
+                BuiltInJITSection()
+                JITEnablerSection()
+            }
         case .graphics: GraphicsSettingsSection()
         case .shaderCache: ShaderCacheSection()
         case .emulatedClock: EmulatedClockSection()
