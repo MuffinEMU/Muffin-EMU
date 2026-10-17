@@ -55,6 +55,10 @@ void* GCControllerBridge_add(const GCBridgeControllerDesc* desc);
 void GCControllerBridge_notifyChanged(void);
 }
 
+// src/gui/android/WindowSystem.cpp (C++ linkage: they pass std::u16string)
+bool CemuAndroid_TakeKeyboardRequest(std::u16string& text, size_t& maxLength, uint32_t& generation);
+void CemuAndroid_SubmitKeyboard(uint32_t generation, std::u16string text);
+
 // src/ios/Bridge/Core
 int IOSTitleLaunch_PrepareForegroundTitle(const char* pathStr);
 const char* IOSTitleLaunch_LastErrorDetail();
@@ -422,6 +426,35 @@ JNIEXPORT jstring JNICALL Java_io_github_muffinemu_NativeBridge_pollMessage(JNIE
 	const std::string next = g_messages.front();
 	g_messages.pop_front();
 	return env->NewStringUTF(next.c_str());
+}
+
+// A software keyboard the game opened: [generation, maxLength, text], or null when none is waiting. Handed over
+// once; the app answers with submitKeyboard(generation, text).
+JNIEXPORT jobjectArray JNICALL Java_io_github_muffinemu_NativeBridge_pendingKeyboard(JNIEnv* env, jclass)
+{
+	std::u16string text;
+	size_t maxLength = 0;
+	uint32_t generation = 0;
+	if (!CemuAndroid_TakeKeyboardRequest(text, maxLength, generation))
+		return nullptr;
+	jobjectArray result = env->NewObjectArray(3, env->FindClass("java/lang/String"), nullptr);
+	env->SetObjectArrayElement(result, 0, env->NewStringUTF(std::to_string(generation).c_str()));
+	env->SetObjectArrayElement(result, 1, env->NewStringUTF(std::to_string(maxLength).c_str()));
+	env->SetObjectArrayElement(result, 2, env->NewString(reinterpret_cast<const jchar*>(text.data()), (jsize)text.size()));
+	return result;
+}
+
+JNIEXPORT void JNICALL Java_io_github_muffinemu_NativeBridge_submitKeyboard(JNIEnv* env, jclass, jint generation, jstring jText)
+{
+	std::u16string text;
+	if (jText)
+	{
+		const jsize length = env->GetStringLength(jText);
+		const jchar* chars = env->GetStringChars(jText, nullptr);
+		text.assign(reinterpret_cast<const char16_t*>(chars), (size_t)length);
+		env->ReleaseStringChars(jText, chars);
+	}
+	CemuAndroid_SubmitKeyboard((uint32_t)generation, std::move(text));
 }
 
 JNIEXPORT jdouble JNICALL Java_io_github_muffinemu_NativeBridge_framesPerSecond(JNIEnv*, jclass)

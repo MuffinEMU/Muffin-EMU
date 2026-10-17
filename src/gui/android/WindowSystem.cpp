@@ -9,6 +9,7 @@
 // Wii U screen in the one surface (output_sources), as the iOS app does in Single Screen.
 
 #include "gui/interface/WindowSystem.h"
+#include "gui/uikit/NativeKeyboard.h" // the keyboard calls swkbd makes; declared there for both platforms
 #include "Cafe/HW/Latte/Core/Latte.h"
 #ifdef ENABLE_VULKAN
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h"
@@ -143,6 +144,79 @@ void ShowErrorDialog(std::string_view message, std::string_view title, std::opti
 		g_onErrorDialog(titleCopy.c_str(), messageCopy.c_str());
 }
 } // namespace WindowSystem
+
+// The software keyboard a game opens (swkbd), as the iOS app does with its alert (src/gui/uikit/NativeKeyboard.mm):
+// a mailbox between the emulator thread and the app. swkbd posts a request with ShowNativeKeyboard and polls for the
+// answer; the app takes the request (CemuAndroid_TakeKeyboardRequest), shows its own text field and sends back what
+// was typed (CemuAndroid_SubmitKeyboard). Each request has a generation, so an answer to one the game has since
+// withdrawn (HideNativeKeyboard) is dropped instead of landing in the next text field.
+namespace
+{
+std::mutex s_keyboardMutex;
+uint32_t s_keyboardGeneration = 0;
+bool s_keyboardRequested = false; // posted and not yet taken by the app
+std::u16string s_keyboardText;
+size_t s_keyboardMaxLength = 0;
+bool s_keyboardAnswered = false; // the app answered and swkbd hasn't collected it yet
+std::u16string s_keyboardAnswer;
+} // namespace
+
+namespace WindowSystem
+{
+void ShowNativeKeyboard(std::u16string text, size_t maxLength, size_t cursor)
+{
+	(void)cursor;
+	std::lock_guard lock(s_keyboardMutex);
+	++s_keyboardGeneration;
+	s_keyboardText = std::move(text);
+	s_keyboardMaxLength = maxLength;
+	s_keyboardRequested = true;
+	s_keyboardAnswered = false;
+}
+
+void HideNativeKeyboard()
+{
+	std::lock_guard lock(s_keyboardMutex);
+	++s_keyboardGeneration;
+	s_keyboardRequested = false;
+	s_keyboardAnswered = false;
+}
+
+bool PollNativeKeyboard(std::u16string& text, bool& accepted)
+{
+	std::lock_guard lock(s_keyboardMutex);
+	if (!s_keyboardAnswered)
+		return false;
+	text = s_keyboardAnswer;
+	accepted = true;
+	s_keyboardAnswered = false;
+	return true;
+}
+} // namespace WindowSystem
+
+// The app, from its UI thread. False when nothing is waiting; otherwise the request is handed over once.
+bool CemuAndroid_TakeKeyboardRequest(std::u16string& text, size_t& maxLength, uint32_t& generation)
+{
+	std::lock_guard lock(s_keyboardMutex);
+	if (!s_keyboardRequested)
+		return false;
+	s_keyboardRequested = false;
+	text = s_keyboardText;
+	maxLength = s_keyboardMaxLength;
+	generation = s_keyboardGeneration;
+	return true;
+}
+
+void CemuAndroid_SubmitKeyboard(uint32_t generation, std::u16string text)
+{
+	std::lock_guard lock(s_keyboardMutex);
+	if (generation != s_keyboardGeneration)
+		return;
+	if (s_keyboardMaxLength > 0 && text.size() > s_keyboardMaxLength)
+		text.resize(s_keyboardMaxLength);
+	s_keyboardAnswer = std::move(text);
+	s_keyboardAnswered = true;
+}
 
 using namespace WindowSystem;
 

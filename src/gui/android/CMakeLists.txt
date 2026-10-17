@@ -9,6 +9,8 @@ target_link_libraries(CemuAndroidGui PRIVATE
   CemuCafe
   CemuInput
   CemuConfig
+  # the imgui icon font and the Cafe default font (src/resource), which the iOS GUI library links the same way
+  CemuResource
   log
   android
 )
