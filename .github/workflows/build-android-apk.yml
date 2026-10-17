@@ -82,6 +82,11 @@ jobs:
           cp -R bin/resources bin/gameProfiles src/android/app/src/main/assets/CemuData/
           du -sh src/android/app/src/main/jniLibs src/android/app/src/main/assets
 
+      # The ubuntu-24.04 image has no Gradle (22.04 had one). Pinned to a release AGP 8.7 supports.
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
       - name: Build the APK
         run: |
           cd src/android
