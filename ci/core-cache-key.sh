@@ -28,8 +28,10 @@
 #     pins, so vcpkg, cubeb, imgui and the rest are covered without being checked out. dependencies/
 #     includes the vendored MoltenVK builds, so a MoltenVK change is a core change.
 #
-# What is deliberately NOT in it: the Swift app (src/ios/App, Emulation, Rendering, Resources and the
-# Xcode project files), the docs, the workflow files and the rest of ci/. None of them reach the core.
+# What is deliberately NOT in it: the Swift app (src/ios/App, Emulation, Rendering, Resources, the
+# Swift packages under src/ios/Packages and the Xcode project files), the docs, the workflow files and
+# the rest of ci/. None of them reach the core: src/CMakeLists.txt names the core's iOS sources one by
+# one (ios/Bridge, and ios/Bench behind a flag the shipping build never sets) and nothing globs.
 #
 # Adding an input to the core build means adding it below. The manifest lists its own contents, so
 # adding a path changes every fingerprint, which is the safe direction. NEVER remove a path or a
@@ -47,7 +49,7 @@ fi
 CORE_PATHS=(
   CMakeLists.txt cmake triplets vcpkg.json .gitmodules dependencies src
   ':(exclude)src/ios/App' ':(exclude)src/ios/Emulation' ':(exclude)src/ios/Rendering'
-  ':(exclude)src/ios/Resources' ':(exclude)src/ios/project.yml'
+  ':(exclude)src/ios/Resources' ':(exclude)src/ios/Packages' ':(exclude)src/ios/project.yml'
   ':(exclude)src/ios/Info-AlternateIcons.plist'
   ':(exclude)src/ios/Cemu.entitlements' ':(exclude)src/ios/Sideload.entitlements'
 )
