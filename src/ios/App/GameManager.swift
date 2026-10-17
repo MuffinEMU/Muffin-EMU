@@ -239,7 +239,10 @@ class GameManager: ObservableObject {
     @Published var isLoading = false
     @Published var currentGame: GameMetadata?
     @Published var emulationState: EmulationState = .idle {
-        didSet { ScreenBrightness.shared.setGameRunning(emulationState == .running) }
+        didSet {
+            ScreenBrightness.shared.setGameRunning(emulationState == .running)
+            LastSessionEnd.emulationStateChanged(emulationState, game: currentGame)
+        }
     }
     /// Last human-readable message from the engine bridge (e.g. "engine not built yet").
     @Published var lastStatusMessage: String = ""

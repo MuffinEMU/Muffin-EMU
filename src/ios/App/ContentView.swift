@@ -112,6 +112,7 @@ struct ContentView: View {
         }
         .onChange(of: appScenePhase) { phase in
             MenuMusic.shared.update(emulationState: gameManager.emulationState, appActive: phase != .background)
+            LastSessionEnd.scenePhaseChanged(phase)
         }
         .alert("Couldn't add that game", isPresented: Binding(
             get: { sharedImportError != nil }, set: { if !$0 { sharedImportError = nil } })) {
@@ -639,6 +640,8 @@ struct GameBrowserView: View {
     /// an enabler attaches from outside. The banner it drives is the answer to "why is it slow?".
     @State private var jitActive = JITStatus.isActive
     @State private var jitBannerDismissed = false
+    /// After a run that iOS ended with a game up (LastSessionEnd); the notice is taken once per launch.
+    @State private var lastSessionNotice = LastSessionEnd.fromLastRun
     /// Answers GameManager.confirmOverwrite - see the .onAppear wiring below. A plain
     /// closure captured from the continuation rather than storing the continuation
     /// type directly, so the two alert buttons don't need to know anything about
@@ -965,6 +968,11 @@ struct GameBrowserView: View {
                     onDismiss: { jitBannerDismissed = true }
                 )
                 .padding(.horizontal, 16)
+            }
+
+            if let lastSessionNotice {
+                LibraryLastSessionBanner(notice: lastSessionNotice, onDismiss: { self.lastSessionNotice = nil })
+                    .padding(.horizontal, 16)
             }
 
             // The Wii U Menu, when one is installed. Pinned above the grid, not part of it, so
