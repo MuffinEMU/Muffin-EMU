@@ -380,7 +380,7 @@ private struct OnboardingSpeedControlsPage: View {
                     )
                     OnboardingFactRow(
                         systemImage: "lifepreserver.fill",
-                        text: "If a game won't start, the screen that appears says what to try, and Copy bug report puts everything a helper needs in one text. It's also in the HOME menu and in Settings > Help and about."
+                        text: "If a game won't start, the screen that appears says what to try, and Copy bug report puts everything a helper needs in one text. It's also in the HOME menu and in Settings > Help."
                     )
                 }
                 .padding(16)

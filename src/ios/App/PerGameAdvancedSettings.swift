@@ -206,7 +206,7 @@ struct AdvancedGameOptionsSection: View {
                 InfoButton.footer(
                     "Extra options for this game only. \"Use Global Default\" follows Settings. They apply the next time you start the game.",
                     title: "Advanced game options",
-                    text: "Each option here follows the matching setting in Settings until you give this game its own value, and then keeps it whatever Settings says.\n\nResolution and the two scaling filters change how the picture is drawn for this game. Favour performance, Steady frame rate and One-core mode work as they do in Settings, for this game only.\n\nScreen layout and Hide on-screen controls when a controller is connected are put in place when the game starts, and your own choices come back when it stops. A layout change you make during the game is not kept.\n\nPerformance overlay turns the readout on or off for this game. On uses the corner chosen in Settings, or the top left if Settings has it off.\n\nReset this game's options puts every option for this game, in this screen and the one above, back on Settings.")
+                    text: "Each option here follows the matching setting in Settings until you give this game its own value, and then keeps it whatever Settings says.\n\nResolution and the two scaling filters change how the picture is drawn for this game. Favour performance, Steady frame rate and One-core mode work as they do in Settings, for this game only.\n\nScreen layout and Hide on-screen controls when a controller is connected are put in place when the game starts, and your own choices come back when it stops. A layout change you make during the game is not kept.\n\nFPS counter turns the readout on or off for this game. On uses the corner chosen in Settings, or the top left if Settings has it off.\n\nReset this game's options puts every option for this game, in this screen and the one above, back on Settings.")
             }
             .confirmationDialog("Reset this game's options?", isPresented: $confirmReset, titleVisibility: .visible) {
                 Button("Reset", role: .destructive) { store.clearOverrides(for: gameKey) }
@@ -323,7 +323,7 @@ struct AdvancedGameOptionsSection: View {
             }
         }
         AdvancedOverrideRow(
-            title: "Performance overlay",
+            title: "FPS counter",
             caption: caption(pinned: own.performanceOverlay != nil,
                              settingsValue: store.globalOverlayPosition == .disabled ? "off" : "on"),
             selection: toggleChoice(\.performanceOverlay)

@@ -107,7 +107,7 @@ struct LibrarySettingsSection: View {
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
         } header: {
-            SettingsSectionHeader("Library layout", icon: "books.vertical", accent: .content)
+            SettingsSectionHeader("Library", icon: "books.vertical", accent: .content)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }

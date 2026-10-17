@@ -106,7 +106,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
         case .recordScreen: return "Records the screen the game is showing, at the game's own resolution and with its sound, to a video in the Recordings folder in Files. Choose it again to stop."
         case .scanAmiibo: return "Opens a list of amiibo files to scan. The game has to be asking for an amiibo."
         case .recentreAim: return "Takes the way you are holding the device now as straight ahead, then goes back to the game."
-        case .performanceReadout: return "Shows the FPS readout over the game until you quit it. Settings > Performance overlay chooses its corner and what else it lists."
+        case .performanceReadout: return "Shows the FPS readout over the game until you quit it. Settings > FPS counter chooses its corner and what else it lists."
         case .reportProblem: return "Copies one text for a bug report about this game: your device, the main settings, what the engine last reported and the end of the log. The game keeps running; paste it when you ask for help."
         case .quit: return "Asks before leaving the game."
         }

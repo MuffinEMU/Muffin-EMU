@@ -32,14 +32,14 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         case .emulatedDevices: return "Figure portals"
         case .display: return "Display"
         case .audio: return "Audio"
-        case .overlay: return "Performance overlay"
+        case .overlay: return "FPS counter"
         case .notifications: return "Notifications"
-        case .library: return "Library layout"
+        case .library: return "Library"
         case .coverArt: return "Cover art"
         case .keys: return "Wii U keys"
         case .wiiUMenu: return "Wii U Menu"
         case .account: return "Account"
-        case .network: return "Online service"
+        case .network: return "Online play"
         case .premium: return "Premium"
         case .appearance: return "Appearance"
         case .files: return "Files"
@@ -65,14 +65,14 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         case .emulatedDevices: return "skylanders disney infinity lego dimensions toypad portal figures toys amiibo devices"
         case .display: return "screen external tv layout single screen gamepad position orientation"
         case .audio: return "sound volume latency channels music"
-        case .overlay: return "fps counter stats hud performance readout frame rate speed cpu ram"
+        case .overlay: return "fps counter stats hud performance overlay readout frame rate speed cpu ram"
         case .notifications: return "alerts messages banners"
-        case .library: return "games sort list grid cards covers size tap layout"
+        case .library: return "games sort list grid cards covers size tap layout linked folders drive removed restore"
         case .coverArt: return "covers images artwork box"
         case .keys: return "keys.txt decrypt online files"
         case .wiiUMenu: return "home menu launcher"
         case .account: return "mii profile sign in"
-        case .network: return "online pretendo nintendo network service servers custom"
+        case .network: return "online service pretendo nintendo network servers custom play"
         case .premium: return "supporter unlock purchase restore"
         case .appearance: return "theme colours colors icon dark light classic flat"
         case .files: return "storage folders paths location"
@@ -99,28 +99,28 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .emulation: return "Emulation"
+        case .emulation: return "Performance and graphics"
         case .controls: return "Controls"
         case .screenAndSound: return "Screen and sound"
         case .library: return "Games and library"
         case .accountOnline: return "Account and online"
         case .appearance: return "Appearance"
         case .storage: return "Storage and backup"
-        case .support: return "Help and about"
+        case .support: return "Help"
         }
     }
 
     /// The line under the title on the hub.
     var blurb: String {
         switch self {
-        case .emulation: return "CPU, JIT, graphics and shaders. These decide how well games run."
-        case .controls: return "On-screen pad, motion aiming and figure portals."
-        case .screenAndSound: return "Screen layout, audio, the performance overlay and alerts."
-        case .library: return "How the library looks, cover art, Wii U keys and the Wii U Menu."
-        case .accountOnline: return "Your profile and the online service."
+        case .emulation: return "How fast games run and how they look: JIT, CPU, resolution and shaders."
+        case .controls: return "The on-screen pad, motion aiming and figure portals."
+        case .screenAndSound: return "Screen layout, a TV or second screen, audio, the FPS counter and alerts."
+        case .library: return "Wii U keys, how the library looks, cover art and the Wii U Menu."
+        case .accountOnline: return "Your Mii and account, and online play."
         case .appearance: return "Theme, colours, the app icon and Premium."
         case .storage: return "Where files live, settings backups and moving everything to another device."
-        case .support: return "What to try first, bug report, diagnostics, credits and reset."
+        case .support: return "When a game won't start, reporting a problem, diagnostics, credits and reset."
         }
     }
 
@@ -129,9 +129,9 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .emulation: return "The defaults suit most games, so change one thing at a time. Switch Settings mode to Advanced on the main list to see more."
         case .controls: return "Button size, sticks and opacity are under On-screen controls. Figure portals are for Skylanders, Disney Infinity and LEGO Dimensions."
-        case .screenAndSound: return "Display covers screen layout and external screens. Audio, the performance overlay and pop-up notifications are here too."
-        case .library: return "Choose how your games look and where cover art comes from. Add Wii U keys and the Wii U Menu here."
-        case .accountOnline: return "An account is only needed for online play. The online service decides which servers games connect to."
+        case .screenAndSound: return "Display covers screen layout and a TV or second screen. Audio, the FPS counter and pop-up notifications are here too."
+        case .library: return "Encrypted games need Wii U keys, so they come first. Then how your games look, where cover art comes from, and the Wii U Menu."
+        case .accountOnline: return "An account is only needed for online play. Online play decides which servers games connect to."
         case .appearance: return "Looks only. None of this changes how games run."
         case .storage: return "Back up your settings before a big change or an update (Advanced mode). Move to another device exports your saves and settings, and your games if you choose."
         case .support: return "Copy bug report puts everything a helper needs in one text. Send it when you ask for help."
@@ -166,7 +166,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .emulation: return [.cpu, .jit, .graphics, .shaderCache, .emulatedClock]
         case .controls: return [.onScreenControls, .motion, .emulatedDevices]
         case .screenAndSound: return [.display, .audio, .overlay, .notifications]
-        case .library: return [.library, .coverArt, .keys, .wiiUMenu]
+        case .library: return [.keys, .library, .coverArt, .wiiUMenu]
         case .accountOnline: return [.account, .network]
         case .appearance: return [.appearance, .premium]
         case .storage: return [.files, .backup, .migration]
@@ -180,10 +180,21 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 
     /// The hub's titled groups.
     static let groups: [(title: String, categories: [SettingsCategory])] = [
-        ("Playing games", [.emulation, .controls, .screenAndSound]),
-        ("Library and online", [.library, .accountOnline]),
-        ("The app", [.appearance, .storage, .support]),
+        ("Playing", [.emulation, .controls, .screenAndSound]),
+        ("Your games", [.library, .accountOnline]),
+        ("This app", [.appearance, .storage, .support]),
     ]
+
+    /// Something on this page that needs the player's attention, shown on the hub in place of the
+    /// blurb: the two things that most often make MuffinEMU look broken. Nil when all is well.
+    @MainActor
+    var attention: String? {
+        switch self {
+        case .emulation: return JITStatus.isActive ? nil : "JIT is off, so games run slower. Open to set it up."
+        case .library: return WiiUKeys.keysFileExists() ? nil : "No keys.txt yet, so encrypted games won't start."
+        default: return nil
+        }
+    }
 
     func owns(_ item: SettingsItem) -> Bool { items.contains(item) }
 
@@ -258,15 +269,41 @@ struct SettingsView: View {
     }
 
     private func categoryPage(_ category: SettingsCategory) -> some View {
-        pageBackground(category.title) {
-            Section {
-                Text(category.intro)
-                    .font(.system(size: 13))
-                    .foregroundColor(MuffinTheme.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            ForEach(category.visibleItems(advanced: isAdvanced)) { item in
-                sectionView(item)
+        let items = category.visibleItems(advanced: isAdvanced)
+        return ScrollViewReader { reader in
+            pageBackground(category.title) {
+                Section {
+                    Text(category.intro)
+                        .font(.system(size: 13))
+                        .foregroundColor(MuffinTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    // A long page gets a row of its sections at the top, so one tap reaches the one
+                    // you came for instead of scrolling past the others.
+                    if items.count >= 3 {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(items) { item in
+                                    Button(item.title) {
+                                        withAnimation(.easeInOut(duration: 0.25)) { reader.scrollTo(item, anchor: .top) }
+                                    }
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                    .foregroundColor(MuffinTheme.accentText)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 7)
+                                    .background(MuffinTheme.accentText.opacity(0.12), in: Capsule())
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                        .accessibilityElement(children: .contain)
+                        .accessibilityLabel("Jump to a section")
+                    }
+                }
+                ForEach(items) { item in
+                    sectionView(item)
+                        .id(item)
+                }
             }
         }
     }
@@ -289,10 +326,17 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(category.title)
                         .font(.system(size: 16, weight: .semibold, design: .rounded))
-                    Text(category.blurb)
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                        .lineLimit(2)
+                    if let attention = category.attention {
+                        Label(attention, systemImage: "exclamationmark.circle.fill")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(MuffinTheme.cautionText)
+                            .lineLimit(2)
+                    } else {
+                        Text(category.blurb)
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                    }
                 }
             }
             .padding(.vertical, 3)

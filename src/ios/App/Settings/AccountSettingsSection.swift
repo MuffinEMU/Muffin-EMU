@@ -180,12 +180,12 @@ struct NetworkServiceSettingsSection: View {
                           || (service == .nintendo && selectedService != .nintendo))
             }
         } header: {
-            SettingsSectionHeader("Online service\(activeAccountName.map { " (\($0))" } ?? "")",
+            SettingsSectionHeader("Online play\(activeAccountName.map { " (\($0))" } ?? "")",
                                   icon: "network", accent: .content)
         } footer: {
             InfoButton.footer(
                 locked ? "The online service can't be changed while a game is running. Close the game first." : selectedService.accountHelp,
-                title: "Online service",
+                title: "Online play",
                 text: "Pretendo is a community-run replacement for Nintendo's Wii U online services. Its server addresses are built in, so there is nothing to set up.\n\nNintendo's own servers have been shut down, so that option can't be selected.\n\nCustom uses a network_services.xml file. Add one under Custom servers above. It doesn't need a linked account, otp.bin or seeprom.bin.\n\n" + OnlineReadiness.howToFix)
         }
         .foregroundColor(MuffinTheme.brownDarkest)

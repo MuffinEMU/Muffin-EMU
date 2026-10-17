@@ -103,11 +103,11 @@ struct OverlaySettingsSection: View {
                 debugToggle
             }
         } header: {
-            SettingsSectionHeader("Performance overlay", icon: "speedometer", accent: .io)
+            SettingsSectionHeader("FPS counter", icon: "speedometer", accent: .io)
         } footer: {
             InfoButton.footer(
                 "Shows the frame rate, plus CPU and memory use if you turn them on. Pick a corner to turn it on.",
-                title: "Performance overlay",
+                title: "FPS counter",
                 text: fullText)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
