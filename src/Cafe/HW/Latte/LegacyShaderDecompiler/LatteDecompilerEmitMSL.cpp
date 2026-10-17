@@ -2521,28 +2521,24 @@ static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContex
     		}
     	}
     	// gradient parameters
+    	// (1D and 1D array textures have no mips in Metal and their sample() takes no lod option at all, so they get none;
+    	// cube maps are left out because the gradients a shader sets are in its own pre-projection space)
     	if (texOpcode == GPU7_TEX_INST_SAMPLE_G)
     	{
-		if (texDim == Latte::E_DIM::DIM_1D)
-		{
-			src->add(", gradient1d(gradH.x, gradV.x)");
-		}
-		else if (texDim == Latte::E_DIM::DIM_2D)
+    		// a bias of b levels is a scale of the gradients by 2^b, since the level is the log2 of their length
+    		const std::string gradScale = hasLodBiasUniform ? fmt::format(" * exp2({})", lodBiasTerm) : std::string();
+		if (texDim == Latte::E_DIM::DIM_2D || texDim == Latte::E_DIM::DIM_2D_ARRAY)
     		{
-    			// a bias of b levels is a scale of the gradients by 2^b, since the level is the log2 of their length
-    			if (hasLodBiasUniform)
-    				src->addFmt(", gradient2d(gradH.xy * exp2({}), gradV.xy * exp2({}))", lodBiasTerm, lodBiasTerm);
-    			else
-    				src->add(", gradient2d(gradH.xy, gradV.xy)");
+    			src->addFmt(", gradient2d(gradH.xy{}, gradV.xy{})", gradScale, gradScale);
     		}
-		else
+		else if (texDim == Latte::E_DIM::DIM_3D)
     		{
-    			cemu_assert_unimplemented();
+    			src->addFmt(", gradient3d(gradH.xyz{}, gradV.xyz{})", gradScale, gradScale);
     		}
     	}
 
     	// offset
-		if( texOpcode == GPU7_TEX_INST_SAMPLE_L || texOpcode == GPU7_TEX_INST_SAMPLE_LB || texOpcode == GPU7_TEX_INST_SAMPLE_G || texOpcode == GPU7_TEX_INST_SAMPLE_LZ || texOpcode == GPU7_TEX_INST_SAMPLE_C_LZ || texOpcode == GPU7_TEX_INST_SAMPLE || texOpcode == GPU7_TEX_INST_SAMPLE_C )
+		if( texOpcode == GPU7_TEX_INST_SAMPLE_L || texOpcode == GPU7_TEX_INST_SAMPLE_LB || texOpcode == GPU7_TEX_INST_SAMPLE_G || texOpcode == GPU7_TEX_INST_SAMPLE_LZ || texOpcode == GPU7_TEX_INST_SAMPLE_C_LZ || texOpcode == GPU7_TEX_INST_SAMPLE || texOpcode == GPU7_TEX_INST_SAMPLE_C || texOpcode == GPU7_TEX_INST_SAMPLE_C_L )
     	{
     		if( hasOffset )
     		{
