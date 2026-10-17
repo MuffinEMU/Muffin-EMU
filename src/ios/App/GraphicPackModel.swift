@@ -134,7 +134,7 @@ struct GraphicPack: Identifiable, Hashable {
 
     func support(on api: RendererAPI) -> Support {
         if !vendorFilter.isEmpty && vendorFilter != "apple" {
-            return .inactive("Made for a different kind of graphics chip, so it never turns on here.")
+            return .inactive("Made for a different kind of graphics chip, so it stays off here.")
         }
         switch rendererFilter {
         case "metal" where api != .metal:

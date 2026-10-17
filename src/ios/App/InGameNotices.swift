@@ -4,6 +4,7 @@
 // Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
 
 import SwiftUI
+import Combine
 
 /// Back, while a game is still starting.
 ///
@@ -53,7 +54,11 @@ struct HeatNoticeModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .onAppear { wasHot = Self.isHot }
-            .onReceive(NotificationCenter.default.publisher(for: ProcessInfo.thermalStateDidChangeNotification)) { _ in
+            // iOS posts this notification on a global queue, not the main one, and the closure
+            // writes view state and calls back into the game screen, so it is moved to the main
+            // run loop first (the same hop ThermalMonitor makes).
+            .onReceive(NotificationCenter.default.publisher(for: ProcessInfo.thermalStateDidChangeNotification)
+                        .receive(on: RunLoop.main)) { _ in
                 let hot = Self.isHot
                 defer { wasHot = hot }
                 // With automatic cool-down on, ThermalMonitor announces what it does itself; one banner, not two.
