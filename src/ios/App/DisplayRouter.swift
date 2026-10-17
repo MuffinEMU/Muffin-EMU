@@ -411,6 +411,9 @@ final class DisplayRouter: ObservableObject {
         ) else { return }
 
         tvSurfaceRegistered = true
+        // A title is booting and the library is off screen: let go of the decoded covers, which can
+        // run to a hundred megabytes or more and would otherwise sit next to the game for its whole run.
+        CoverImageLoader.releaseAll()
         // The view above may have just been created by the `tvRenderView` accessor, in
         // which case it is not in any hierarchy yet. This one call places it AND syncs
         // the pad surface (a no-op outside .dualScreen, leaving the GamePad screen

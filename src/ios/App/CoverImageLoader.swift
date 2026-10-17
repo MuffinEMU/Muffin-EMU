@@ -86,6 +86,13 @@ enum CoverImageLoader {
         cache.object(forKey: key(path, maxPixel))
     }
 
+    /// Drops every decoded cover. Called when a game starts: the library is off screen then, and
+    /// the cache can hold well over a hundred megabytes that would otherwise sit beside the game for
+    /// its whole run. The library decodes again, lazily, the next time it is shown.
+    static func releaseAll() {
+        cache.removeAllObjects()
+    }
+
     /// Decodes the file at no more than `maxPixel` on its long side (ImageIO downsamples
     /// during decode, so a 4K cover never sits fully decoded in memory for a small card).
     static func decode(path: String, maxPixel: Int) -> UIImage? {
