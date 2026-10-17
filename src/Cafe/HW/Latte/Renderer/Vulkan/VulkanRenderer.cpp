@@ -1128,10 +1128,34 @@ VulkanRenderer::~VulkanRenderer()
 		// don't exist. Release just what the constructor created.
 		m_padSwapchainInfo = nullptr;
 		m_mainSwapchainInfo = nullptr;
-		memoryManager.reset();
+		// The shader and pipeline compile threads were started by the constructor too. They are idle, but left alone they
+		// stay for the rest of the process while the title runs on Metal, and a later Vulkan launch starts a second set.
+		RendererShaderVk::Shutdown();
+		PipelineCompiler::CompileThreadPool_Stop();
 		if (m_logicalDevice)
 		{
 			vkDeviceWaitIdle(m_logicalDevice);
+			// The constructor's device memory (uniform ring, readback buffer, stream-out ring, query results) and its
+			// descriptor pool are not freed by vkDestroyDevice. On a fallback launch they were kept for as long as the app
+			// ran on Metal: with the pool's preallocated descriptors that is well over 50 MB a device with a tight memory
+			// limit then went without.
+			memoryManager->DeleteBuffer(m_uniformVarBuffer, m_uniformVarBufferMemory);
+			memoryManager->DeleteBuffer(m_textureReadbackBuffer, m_textureReadbackBufferMemory);
+			memoryManager->DeleteBuffer(m_xfbRingBuffer, m_xfbRingBufferMemory);
+			memoryManager->DeleteBuffer(m_occlusionQueries.bufferQueryResults, m_occlusionQueries.memoryQueryResults);
+			m_uniformVarBufferPtr = nullptr;
+			m_textureReadbackBufferPtr = nullptr;
+			m_occlusionQueries.ptrQueryResults = nullptr;
+		}
+		memoryManager.reset();
+		if (m_logicalDevice)
+		{
+			if (m_descriptorPool != VK_NULL_HANDLE)
+				vkDestroyDescriptorPool(m_logicalDevice, m_descriptorPool, nullptr);
+			m_descriptorPool = VK_NULL_HANDLE;
+			if (m_swapchainDescriptorSetLayout != VK_NULL_HANDLE)
+				vkDestroyDescriptorSetLayout(m_logicalDevice, m_swapchainDescriptorSetLayout, nullptr);
+			m_swapchainDescriptorSetLayout = VK_NULL_HANDLE;
 			for (auto& it : m_cmd_buffer_fences)
 				if (it != VK_NULL_HANDLE)
 					vkDestroyFence(m_logicalDevice, it, nullptr);
