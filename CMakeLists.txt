@@ -329,6 +329,11 @@ if (ENABLE_CUBEB)
 endif()
 
 add_subdirectory("dependencies/ih264d" EXCLUDE_FROM_ALL)
+if(ANDROID)
+	# ih264d includes AOSP's <log/log.h> on Android, which the NDK does not ship; src/android/shim provides it
+	target_include_directories(ih264d PRIVATE "${CMAKE_CURRENT_LIST_DIR}/src/android/shim")
+	target_link_libraries(ih264d PRIVATE log)
+endif()
 
 if (CMAKE_OSX_ARCHITECTURES)
 	set(CEMU_ARCHITECTURE ${CMAKE_OSX_ARCHITECTURES})
