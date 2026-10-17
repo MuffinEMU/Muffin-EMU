@@ -757,6 +757,23 @@ bool nnNfp_isInitialized()
 	return nfp_data.nfpIsInitialized;
 }
 
+// The title that set this up is gone. The event pointers are addresses in its memory, and a figure it had loaded
+// would otherwise be reported to the next title before that one called Initialize
+static void nnNfp_resetForTitleStop()
+{
+	nnNfpLock();
+	nfp_data.nfpIsInitialized = false;
+	nfp_data.activateEvent = MPTR_NULL;
+	nfp_data.deactivateEvent = MPTR_NULL;
+	nfp_data.isDetecting = false;
+	nfp_data.isMounted = false;
+	nfp_data.isReadOnly = false;
+	nfp_data.hasOpenApplicationArea = false;
+	nfp_data.hasActiveAmiibo = false;
+	nfp_data.amiiboPath.clear();
+	nnNfpUnlock();
+}
+
 // CEMU NFC error codes
 #define NFC_ERROR_NONE					(0)
 #define NFC_ERROR_NO_ACCESS				(1)
@@ -893,7 +910,11 @@ void nnNfp_update()
 		return;
 	// make sure amiibo is still touching after acquiring lock
 	if (nfp_data.hasActiveAmiibo == false)
+	{
+		// returning with the lock held left the mutex locked for good, and the next nn_nfp call from the game never returned
+		nnNfpUnlock();
 		return;
+	}
 	uint32 amiiboElapsedTouchTime = GetTickCount() - nfp_data.amiiboTouchTime;
 	if (amiiboElapsedTouchTime >= 1500)
 	{
@@ -1056,6 +1077,11 @@ namespace nn::nfp
 			cafeExportRegisterFunc(nn::nfp::GetNfpRomInfo, "nn_nfp", "GetNfpRomInfo__Q2_2nn3nfpFPQ3_2nn3nfp7RomInfo", LogType::NN_NFP);
 			cafeExportRegisterFunc(nn::nfp::GetNfpReadOnlyInfo, "nn_nfp", "GetNfpReadOnlyInfo__Q2_2nn3nfpFPQ3_2nn3nfp12ReadOnlyInfo", LogType::NN_NFP);
 		};
+
+		void RPLUnmapped() override
+		{
+			nnNfp_resetForTitleStop();
+		}
 
 	}s_COSnnNfpModule;
 
