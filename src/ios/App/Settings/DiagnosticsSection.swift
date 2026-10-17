@@ -71,7 +71,7 @@ struct DeviceReportSection: View {
         } footer: {
             InfoButton.footer("Copy bug report gathers what a helper asks for first. Share log files sends the full logs.",
                 title: "Report a problem",
-                text: "Copy bug report puts one text on the clipboard: your device (chip, memory, app build), the settings that decide how games run (CPU mode, JIT, renderer, resolution), the game you last started, what the engine last reported and the last lines of the launch log. Paste it into your message when you ask for help.\n\nShare log files sends the engine's full log.txt and the crash log, for the cases where the short report isn't enough.\n\nThe launch log is always collected; Show launch log under Diagnostics only decides whether it is drawn over the screen while a game starts.")
+                text: "Copy bug report puts one text on the clipboard: your device (chip, memory, app build), the settings that decide how games run (CPU mode, JIT, renderer, resolution), the game you last started, what the engine last reported and the last lines of the launch log. Paste it into your message when you ask for help. While a game is running, the HOME menu has the same row.\n\nShare log files sends the engine's full log.txt and the crash log, for the cases where the short report isn't enough.\n\nThe launch log is always collected; Show launch log under Diagnostics only decides whether it is drawn over the screen while a game starts.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }
@@ -117,7 +117,7 @@ struct TroubleshootingSection: View {
         } header: {
             SettingsSectionHeader("Game won't start?", icon: "questionmark.circle", accent: .system)
         } footer: {
-            Text("Still stuck? Copy bug report below and paste it when you ask for help.")
+            Text("Still stuck? Copy bug report below (or in the HOME menu while the game runs) and paste it when you ask for help.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }
