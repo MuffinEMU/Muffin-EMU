@@ -33,6 +33,9 @@ voidpf zcallocWrapper(voidpf opaque, uInt items, uInt size)
 	hCPU->gpr[4] = items;
 	hCPU->gpr[5] = size;
 	PPCCore_executeCallbackInternal(zstream->zalloc.GetMPTR());
+	// the game's allocator can fail. zlib handles a null return (Z_MEM_ERROR); clearing guest address 0 did not
+	if (hCPU->gpr[3] == MPTR_NULL)
+		return nullptr;
 	memset(memory_getPointerFromVirtualOffset(hCPU->gpr[3]), 0, items*size);
 	return memory_getPointerFromVirtualOffset(hCPU->gpr[3]);
 }

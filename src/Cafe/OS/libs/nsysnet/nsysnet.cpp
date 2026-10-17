@@ -241,6 +241,7 @@ typedef struct
 	sint32 protocol;
 	// host side info
 	SOCKET s;
+	bool isSharedHostSocket; // the host socket belongs to libcurl (nlibcurl), which closes it itself
 	// socket options
 	bool isNonBlocking;
 }virtualSocket_t;
@@ -396,9 +397,26 @@ WUSOCKET nsysnet_createVirtualSocketFromExistingSocket(SOCKET existingSocket)
 #endif
 
 	vs->handle = s;
+	vs->isSharedHostSocket = true;
 	virtualSocketTable[s - 1] = vs;
 	vs->s = existingSocket;
 	return vs->handle;
+}
+
+// Sockets the title left open are closed with it. Each one is a host file descriptor and, for TCP, a live connection
+// to a game server; left in the table they also used up the 32 guest handles, so the next title's socket() calls failed
+static void nsysnet_closeAllSockets()
+{
+	for (sint32 i = 0; i < WU_SOCKET_LIMIT; i++)
+	{
+		virtualSocket_t* vs = virtualSocketTable[i];
+		if (!vs)
+			continue;
+		if (!vs->isSharedHostSocket)
+			closesocket(vs->s);
+		free(vs);
+		virtualSocketTable[i] = nullptr;
+	}
 }
 
 void nsysnet_notifyCloseSharedSocket(SOCKET existingSocket)
@@ -1000,17 +1018,20 @@ void nsysnetExport_accept(PPCInterpreter_t* hCPU)
 		return;
 	}
 
-	if (memory_readU32(lenMPTR) != 16)
+	// the address is optional, like for the real accept(). Reading the length through a null pointer read guest address 0
+	const bool wantsAddress = addr != nullptr && lenMPTR != MPTR_NULL;
+	if (wantsAddress && memory_readU32(lenMPTR) != 16)
 	{
 		cemuLog_log(LogType::Force, "invalid sockaddr len in accept()");
 		cemu_assert_debug(false);
-		osLib_returnFromFunction(hCPU, 0);
+		_setSockError(WU_SO_EINVAL);
+		osLib_returnFromFunction(hCPU, -1);
 		return;
 	}
 
 	if (vs->isNonBlocking)
 	{
-		sockaddr hostAddr;
+		sockaddr hostAddr{};
 		socklen_t hostLen = sizeof(sockaddr);
 		SOCKET hr = accept(vs->s, &hostAddr, &hostLen);
 		if (hr != SOCKET_ERROR)
@@ -1019,13 +1040,18 @@ void nsysnetExport_accept(PPCInterpreter_t* hCPU)
 			if (r < 0)
 				closesocket(hr); // no free guest handle, the error is already set
 			else
+			{
+				// the accepted socket is the guest's own, so it is closed with socketclose() and at title end
+				nsysnet_getVirtualSocketObject(r)->isSharedHostSocket = false;
 				_setSockError(WU_SO_SUCCESS);
+				if (wantsAddress)
+					sockaddr_host2guest(&hostAddr, addr); // only filled in on success; it used to copy an uninitialized address on EWOULDBLOCK
+			}
 		}
 		else
 		{
 			r = _translateError((sint32)hr, (sint32)GETLASTERR, _ERROR_MODE_ACCEPT);
 		}
-		sockaddr_host2guest(&hostAddr, addr);
 	}
 	else
 	{
@@ -1420,9 +1446,13 @@ void nsysnetExport_getpeername(PPCInterpreter_t* hCPU)
 	sint32 r = getpeername(vs->s, &saddr, &saddrLen);
 	r = _translateError(r, GETLASTERR);
 
-	name->sa_family = _swapEndianU16(saddr.sa_family);
-	memcpy(name->sa_data, saddr.sa_data, 14);
-	*nameLen = 16;
+	// a socket that isn't connected fails with ENOTCONN. The guest address was still overwritten with garbage
+	if (r == 0)
+	{
+		name->sa_family = _swapEndianU16(saddr.sa_family);
+		memcpy(name->sa_data, saddr.sa_data, 14);
+		*nameLen = 16;
+	}
 
 	osLib_returnFromFunction(hCPU, r);
 }
@@ -2388,6 +2418,16 @@ namespace nsysnet
 			osLib_addFunction("nsysnet", "NSSLExportInternalServerCertificate", nsysnet::export_NSSLExportInternalServerCertificate);
 			osLib_addFunction("nsysnet", "NSSLExportInternalClientCertificate", nsysnet::export_NSSLExportInternalClientCertificate);
 		};
+
+		void RPLUnmapped() override
+		{
+			nsysnet_closeAllSockets();
+			g_nsslInternalStates.clear();
+			sockLibReady = false;
+			// the inet_ntoa buffer was allocated in the stopped title's system heap. Kept, the next title's inet_ntoa()
+			// would write into whatever that title put at the same address
+			_ntoa_tempString = nullptr;
+		}
 	}s_COSnsysnetModule;
 
 	COSModule* GetModule()
