@@ -840,11 +840,12 @@ bool PPCRecompilerImlGen_PSQ_L(ppcImlGenContext_t* ppcImlGenContext, uint32 opco
 	if ( !PPCRecompiler_isUGQRValueKnown(ppcImlGenContext, gqrIndex, knownGQRValue) )
 	{
 		// generate complex dynamic handler when we dont know the GQR value ahead of time
-		// The iOS port used to give up here on AArch64 and leave the whole function to the interpreter, as if the
-		// backend couldn't take this IML. It can: the per-type cases below are the same ones the known-GQR path emits,
-		// and the branched segments are what PSQ_ST's clamp and stwcx already use. Only GQR0 is ever "known" (see
-		// PPCRecompiler_isUGQRValueKnown), so every function with a psq_l/psq_st on GQR1 to GQR7 stayed uncompiled.
-		// Upstream Cemu compiles this on AArch64, so this matches it again.
+		// The iOS port used to give up here on AArch64 and leave the whole function to the interpreter. Only GQR0 is
+		// ever "known" (see PPCRecompiler_isUGQRValueKnown, which assumes its default of 0, i.e. TYPE_F32 and scale 0),
+		// so every function with a psq_l/psq_st on GQR1 to GQR7 stayed uncompiled. The IML below is a compare chain over
+		// the type field plus the per-type cases: F32 is what the known path already emits; the integer types add
+		// byte-swapped 8/16-bit loads and stores, int/float conversions and clamp branches, which this backend handles
+		// with the same code as upstream Cemu's AArch64 backend, where this path is compiled.
 		IMLReg gqrRegister = PPCRecompilerImlGen_loadRegister(ppcImlGenContext, PPCREC_NAME_SPR0 + SPR_UGQR0 + gqrIndex);
 		IMLReg loadTypeReg = PPCRecompilerImlGen_loadRegister(ppcImlGenContext, PPCREC_NAME_TEMPORARY + 0);
 		// extract the load type from the GQR register
