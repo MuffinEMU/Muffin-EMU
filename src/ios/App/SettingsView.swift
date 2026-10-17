@@ -203,9 +203,18 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     }
 }
 
-/// Settings opens on a short list of pages (with search), and each page holds its sections. Every
-/// section is its own View struct, so the type checker isn't asked to infer one huge Form
-/// expression. Searching lists matching sections and opens them directly.
+/// What the detail pane is showing: the General page (Settings mode), a whole category, or a
+/// single section opened from a search result.
+enum SettingsRoute: Hashable {
+    case general
+    case category(SettingsCategory)
+    case item(SettingsItem)
+}
+
+/// Settings opens as a sidebar of pages beside the page itself, so a big screen shows the list and
+/// the open page at once instead of a small floating card. On iPhone (and iOS 15) it collapses to
+/// the familiar one-column stack. Every section is its own View struct, so the type checker isn't
+/// asked to infer one huge Form expression. Searching lists matching sections and opens them.
 struct SettingsView: View {
     // Observed so flipping Classic UI or Flat surfaces repaints this subtree immediately.
     @ObservedObject private var uiStyle = UIStyleStore.shared
@@ -215,6 +224,8 @@ struct SettingsView: View {
     @State private var showingIconPicker = false
     @State private var showingThemePicker = false
     @State private var query = ""
+    /// Which page the detail pane shows in the sidebar layout. Opens on the most-used page.
+    @State private var selection: SettingsRoute? = .category(.emulation)
     @ObservedObject private var accountSheets = AccountSheetRouter.shared
     /// Basic hides the advanced rows (see AdvancedSettings); the pages need it for whole sections.
     @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
@@ -405,8 +416,115 @@ struct SettingsView: View {
         }
     }
 
-    var body: some View {
-        // NavigationStack needs iOS 16+; this project's deployment target is 15.0.
+    // MARK: Sidebar layout (iOS 16+)
+
+    private func sidebarRow(icon: String, accent: SettingsSectionAccent, title: String,
+                            subtitle: String?, attention: Bool) -> some View {
+        HStack(spacing: 11) {
+            iconChip(icon, accent)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            if attention {
+                Spacer(minLength: 4)
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.system(size: 13))
+                    .foregroundColor(MuffinTheme.cautionText)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    @available(iOS 16.0, *)
+    @ViewBuilder private var sidebar: some View {
+        List(selection: $selection) {
+            Section {
+                sidebarRow(icon: "slider.horizontal.3", accent: .system, title: "Settings mode",
+                           subtitle: isAdvanced ? "Advanced" : "Basic", attention: false)
+                    .tag(SettingsRoute.general)
+            }
+
+            if isSearching {
+                Section(header: Text("Results")) {
+                    if results.isEmpty {
+                        Text("Nothing in Settings matches \"\(query)\".")
+                            .font(.system(size: 13))
+                            .foregroundColor(.secondary)
+                    } else {
+                        ForEach(results) { item in
+                            let category = SettingsCategory.category(of: item)
+                            sidebarRow(icon: category.icon, accent: category.accent, title: item.title,
+                                       subtitle: "In \(category.title)", attention: false)
+                                .tag(SettingsRoute.item(item))
+                        }
+                    }
+                }
+            } else {
+                ForEach(SettingsCategory.groups, id: \.title) { group in
+                    Section(header: Text(group.title)) {
+                        ForEach(group.categories) { category in
+                            sidebarRow(icon: category.icon, accent: category.accent, title: category.title,
+                                       subtitle: nil, attention: category.attention != nil)
+                                .tag(SettingsRoute.category(category))
+                        }
+                    }
+                }
+            }
+        }
+        .listStyle(.sidebar)
+        .navigationTitle("Settings")
+        .muffinOpaqueNavigationBar(MuffinTheme.formGround)
+        .searchable(text: $query, placement: .sidebar, prompt: "Search settings")
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Done") { dismiss() }
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundColor(MuffinTheme.accentText)
+            }
+        }
+    }
+
+    private var generalPage: some View {
+        pageBackground("Settings mode") {
+            SettingsModeSection()
+        }
+    }
+
+    @ViewBuilder private var detail: some View {
+        switch selection {
+        case .general:
+            generalPage
+        case .category(let category):
+            categoryPage(category)
+        case .item(let item):
+            pageBackground(item.title) { sectionView(item) }
+        case .none:
+            categoryPage(.emulation)
+        }
+    }
+
+    @available(iOS 16.0, *)
+    private var splitBody: some View {
+        NavigationSplitView {
+            sidebar
+        } detail: {
+            NavigationStack {
+                detail
+            }
+        }
+        .navigationSplitViewStyle(.balanced)
+    }
+
+    // MARK: One-column fallback (iOS 15)
+
+    private var legacyBody: some View {
         NavigationView {
             ZStack {
                 MuffinTheme.backgroundGradient
@@ -425,16 +543,26 @@ struct SettingsView: View {
                         .foregroundColor(MuffinTheme.accentText)
                 }
             }
-            .sheet(isPresented: $showingIconPicker) {
-                IconPickerView()
-            }
-            .sheet(isPresented: $showingThemePicker) {
-                ThemePickerView()
-            }
-            .sheet(isPresented: $accountSheets.showingCreateAccount, onDismiss: accountSheets.sheetClosed) {
-                CreateAccountView()
-            }
         }
         .navigationViewStyle(.stack)
+    }
+
+    var body: some View {
+        Group {
+            if #available(iOS 16.0, *) {
+                splitBody
+            } else {
+                legacyBody
+            }
+        }
+        .sheet(isPresented: $showingIconPicker) {
+            IconPickerView()
+        }
+        .sheet(isPresented: $showingThemePicker) {
+            ThemePickerView()
+        }
+        .sheet(isPresented: $accountSheets.showingCreateAccount, onDismiss: accountSheets.sheetClosed) {
+            CreateAccountView()
+        }
     }
 }
