@@ -505,6 +505,18 @@ namespace coreinit
 			{
 				currentThread->waitingForFastMutex = fastMutex;
 				__OSLockScheduler();
+				// OSFastCond_Wait releases the mutex while holding only the scheduler lock (it cannot take the contention
+				// lock, which is always taken first). A thread that failed the exchange above and was then held up on
+				// __OSLockScheduler() sees the mutex free here. Queueing on it anyway would wait for an unlock that is not
+				// coming (nobody owns the mutex), which left the waiting thread asleep until some other thread happened to
+				// lock and unlock the mutex. A common case is a producer trying to lock while the consumer enters
+				// OSFastCond_Wait: both then sleep for good
+				if (fastMutex->owner == nullptr)
+				{
+					currentThread->waitingForFastMutex = nullptr;
+					__OSUnlockScheduler();
+					continue; // the contention lock is still held, so the exchange above is retried at once
+				}
 				fastMutex->threadQueueSmall.queueOnly(currentThread);
 				_OSFastMutex_ReleaseContention(fastMutex);
 				PPCCore_switchToSchedulerWithLock();
