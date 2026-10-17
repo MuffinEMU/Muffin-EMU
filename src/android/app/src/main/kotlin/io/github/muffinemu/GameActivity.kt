@@ -142,7 +142,7 @@ class GameActivity : ComponentActivity() {
 
                 if (status.isNotEmpty()) {
                     Text(
-                        status,
+                        status + "\n\nGo back to your games. Share log there sends the details if you ask for help.",
                         color = Color(0xFFF4E9DC),
                         fontSize = 15.sp,
                         modifier = Modifier.align(Alignment.Center).padding(32.dp)
