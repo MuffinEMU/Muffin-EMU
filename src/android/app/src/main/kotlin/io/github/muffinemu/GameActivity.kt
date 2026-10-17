@@ -50,6 +50,8 @@ class GameActivity : ComponentActivity() {
 
     private var status by mutableStateOf("")
     private var showsGamePad by mutableStateOf(false)
+    /** Frames the core finished in the last second, or -1 before the first count. */
+    private var fps by mutableStateOf(-1)
     private var keyboardOpen = false
     private var booted = false
     // The game runs only while the activity is in front AND has a surface to present into. Back from Home,
@@ -69,6 +71,7 @@ class GameActivity : ComponentActivity() {
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
         watchKeyboard()
+        countFrames()
 
         setContent {
             Box(Modifier.fillMaxSize()) {
@@ -113,6 +116,15 @@ class GameActivity : ComponentActivity() {
                     }
                 )
 
+                if (fps >= 0 && status.isEmpty()) {
+                    Text(
+                        "$fps FPS",
+                        color = Color(0xFFF4E9DC).copy(alpha = 0.8f),
+                        fontSize = 12.sp,
+                        modifier = Modifier.align(Alignment.TopStart).padding(start = 12.dp, top = 8.dp)
+                    )
+                }
+
                 if (status.isNotEmpty()) {
                     Text(
                         status,
@@ -151,6 +163,18 @@ class GameActivity : ComponentActivity() {
                 .setOnCancelListener { NativeBridge.submitKeyboard(generation, original) }
                 .setOnDismissListener { keyboardOpen = false }
                 .show()
+        }
+    }
+
+    /** The bridge reports a running frame count; the readout is its change over each second while a game runs. */
+    private fun countFrames() = lifecycleScope.launch {
+        var last = -1.0
+        while (isActive) {
+            delay(1000)
+            if (!booted || !NativeBridge.isTitleRunning()) { last = -1.0; fps = -1; continue }
+            val now = NativeBridge.framesPerSecond()
+            if (last >= 0) fps = (now - last).toInt().coerceAtLeast(0)
+            last = now
         }
     }
 
