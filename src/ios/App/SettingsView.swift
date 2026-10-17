@@ -16,7 +16,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
     case account, network, premium
     case appearance
     case files, backup, migration
-    case deviceReport, diagnostics, about
+    case troubleshooting, deviceReport, diagnostics, about
 
     var id: String { rawValue }
 
@@ -45,6 +45,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         case .files: return "Files"
         case .backup: return "Back up settings"
         case .migration: return "Move to another device"
+        case .troubleshooting: return "Game won't start?"
         case .deviceReport: return "Report a problem"
         case .diagnostics: return "Diagnostics"
         case .about: return "About"
@@ -77,6 +78,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         case .files: return "storage folders paths location"
         case .backup: return "backup restore export import reset defaults"
         case .migration: return "migration export move transfer new device saves games"
+        case .troubleshooting: return "help fix stuck black screen slow crash closes buttons keys troubleshoot won't start"
         case .deviceReport: return "device info ram chip hardware bug report problem help log crash share"
         case .diagnostics: return "logs crash report debug"
         case .about: return "version credits licences licenses reset support"
@@ -118,7 +120,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .accountOnline: return "Your profile and the online service."
         case .appearance: return "Theme, colours, the app icon and Premium."
         case .storage: return "Where files live, settings backups and moving everything to another device."
-        case .support: return "Bug report, diagnostics, credits and reset."
+        case .support: return "What to try first, bug report, diagnostics, credits and reset."
         }
     }
 
@@ -168,7 +170,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .accountOnline: return [.account, .network]
         case .appearance: return [.appearance, .premium]
         case .storage: return [.files, .backup, .migration]
-        case .support: return [.deviceReport, .diagnostics, .about]
+        case .support: return [.troubleshooting, .deviceReport, .diagnostics, .about]
         }
     }
 
@@ -234,6 +236,7 @@ struct SettingsView: View {
         case .files: FilesSettingsSection()
         case .backup: SettingsBackupSection()
         case .migration: MigrationSettingsSection()
+        case .troubleshooting: TroubleshootingSection()
         case .deviceReport: DeviceReportSection()
         case .diagnostics: DiagnosticsSection()
         case .about: AboutSettingsSection()

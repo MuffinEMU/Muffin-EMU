@@ -77,6 +77,52 @@ struct DeviceReportSection: View {
     }
 }
 
+/// The first things to try, in the order a helper would ask about them. Each line names the page the
+/// fix is on, so a new player can go there without knowing the app yet.
+struct TroubleshootingSection: View {
+    private struct Step: Identifiable {
+        let id: Int
+        let symptom: String
+        let fix: String
+    }
+
+    private let steps: [Step] = [
+        Step(id: 0, symptom: "An encrypted game won't start.",
+             fix: "It needs the keys.txt dumped from your own Wii U. Add it under Games and library > Wii U keys, or from the game's page."),
+        Step(id: 1, symptom: "Games run slowly.",
+             fix: "Check JIT under Emulation > JIT. Without a JIT enabler attached, MuffinEMU runs the slower interpreter. The library shows a line while JIT is off."),
+        Step(id: 2, symptom: "A game glitches, desyncs or crashes.",
+             fix: "Turn on Favour accuracy for that game (its page > Game settings) or for every game under Emulation > CPU, and try one core."),
+        Step(id: 3, symptom: "The screen stays black after the game starts.",
+             fix: "Turn on Show launch log under Diagnostics and start the game again: the log shows how far it got. Try the other renderer under Emulation > Graphics (Advanced)."),
+        Step(id: 4, symptom: "MuffinEMU closes while a game loads.",
+             fix: "It ran out of memory. Close other apps, lower the resolution under Emulation > Graphics, and restart the device if it keeps happening."),
+        Step(id: 5, symptom: "Buttons don't reach the game.",
+             fix: "Turn on Show button press readout under Diagnostics; it says whether presses arrive and why not. Reset the controller bindings under Controls > On-screen controls."),
+    ]
+
+    var body: some View {
+        Section {
+            ForEach(steps) { step in
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(step.symptom)
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    Text(step.fix)
+                        .font(.system(size: 12))
+                        .foregroundColor(MuffinTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.vertical, 2)
+            }
+        } header: {
+            SettingsSectionHeader("Game won't start?", icon: "questionmark.circle", accent: .system)
+        } footer: {
+            Text("Still stuck? Copy bug report below and paste it when you ask for help.")
+        }
+        .foregroundColor(MuffinTheme.brownDarkest)
+    }
+}
+
 /// Launch intro, launch log and controls diagnostic toggles. The launch log is off by default
 /// and, while on, replaces the launch intro (see ContentView.swift).
 struct DiagnosticsSection: View {
