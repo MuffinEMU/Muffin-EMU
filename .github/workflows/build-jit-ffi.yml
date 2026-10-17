@@ -1,0 +1,53 @@
+# MuffinEMU — code by the MuffinEMU Development Team.
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# Proves muffin-jit (the built-in JIT device-link crate) cross-compiles to iOS and
+# publishes the static library. Isolated from the app build: nothing here touches the
+# Xcode project, so a problem in the crate can't break a MuffinEMU release.
+name: Build JIT device-link library
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [jit/built-in]
+    paths:
+      - 'jit/muffin-jit/**'
+      - 'ci/build-jit-ffi.sh'
+      - '.github/workflows/build-jit-ffi.yml'
+
+concurrency:
+  group: jit-ffi-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: xcode-27
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Ensure Rust and the iOS target
+        run: |
+          set -eo pipefail
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          rustc --version
+          cargo --version
+
+      - name: Build libmuffin_jit.a (aarch64-apple-ios)
+        run: ./ci/build-jit-ffi.sh
+
+      - name: Upload the static library and header
+        uses: actions/upload-artifact@v4
+        with:
+          name: muffin-jit-ffi
+          path: |
+            jit/muffin-jit/target/aarch64-apple-ios/release/libmuffin_jit.a
+            jit/muffin-jit/include/muffin_jit.h
+            jit/muffin-jit/include/module.modulemap
+          retention-days: 14
