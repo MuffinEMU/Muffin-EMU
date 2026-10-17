@@ -87,7 +87,7 @@ final class JITCoordinator: ObservableObject {
 
     private func runHelper(_ data: Data) async throws -> Data {
         try await withCheckedThrowingContinuation { continuation in
-            MuffinJITLauncher.run(withExtensionIdentifier: Self.helperIdentifier, requestData: data) { resultData, error in
+            MuffinJITLauncher.run(extensionIdentifier: Self.helperIdentifier, requestData: data) { resultData, error in
                 if let resultData {
                     continuation.resume(returning: resultData)
                 } else {

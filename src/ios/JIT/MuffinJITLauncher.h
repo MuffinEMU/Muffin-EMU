@@ -21,7 +21,8 @@ NS_ASSUME_NONNULL_BEGIN
 + (void)runWithExtensionIdentifier:(NSString *)identifier
                        requestData:(NSData *)requestData
                         completion:(void (^)(NSData *_Nullable resultData,
-                                             NSError *_Nullable error))completion;
+                                             NSError *_Nullable error))completion
+    NS_SWIFT_NAME(run(extensionIdentifier:requestData:completion:));
 
 @end
 
