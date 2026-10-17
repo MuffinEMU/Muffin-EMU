@@ -775,11 +775,12 @@ VkDescriptorSetInfo* VulkanRenderer::draw_getOrCreateDescriptorSet(PipelineInfo*
 
 			if (baseTexture->overwriteInfo.anisotropicLevel >= 0)
 				maxAniso = baseTexture->overwriteInfo.anisotropicLevel;
+			maxAniso = LatteTexture_applyAnisotropySetting((sint32)maxAniso, *samplerWords);
 
 			if (maxAniso > 0)
 			{
 				samplerInfo.anisotropyEnable = VK_TRUE;
-				samplerInfo.maxAnisotropy = (float)(1 << maxAniso);
+				samplerInfo.maxAnisotropy = (float)std::min(16, 1 << maxAniso);
 			}
 			else
 			{

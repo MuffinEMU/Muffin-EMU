@@ -2769,6 +2769,14 @@ bool cemu_bridge_emulate_missing_effects(void) {
     return GetConfig().emulate_missing_effects.GetValue();
 }
 
+void cemu_bridge_set_anisotropic_filtering(int32_t level) {
+    g_latteAnisotropyOverride.store(level < 0 ? -1 : std::min<int32_t>(level, 4), std::memory_order_relaxed);
+}
+
+int32_t cemu_bridge_anisotropic_filtering(void) {
+    return g_latteAnisotropyOverride.load(std::memory_order_relaxed);
+}
+
 // ---------------------------------------------------------------------------
 // Screen orientation, gamma and the on-screen performance overlay. See the doc comments
 // on the declarations in CemuBridge.h for what each one does and why the gamma range is

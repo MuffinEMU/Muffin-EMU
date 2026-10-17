@@ -169,8 +169,8 @@ enum FullSpeedRenders {
         }
         var summary: String {
             switch self {
-            case .waitForIt: return "Never flickers. A short hitch the first time a new effect appears."
-            case .keepGoing: return "Never freezes. A new effect can be missing for a moment the first time."
+            case .waitForIt: return "Builds it before drawing: a short hitch the first time a new effect appears, and nothing is left out."
+            case .keepGoing: return "Draws without it this once: no hitch, and the new effect can be missing for a moment the first time."
             }
         }
     }

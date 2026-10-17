@@ -126,6 +126,7 @@ enum SettingsDefaults {
         cemu_bridge_set_stretch_to_fill(FrameStretch.defaultValue)
         cemu_bridge_set_render_upside_down(false)
         cemu_bridge_set_framebuffer_fetch(true)
+        cemu_bridge_set_anisotropic_filtering(Int32(TextureFiltering.defaultValue.rawValue))
         cemu_bridge_set_display_gamma(Float(DisplayGammaSetting.defaultValue))
         cemu_bridge_set_override_app_gamma(false)
         cemu_bridge_set_override_gamma_value(Float(OverrideGammaSetting.defaultValue))

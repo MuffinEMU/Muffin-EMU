@@ -151,8 +151,10 @@ MTL::SamplerState* MetalSamplerCache::GetSamplerState(const LatteContextRegister
 
     auto maxAniso = samplerWords->WORD0.get_MAX_ANISO_RATIO();
 
+    // The field is 3 bits wide and 16:1 (4) is the highest ratio the GPU defines; 5 to 7 would ask Metal for 32 to 128,
+    // outside the 1 to 16 it accepts, and the descriptor is then refused.
     if (maxAniso > 0)
-        samplerDescriptor->setMaxAnisotropy(1 << maxAniso);
+        samplerDescriptor->setMaxAnisotropy(std::min<NS::UInteger>(16, 1u << maxAniso));
 
     // TODO: set lod bias
     //samplerInfo.mipLodBias = (float)iLodBias / 64.0f;

@@ -2278,6 +2278,14 @@ static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContex
 	// Every depth texture read except gather returns a scalar, and so does the emulated compare. Broadcast it to float4 so the
 	// destination swizzle below can pick any component.
 	const bool isScalarResult = (isDepthTexture && !isGather) || emulateCompare;
+	// The sampler's LOD bias (tex{}LodBias, see _emitUniformVariables) is part of every level choice, the way Vulkan's
+	// mipLodBias is: added to the level a SAMPLE_L names, to the bias a SAMPLE_LB adds, to the zero of SAMPLE_LZ and to
+	// the level the GPU derives for a plain SAMPLE. bias() exists in fragment functions only; the other stages have no
+	// derivatives to bias, and sample there at the base level, so the bias is applied as that level. Compare reads
+	// (SAMPLE_C*) are left exactly as they were.
+	const bool hasLodBiasUniform = shaderContext->analyzer.texUnitUsesLodBias.test(texInstruction->textureFetch.textureIndex) && !emulateCompare;
+	const bool isFragmentFunction = shaderContext->shaderType == LatteConst::ShaderType::Pixel;
+	const std::string lodBiasTerm = fmt::format("supportBuffer.tex{}LodBias", texInstruction->textureFetch.textureIndex);
 
 	bool unnormalizationHandled = false;
 	bool useTexelCoordinates = false;
@@ -2548,15 +2556,17 @@ static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContex
     		}
     		// lod or lod bias parameter
     		// 1D textures don't support lod
-    		if (texDim != Latte::E_DIM::DIM_1D && texDim != Latte::E_DIM::DIM_1D_ARRAY)
+    		if (texDim != Latte::E_DIM::DIM_1D && texDim != Latte::E_DIM::DIM_1D_ARRAY && !emulateCompare)
     		{
           		if (texOpcode == GPU7_TEX_INST_SAMPLE_L || texOpcode == GPU7_TEX_INST_SAMPLE_LB || texOpcode == GPU7_TEX_INST_SAMPLE_C_L)
           		{
           		    src->add(", ");
          			if (texOpcode == GPU7_TEX_INST_SAMPLE_LB)
          			{
-					src->add("bias(");
+					src->add(isFragmentFunction ? "bias(" : "level(");
 					_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 3, LATTE_DECOMPILER_DTYPE_FLOAT);
+					if (hasLodBiasUniform)
+						src->addFmt(" + {}", lodBiasTerm);
 					src->add(")");
          			}
          			else
@@ -2564,12 +2574,22 @@ static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContex
          			    // TODO: is this correct?
                         src->add("level(");
         				_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 3, LATTE_DECOMPILER_DTYPE_FLOAT);
+        				if (hasLodBiasUniform && texOpcode == GPU7_TEX_INST_SAMPLE_L)
+        					src->addFmt(" + {}", lodBiasTerm);
         				src->add(")");
          			}
+          		}
+          		else if (texOpcode == GPU7_TEX_INST_SAMPLE_LZ && hasLodBiasUniform)
+          		{
+         			src->addFmt(", level({})", lodBiasTerm);
           		}
           		else if (texOpcode == GPU7_TEX_INST_SAMPLE_LZ || texOpcode == GPU7_TEX_INST_SAMPLE_C_LZ)
           		{
          			src->add(", level(0.0)");
+          		}
+          		else if (texOpcode == GPU7_TEX_INST_SAMPLE && hasLodBiasUniform)
+          		{
+         			src->addFmt(isFragmentFunction ? ", bias({})" : ", level({})", lodBiasTerm);
           		}
     		}
     	}
@@ -2582,7 +2602,11 @@ static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContex
 		}
 		else if (texDim == Latte::E_DIM::DIM_2D)
     		{
-    			src->add(", gradient2d(gradH.xy, gradV.xy)");
+    			// a bias of b levels is a scale of the gradients by 2^b, since the level is the log2 of their length
+    			if (hasLodBiasUniform)
+    				src->addFmt(", gradient2d(gradH.xy * exp2({}), gradV.xy * exp2({}))", lodBiasTerm, lodBiasTerm);
+    			else
+    				src->add(", gradient2d(gradH.xy, gradV.xy)");
     		}
 		else
     		{
