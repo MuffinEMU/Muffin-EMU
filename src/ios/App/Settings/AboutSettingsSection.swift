@@ -21,6 +21,14 @@ struct AboutSettingsSection: View {
         Section {
             SettingsRow(label: "Version", value: Bundle.main.appVersionString, icon: "number")
             SettingsRow(label: "Created by", value: "Void", icon: "person.fill")
+            Link(destination: URL(string: "https://muffinemu.github.io/MuffinEMU/docs/")!) {
+                Label("Help and documentation", systemImage: "book")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+            }
+            Link(destination: URL(string: "https://github.com/MuffinEMU/Muffin-EMU/issues")!) {
+                Label("Report a bug on GitHub", systemImage: "ladybug")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+            }
             Link(destination: URL(string: "https://github.com/MuffinEMU/Muffin-EMU")!) {
                 Label("View on GitHub", systemImage: "arrow.up.right.square")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
