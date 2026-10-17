@@ -5,13 +5,16 @@
 
 package io.github.muffinemu
 
+import android.app.AlertDialog
 import android.os.Bundle
+import android.text.InputFilter
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.WindowManager
+import android.widget.EditText
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
@@ -30,6 +33,10 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlin.concurrent.thread
 
 /**
@@ -42,6 +49,8 @@ class GameActivity : ComponentActivity() {
     }
 
     private var status by mutableStateOf("")
+    private var showsGamePad by mutableStateOf(false)
+    private var keyboardOpen = false
     private var booted = false
     // The game runs only while the activity is in front AND has a surface to present into. Back from Home,
     // onResume comes before surfaceCreated, so resuming on onResume alone ran the renderer with no surface.
@@ -59,6 +68,7 @@ class GameActivity : ComponentActivity() {
             hide(WindowInsetsCompat.Type.systemBars())
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
+        watchKeyboard()
 
         setContent {
             Box(Modifier.fillMaxSize()) {
@@ -94,7 +104,14 @@ class GameActivity : ComponentActivity() {
                     }
                 }, modifier = Modifier.fillMaxSize())
 
-                TouchPad(modifier = Modifier.fillMaxSize())
+                TouchPad(
+                    modifier = Modifier.fillMaxSize(),
+                    showsGamePad = showsGamePad,
+                    onSwapScreens = {
+                        showsGamePad = !showsGamePad
+                        NativeBridge.setShowsGamePad(showsGamePad)
+                    }
+                )
 
                 if (status.isNotEmpty()) {
                     Text(
@@ -105,6 +122,35 @@ class GameActivity : ComponentActivity() {
                     )
                 }
             }
+        }
+    }
+
+    /**
+     * A game asks for text (a name, a message) through the Wii U's software keyboard; the core posts the request
+     * and waits for an answer (src/gui/android/WindowSystem.cpp). Checked a few times a second while the screen is
+     * up. Done sends what was typed; backing out sends the text the game started with, so it is never left waiting.
+     */
+    private fun watchKeyboard() = lifecycleScope.launch {
+        while (isActive) {
+            delay(200)
+            if (keyboardOpen) continue
+            val request = NativeBridge.pendingKeyboard() ?: continue
+            val generation = request[0].toIntOrNull() ?: continue
+            val maxLength = request[1].toIntOrNull() ?: 0
+            val original = request[2]
+            val field = EditText(this@GameActivity).apply {
+                setText(original)
+                setSelection(original.length)
+                if (maxLength > 0) filters = arrayOf(InputFilter.LengthFilter(maxLength))
+            }
+            keyboardOpen = true
+            NativeBridge.releaseAllButtons()
+            AlertDialog.Builder(this@GameActivity)
+                .setView(field)
+                .setPositiveButton("Done") { _, _ -> NativeBridge.submitKeyboard(generation, field.text.toString()) }
+                .setOnCancelListener { NativeBridge.submitKeyboard(generation, original) }
+                .setOnDismissListener { keyboardOpen = false }
+                .show()
         }
     }
 

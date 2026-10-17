@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -28,10 +29,17 @@ import kotlin.math.min
  * The first on-screen GamePad: left stick, d-pad, A B X Y, L R ZL ZR, Plus and Minus, drawn as rings so the
  * game shows through. Positions are fractions of the screen so every phone and tablet gets the same layout.
  * Multi-touch: each finger owns whatever it landed on until it lifts, and the stick follows its finger.
+ *
+ * The control at the top centre swaps the picture between the TV and the GamePad. While the GamePad is shown,
+ * a finger that lands on no control is a touch on the GamePad's screen: its position goes to the core in the
+ * surface's own pixels, which the core maps onto the picture (VPADController, LatteRenderTarget_getScreenImageArea).
  */
 @Composable
-fun TouchPad(modifier: Modifier = Modifier) {
+fun TouchPad(modifier: Modifier = Modifier, showsGamePad: Boolean = false, onSwapScreens: () -> Unit = {}) {
     val layout = remember { PadLayout() }
+    // pointerInput below is set up once; these keep it reading the current values.
+    val gamePadShown = rememberUpdatedState(showsGamePad)
+    val swap = rememberUpdatedState(onSwapScreens)
     val pressed = remember { mutableStateOf(setOf<NativeBridge.Button>()) }
     val stickOffset = remember { mutableStateOf(Offset.Zero) } // left stick thumb, pixels from its centre
     val rightStickOffset = remember { mutableStateOf(Offset.Zero) }
@@ -49,6 +57,7 @@ fun TouchPad(modifier: Modifier = Modifier) {
                             val id = change.id
                             if (change.changedToDownIgnoreConsumed()) {
                                 val control = layout.hit(change.position, size)
+                                    ?: if (gamePadShown.value) PadControl.Screen else null
                                 if (control != null) {
                                     owners[id] = control
                                     when (control) {
@@ -66,6 +75,8 @@ fun TouchPad(modifier: Modifier = Modifier) {
                                             dirs.forEach { NativeBridge.setButton(it, true) }
                                             pressed.value = pressed.value + dirs
                                         }
+                                        is PadControl.Swap -> swap.value()
+                                        PadControl.Screen -> NativeBridge.setPadTouch(change.position.x, change.position.y, true)
                                     }
                                 }
                                 change.consume()
@@ -83,6 +94,8 @@ fun TouchPad(modifier: Modifier = Modifier) {
                                         control.all.forEach { NativeBridge.setButton(it, false) }
                                         pressed.value = pressed.value - control.all
                                     }
+                                    is PadControl.Swap -> {}
+                                    PadControl.Screen -> NativeBridge.setPadTouch(change.position.x, change.position.y, false)
                                     null -> {}
                                 }
                                 change.consume()
@@ -100,6 +113,7 @@ fun TouchPad(modifier: Modifier = Modifier) {
                                         dirs.forEach { NativeBridge.setButton(it, true) }
                                         pressed.value = (pressed.value - gone) + dirs
                                     }
+                                    PadControl.Screen -> NativeBridge.setPadTouch(change.position.x, change.position.y, true)
                                     else -> {}
                                 }
                                 change.consume()
@@ -110,11 +124,15 @@ fun TouchPad(modifier: Modifier = Modifier) {
                 }
             }
     ) {
-        layout.draw(this, pressed.value, stickOffset.value, rightStickOffset.value)
+        layout.draw(this, pressed.value, stickOffset.value, rightStickOffset.value, showsGamePad)
     }
 }
 
 sealed class PadControl {
+    /** The TV / GamePad swap. */
+    data class Swap(val cx: Float, val cy: Float, val r: Float) : PadControl()
+    /** A finger on the GamePad's screen (only while the GamePad is the picture). */
+    data object Screen : PadControl()
     data class Button(val button: NativeBridge.Button, val cx: Float, val cy: Float, val r: Float) : PadControl()
     data class Stick(val index: Int, val cx: Float, val cy: Float, val r: Float) : PadControl() {
         private fun centre(size: Size) = Offset(cx * size.width, cy * size.height)
@@ -163,7 +181,8 @@ class PadLayout {
         PadControl.Button(NativeBridge.Button.MINUS, 0.42f, 0.90f, 0.04f),
         PadControl.Button(NativeBridge.Button.PLUS, 0.58f, 0.90f, 0.04f),
     )
-    private val controls: List<PadControl> = buttons + leftStick + rightStick + dpad
+    private val swap = PadControl.Swap(0.5f, 0.06f, 0.05f)
+    private val controls: List<PadControl> = buttons + leftStick + rightStick + dpad + swap
 
     fun hit(p: Offset, size: Size): PadControl? {
         val short = min(size.width, size.height)
@@ -172,6 +191,8 @@ class PadLayout {
                 is PadControl.Button -> Triple(c.cx, c.cy, c.r)
                 is PadControl.Stick -> Triple(c.cx, c.cy, c.r * 1.4f) // the grab zone is wider than the ring
                 is PadControl.DPad -> Triple(c.cx, c.cy, c.r)
+                is PadControl.Swap -> Triple(c.cx, c.cy, c.r)
+                PadControl.Screen -> continue
             }
             val d = p - Offset(cx * size.width, cy * size.height)
             if (hypot(d.x, d.y) <= r * short) return c
@@ -179,7 +200,7 @@ class PadLayout {
         return null
     }
 
-    fun draw(scope: DrawScope, pressed: Set<NativeBridge.Button>, leftThumb: Offset, rightThumb: Offset) = with(scope) {
+    fun draw(scope: DrawScope, pressed: Set<NativeBridge.Button>, leftThumb: Offset, rightThumb: Offset, showsGamePad: Boolean) = with(scope) {
         val short = min(size.width, size.height)
         val ring = Color(0xFFF4E9DC).copy(alpha = 0.55f)
         val fill = Color(0xFFF0A35E).copy(alpha = 0.55f)
@@ -192,6 +213,17 @@ class PadLayout {
                 b.button.name.replace("MINUS", "−").replace("PLUS", "+"),
                 c.x, c.y + r * 0.35f,
                 android.graphics.Paint().apply { color = 0xCCF4E9DC.toInt(); textSize = r * 0.9f; textAlign = android.graphics.Paint.Align.CENTER; isAntiAlias = true }
+            )
+        }
+        run {
+            // Labelled with the screen it switches TO.
+            val c = Offset(swap.cx * size.width, swap.cy * size.height)
+            val r = swap.r * short
+            drawCircle(ring, r, c, style = stroke)
+            drawContext.canvas.nativeCanvas.drawText(
+                if (showsGamePad) "TV" else "PAD",
+                c.x, c.y + r * 0.3f,
+                android.graphics.Paint().apply { color = 0xCCF4E9DC.toInt(); textSize = r * 0.7f; textAlign = android.graphics.Paint.Align.CENTER; isAntiAlias = true }
             )
         }
         for (s in listOf(leftStick, rightStick)) {

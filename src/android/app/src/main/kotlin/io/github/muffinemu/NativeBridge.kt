@@ -36,6 +36,9 @@ object NativeBridge {
     @JvmStatic external fun setPadTouch(x: Float, y: Float, down: Boolean)
     @JvmStatic external fun setPhysicalState(buttons: Int, lx: Float, ly: Float, rx: Float, ry: Float, lt: Float, rt: Float)
     @JvmStatic external fun releaseAllButtons()
+    /** A software keyboard the game opened: [generation, maxLength, text], or null. Handed over once. */
+    @JvmStatic external fun pendingKeyboard(): Array<String>?
+    @JvmStatic external fun submitKeyboard(generation: Int, text: String)
 
     fun setButton(button: Button, pressed: Boolean) = setButton(button.ordinal, pressed)
 }
