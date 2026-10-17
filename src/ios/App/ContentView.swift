@@ -1674,7 +1674,9 @@ struct EmptyGamesView: View {
     private var lines: [String] {
         switch kind {
         case .emptyLibrary:
-            return ["Tap Import a Game, or put game files in Files > On My iPad > MuffinEMU > Roms.",
+            // The Files app names the device's own storage after the device.
+            let device = UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
+            return ["Tap Import a Game, or put game files in Files > On My \(device) > MuffinEMU > Roms.",
                     "Games you add there show up when you come back to MuffinEMU."]
         case .noFavourites:
             return ["Tap the heart on a game to add it here."]
