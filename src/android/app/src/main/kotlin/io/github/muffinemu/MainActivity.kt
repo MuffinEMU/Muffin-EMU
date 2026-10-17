@@ -13,6 +13,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -25,6 +26,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -82,6 +88,8 @@ class MainActivity : ComponentActivity() {
         // Each game's own name from its meta.xml, by path, filled in the background once the core is up (it reads
         // the title through the core, keys included). The file name stands in until then, and for homebrew.
         val names = remember { mutableStateMapOf<String, String>() }
+        // Box art by path, from GameTDB through CoverArt (cached on the device after the first time).
+        val covers = remember { mutableStateMapOf<String, ImageBitmap>() }
         var coreReady by remember { mutableStateOf(false) }
         var status by remember { mutableStateOf("Starting the emulator core…") }
         var keyCount by remember { mutableStateOf(-1) }
@@ -110,6 +118,16 @@ class MainActivity : ComponentActivity() {
                     if (NativeBridge.isTitleRunning()) break
                     val name = withContext(Dispatchers.IO) { runCatching { NativeBridge.titleName(game.absolutePath) }.getOrNull() }
                     names[game.absolutePath] = name ?: game.nameWithoutExtension
+                    if (game.absolutePath !in covers) {
+                        val cover = withContext(Dispatchers.IO) {
+                            runCatching {
+                                NativeBridge.gameTdbId(game.absolutePath)
+                                    ?.let { CoverArt.file(this@MainActivity, it) }
+                                    ?.let { CoverArt.thumbnail(it) }
+                            }.getOrNull()
+                        }
+                        if (cover != null) covers[game.absolutePath] = cover
+                    }
                 }
             }
         }
@@ -185,18 +203,31 @@ class MainActivity : ComponentActivity() {
             }
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(games, key = { it.absolutePath }) { game ->
-                    Text(
-                        names[game.absolutePath] ?: game.nameWithoutExtension,
-                        color = ground,
-                        fontSize = 17.sp,
+                    Row(
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(cream, RoundedCornerShape(14.dp))
                             .clickable(enabled = coreReady) {
                                 startActivity(Intent(this@MainActivity, GameActivity::class.java).putExtra(GameActivity.EXTRA_PATH, game.absolutePath))
                             }
-                            .padding(16.dp)
-                    )
+                            .padding(10.dp)
+                    ) {
+                        // Wii U boxes are portrait; a blank slot keeps the names lined up while art loads or for homebrew.
+                        val cover = covers[game.absolutePath]
+                        val coverModifier = Modifier.size(width = 48.dp, height = 66.dp).clip(RoundedCornerShape(6.dp))
+                        if (cover != null) {
+                            Image(cover, contentDescription = null, contentScale = ContentScale.Crop, modifier = coverModifier)
+                        } else {
+                            Spacer(coverModifier.background(ground.copy(alpha = 0.12f)))
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            names[game.absolutePath] ?: game.nameWithoutExtension,
+                            color = ground,
+                            fontSize = 17.sp,
+                        )
+                    }
                 }
             }
         }

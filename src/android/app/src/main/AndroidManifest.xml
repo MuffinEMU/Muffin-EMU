@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Pretendo and other online services, later. Nothing is fetched without the player asking. -->
+    <!-- Box art from GameTDB for the library, as the iOS app fetches it (CoverArt.kt). -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.VIBRATE" />
 

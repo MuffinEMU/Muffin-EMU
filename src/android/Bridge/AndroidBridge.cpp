@@ -61,6 +61,7 @@ void CemuAndroid_SubmitKeyboard(uint32_t generation, std::u16string text);
 
 // src/ios/Bridge/Core
 std::string IOSCoverArt_GetTitleName(const char* romPath);
+std::string IOSCoverArt_DeriveGameTdbId(const char* romPath);
 int IOSTitleLaunch_PrepareForegroundTitle(const char* pathStr);
 const char* IOSTitleLaunch_LastErrorDetail();
 int IOSTitleLaunch_ReloadAndCountKeys();
@@ -468,6 +469,17 @@ JNIEXPORT jstring JNICALL Java_io_github_muffinemu_NativeBridge_titleName(JNIEnv
 	const std::string name = IOSCoverArt_GetTitleName(path);
 	env->ReleaseStringUTFChars(jPath, path);
 	return name.empty() ? nullptr : env->NewStringUTF(name.c_str());
+}
+
+// The 6-character GameTDB id (game code + publisher) for cover art, or null (homebrew, no meta.xml).
+JNIEXPORT jstring JNICALL Java_io_github_muffinemu_NativeBridge_gameTdbId(JNIEnv* env, jclass, jstring jPath)
+{
+	if (!jPath)
+		return nullptr;
+	const char* path = env->GetStringUTFChars(jPath, nullptr);
+	const std::string id = IOSCoverArt_DeriveGameTdbId(path);
+	env->ReleaseStringUTFChars(jPath, path);
+	return id.empty() ? nullptr : env->NewStringUTF(id.c_str());
 }
 
 // One emulated core per host thread (the default), or all three on one: slower, but some games only run right

@@ -41,6 +41,8 @@ object NativeBridge {
     @JvmStatic external fun submitKeyboard(generation: Int, text: String)
     /** The game's name from its meta.xml, or null. Reads the title's files: call off the main thread. */
     @JvmStatic external fun titleName(path: String): String?
+    /** The GameTDB id for cover art, or null. Reads the title's files: call off the main thread. */
+    @JvmStatic external fun gameTdbId(path: String): String?
     /** One core instead of three; applies to the next title started. */
     @JvmStatic external fun setOneCore(oneCore: Boolean)
 
