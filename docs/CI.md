@@ -119,7 +119,8 @@ So the core is compiled once, verified, and reused, and the workflow
 
 `ci/core-cache-key.sh` hashes everything that can change a byte of `Cemu.framework`:
 
-- `src/` except the Swift app (`src/ios/App`, `Emulation`, `Rendering`, `Resources`, the Xcode project files)
+- `src/` except the Swift app (`src/ios/App`, `Emulation`, `Rendering`, `Resources`, the Swift
+  packages under `src/ios/Packages`, the Xcode project files)
 - `CMakeLists.txt`, `cmake/`, `triplets/`, `vcpkg.json`, `.gitmodules`
 - `dependencies/`: every submodule at its pinned commit (vcpkg included), the vcpkg overlay ports,
   and the vendored MoltenVK builds
