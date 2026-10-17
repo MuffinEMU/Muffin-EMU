@@ -2123,75 +2123,6 @@ static void _emitTEXSampleCoordInputComponent(LatteDecompilerShaderContext* shad
 	}
 }
 
-static const char* _texGprAccessElemTable[8] = {"x","y","z","w","_","_","_","_"};
-
-static char* _getTexGPRAccess(LatteDecompilerShaderContext* shaderContext, sint32 gprIndex, uint32 dataType, sint8 selX, sint8 selY, sint8 selZ, sint8 selW, char* tempBuffer)
-{
-	// as_type<float>(R{}i.w)
-	*tempBuffer = '\0';
-	uint8 elemCount = (selX >= 0 ? 1 : 0) + (selY >= 0 ? 1 : 0) + (selZ >= 0 ? 1 : 0) + (selW >= 0 ? 1 : 0);
-	if (shaderContext->typeTracker.defaultDataType == LATTE_DECOMPILER_DTYPE_SIGNED_INT)
-	{
-		if (dataType == LATTE_DECOMPILER_DTYPE_SIGNED_INT)
-			; // no conversion
-		else if (dataType == LATTE_DECOMPILER_DTYPE_FLOAT)
-		{
-		    if (elemCount == 1)
-				strcat(tempBuffer, "as_type<float>(");
-			else
-			    strcat(tempBuffer, ("as_type<float" + std::to_string(elemCount) + ">(").c_str());
-		}
-		else
-			cemu_assert_unimplemented();
-		strcat(tempBuffer, _getRegisterVarName(shaderContext, gprIndex));
-		// _texGprAccessElemTable
-		strcat(tempBuffer, ".");
-		if (selX >= 0)
-			strcat(tempBuffer, _texGprAccessElemTable[selX]);
-		if (selY >= 0)
-			strcat(tempBuffer, _texGprAccessElemTable[selY]);
-		if (selZ >= 0)
-			strcat(tempBuffer, _texGprAccessElemTable[selZ]);
-		if (selW >= 0)
-			strcat(tempBuffer, _texGprAccessElemTable[selW]);
-		if (dataType == LATTE_DECOMPILER_DTYPE_SIGNED_INT)
-			; // no conversion
-		else if (dataType == LATTE_DECOMPILER_DTYPE_FLOAT)
-			strcat(tempBuffer, ")");
-		else
-			cemu_assert_unimplemented();
-	}
-	else if (shaderContext->typeTracker.defaultDataType == LATTE_DECOMPILER_DTYPE_FLOAT)
-	{
-		if (dataType == LATTE_DECOMPILER_DTYPE_SIGNED_INT)
-			cemu_assert_unimplemented();
-		else if (dataType == LATTE_DECOMPILER_DTYPE_FLOAT)
-			; // no conversion
-		else
-			cemu_assert_unimplemented();
-		strcat(tempBuffer, _getRegisterVarName(shaderContext, gprIndex));
-		// _texGprAccessElemTable
-		strcat(tempBuffer, ".");
-		if (selX >= 0)
-			strcat(tempBuffer, _texGprAccessElemTable[selX]);
-		if (selY >= 0)
-			strcat(tempBuffer, _texGprAccessElemTable[selY]);
-		if (selZ >= 0)
-			strcat(tempBuffer, _texGprAccessElemTable[selZ]);
-		if (selW >= 0)
-			strcat(tempBuffer, _texGprAccessElemTable[selW]);
-		if (dataType == LATTE_DECOMPILER_DTYPE_SIGNED_INT)
-			cemu_assert_unimplemented();
-		else if (dataType == LATTE_DECOMPILER_DTYPE_FLOAT)
-			; // no conversion
-		else
-			cemu_assert_unimplemented();
-	}
-	else
-		cemu_assert_unimplemented();
-	return tempBuffer;
-}
-
 static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContext, LatteDecompilerTEXInstruction* texInstruction)
 {
 	StringBuf* src = shaderContext->shaderSource;
@@ -2203,8 +2134,6 @@ static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContex
 
 	auto texDim = shaderContext->shader->textureUnitDim[texInstruction->textureFetch.textureIndex];
 
-	char tempBuffer0[32];
-	char tempBuffer1[32];
 	src->add(_getRegisterVarName(shaderContext, texInstruction->dstGpr));
 	src->add(".");
 	const char* resultElemTable[4] = {"x","y","z","w"};
@@ -2461,20 +2390,21 @@ static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContex
     				_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 2, LATTE_DECOMPILER_DTYPE_FLOAT);
     				src->add("))");
 
-    				src->addFmt(", {}", _getTexGPRAccess(shaderContext, texInstruction->srcGpr, LATTE_DECOMPILER_DTYPE_FLOAT, texInstruction->textureFetch.srcSel[3], -1, -1, -1, tempBuffer0));
+    				// compare value. Every coordinate and compare read below goes through _emitTEXSampleCoordInputComponent: a
+    				// selector of 4 or 5 is the constant 0 or 1, which the swizzle table spelled as "R0f._" and the shader did not compile.
+    				src->add(", ");
+    				_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 3, LATTE_DECOMPILER_DTYPE_FLOAT);
     			}
     			else if (texDim == Latte::E_DIM::DIM_CUBEMAP)
     			{
     				// 2 coords + faceId
-    				if (texInstruction->textureFetch.srcSel[0] >= 4 || texInstruction->textureFetch.srcSel[1] >= 4)
-    				{
-    					debugBreakpoint();
-    				}
-    				src->addFmt("redcCUBEReverse({},", _getTexGPRAccess(shaderContext, texInstruction->srcGpr, LATTE_DECOMPILER_DTYPE_FLOAT, texInstruction->textureFetch.srcSel[0], texInstruction->textureFetch.srcSel[1], -1, -1, tempBuffer0));
-				src->add("int(");
+    				src->add("redcCUBEReverse(float2(");
+    				_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 0, LATTE_DECOMPILER_DTYPE_FLOAT);
+    				src->add(", ");
+    				_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 1, LATTE_DECOMPILER_DTYPE_FLOAT);
+    				src->add("), int(");
 				_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 2, LATTE_DECOMPILER_DTYPE_FLOAT);
-				src->add(")");
-    				src->addFmt(")");
+				src->add("))");
     				src->addFmt(", uint(cubeMapArrayIndex{})", texInstruction->textureFetch.textureIndex); // cubemap index
     				// compare value: x/y are the face coordinates and z the face id, so w is the only component left for it.
     				// depthcube_array::sample_compare takes it after the array index; without it the shader does not compile.
@@ -2484,23 +2414,20 @@ static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContex
     			else if (texDim == Latte::E_DIM::DIM_1D)
     			{
     				// 1 coord + 1 unused coord (per  spec) + compare value
-    				if (texInstruction->textureFetch.srcSel[0] >= 4)
-    				{
-    					debugBreakpoint();
-    				}
-    				src->addFmt("{}, {}", _getTexGPRAccess(shaderContext, texInstruction->srcGpr, LATTE_DECOMPILER_DTYPE_FLOAT, texInstruction->textureFetch.srcSel[0], -1, -1, -1, tempBuffer0), _getTexGPRAccess(shaderContext, texInstruction->srcGpr, LATTE_DECOMPILER_DTYPE_FLOAT, texInstruction->textureFetch.srcSel[3], -1, -1, -1, tempBuffer1));
+    				_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 0, LATTE_DECOMPILER_DTYPE_FLOAT);
+    				src->add(", ");
+    				_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 3, LATTE_DECOMPILER_DTYPE_FLOAT);
     			}
 				else
 				{
-					// 2 coords + compare value (as float3)
-    				if (texInstruction->textureFetch.srcSel[0] >= 4 && texInstruction->textureFetch.srcSel[1] >= 4)
-    				{
-    					debugBreakpoint();
-    				}
-					const uint8 compareSelector = texOpcode == GPU7_TEX_INST_SAMPLE_C_L ?
-						texInstruction->textureFetch.srcSel[2] :
-						texInstruction->textureFetch.srcSel[3];
-					src->addFmt("float2({}), {}", _getTexGPRAccess(shaderContext, texInstruction->srcGpr, LATTE_DECOMPILER_DTYPE_FLOAT, texInstruction->textureFetch.srcSel[0], texInstruction->textureFetch.srcSel[1], -1, -1, tempBuffer0), _getTexGPRAccess(shaderContext, texInstruction->srcGpr, LATTE_DECOMPILER_DTYPE_FLOAT, compareSelector, -1, -1, -1, tempBuffer1));
+					// 2 coords + compare value (SAMPLE_C_L keeps its level in w, so its compare value is in z)
+					const sint32 compareComponent = texOpcode == GPU7_TEX_INST_SAMPLE_C_L ? 2 : 3;
+					src->add("float2(");
+					_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 0, LATTE_DECOMPILER_DTYPE_FLOAT);
+					src->add(", ");
+					_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 1, LATTE_DECOMPILER_DTYPE_FLOAT);
+					src->add("), ");
+					_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, compareComponent, LATTE_DECOMPILER_DTYPE_FLOAT);
     			}
     		}
     		else if(texDim == Latte::E_DIM::DIM_2D_ARRAY)
@@ -2528,19 +2455,19 @@ static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContex
     		else if( texDim == Latte::E_DIM::DIM_CUBEMAP )
     		{
     			// 2 coords + faceId
-    			cemu_assert_debug(texInstruction->textureFetch.srcSel[0] < 4);
-    			cemu_assert_debug(texInstruction->textureFetch.srcSel[1] < 4);
-    			src->addFmt("redcCUBEReverse({},", _getTexGPRAccess(shaderContext, texInstruction->srcGpr, LATTE_DECOMPILER_DTYPE_FLOAT, texInstruction->textureFetch.srcSel[0], texInstruction->textureFetch.srcSel[1], -1, -1, tempBuffer0));
-			src->add("int(");
+    			src->add("redcCUBEReverse(float2(");
+    			_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 0, LATTE_DECOMPILER_DTYPE_FLOAT);
+    			src->add(", ");
+    			_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 1, LATTE_DECOMPILER_DTYPE_FLOAT);
+    			src->add("), int(");
 			_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 2, LATTE_DECOMPILER_DTYPE_FLOAT);
-			src->add(")");
-    			src->add(")");
+			src->add("))");
     			src->addFmt(", uint(cubeMapArrayIndex{})", texInstruction->textureFetch.textureIndex); // cubemap index
     		}
     		else if( texDim == Latte::E_DIM::DIM_1D )
     		{
     			// 1 coord
-    			src->add(_getTexGPRAccess(shaderContext, texInstruction->srcGpr, LATTE_DECOMPILER_DTYPE_FLOAT, texInstruction->textureFetch.srcSel[0], -1, -1, -1, tempBuffer0));
+    			_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 0, LATTE_DECOMPILER_DTYPE_FLOAT);
     		}
     		else
     		{
