@@ -2434,7 +2434,10 @@ void MetalRenderer::streamout_rendererFinishDrawcall()
 
 void MetalRenderer::draw_beginSequence()
 {
-    PerfTelemetry::ScopedTimer beginTimer(PerfTelemetry::Get().gpuBeginNs);
+    // The per-draw timers in draw_beginSequence, draw_execute and draw_endSequence are sampled (one frame in
+    // kSampleEvery, scaled back up) like the finer ones inside them: always on, their twenty clock reads per draw
+    // were a measurable share of the GPU thread's frame on draw-heavy games.
+    PerfTelemetry::SampledTimer beginTimer(PerfTelemetry::Get().gpuBeginNs);
     m_state.m_skipDrawSequence = false;
 
     // After a GPU error iOS ignores this app's GPU work; recording more only grows memory.
@@ -2475,7 +2478,7 @@ void MetalRenderer::draw_beginSequence()
             return; // no render target
         }
         {
-            PerfTelemetry::ScopedTimer texTimer(PerfTelemetry::Get().gpuTexUpdateNs);
+            PerfTelemetry::SampledTimer texTimer(PerfTelemetry::Get().gpuTexUpdateNs);
             LatteTexture_updateTextures();
         }
         if (!LatteGPUState.repeatTextureInitialization)
@@ -2495,7 +2498,7 @@ void MetalRenderer::draw_beginSequence()
 
 void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 instanceCount, uint32 count, MPTR indexDataMPTR, Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE indexType, bool isFirst)
 {
-    PerfTelemetry::ScopedTimer execTimer(PerfTelemetry::Get().gpuExecNs);
+    PerfTelemetry::SampledTimer execTimer(PerfTelemetry::Get().gpuExecNs);
     PerfTelemetry::Get().gpuDraws.fetch_add(1, std::memory_order_relaxed);
     if (m_state.m_skipDrawSequence)
     {
@@ -2567,7 +2570,7 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     uint32 indexMax = 0;
     Renderer::IndexAllocation indexAllocation;
     {
-        PerfTelemetry::ScopedTimer indexTimer(PerfTelemetry::Get().gpuIndexNs);
+        PerfTelemetry::SampledTimer indexTimer(PerfTelemetry::Get().gpuIndexNs);
         LatteIndices_decode(memory_getPointerFromVirtualOffset(indexDataMPTR), indexType, count, primitiveMode, indexMin, indexMax, hostIndexType, hostIndexCount, indexAllocation);
     }
     auto indexAllocationMtl = static_cast<MetalSynchronizedHeapAllocator::AllocatorReservation*>(indexAllocation.rendererInternal);
@@ -2607,12 +2610,12 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     }
 
     // Buffer cache
-    const uint64 bufferStart = PerfTelemetry::NowNs();
+    const uint64 bufferStart = PerfTelemetry::SampleStart();
     if (m_memoryManager->UseHostMemoryForCache())
     {
         // direct memory access (Wii U memory space imported as a buffer), update buffer bindings
         {
-            PerfTelemetry::ScopedTimer flushTimer(PerfTelemetry::Get().gpuFlushNs);
+            PerfTelemetry::SampledTimer flushTimer(PerfTelemetry::Get().gpuFlushNs);
             LatteBufferCache_processDCFlushQueue();
             LatteBufferCache_processDeallocations();
         }
@@ -2635,7 +2638,7 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     if (usesGeometryShader)
         PrepareUniformBufferSizes(geometryShader);
     PrepareUniformBufferSizes(pixelShader);
-    PerfTelemetry::Get().gpuBufferNs.fetch_add(PerfTelemetry::NowNs() - bufferStart, std::memory_order_relaxed);
+    PerfTelemetry::SampleEnd(PerfTelemetry::Get().gpuBufferNs, bufferStart);
 
     // Emulated geometry-shader and RECTS draws run their vertex and geometry stages as compute passes before the render pass for the
     // draw is opened. The pipeline is looked up first because RECTS keeps its expansion kernel on it; the render pass that follows the
@@ -2675,14 +2678,14 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     }
 
     // Render pass
-    const uint64 passStart = PerfTelemetry::NowNs();
+    const uint64 passStart = PerfTelemetry::SampleStart();
     auto renderCommandEncoder = GetRenderCommandEncoder();
-    PerfTelemetry::Get().gpuPassNs.fetch_add(PerfTelemetry::NowNs() - passStart, std::memory_order_relaxed);
+    PerfTelemetry::SampleEnd(PerfTelemetry::Get().gpuPassNs, passStart);
 
     // Render pipeline state
-    const uint64 pipelineStart = PerfTelemetry::NowNs();
+    const uint64 pipelineStart = PerfTelemetry::SampleStart();
     PipelineObject* pipelineObj = emulateGeometryShader ? emulatedPipelineObj : m_pipelineCache->GetRenderPipelineState(fetchShader, vertexShader, geometryShader, pixelShader, m_state.m_lastUsedFBO.m_attachmentsInfo, m_state.m_activeFBO.m_attachmentsInfo, m_state.m_activeFBO.m_fbo->m_size, count, LatteGPUState.contextNew);
-    PerfTelemetry::Get().gpuPipelineNs.fetch_add(PerfTelemetry::NowNs() - pipelineStart, std::memory_order_relaxed);
+    PerfTelemetry::SampleEnd(PerfTelemetry::Get().gpuPipelineNs, pipelineStart);
     if (!pipelineObj->m_pipeline)
         return;
 
@@ -3016,7 +3019,7 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     }
 
     // Uniform buffers, textures and samplers
-    const uint64 bindStart = PerfTelemetry::NowNs();
+    const uint64 bindStart = PerfTelemetry::SampleStart();
     bool stageResourcesBound;
     if (emulateGeometryShader)
     {
@@ -3032,7 +3035,7 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
             (!(usesGeometryShader && geometryShader) || BindStageResources(renderCommandEncoder, geometryShader, usesGeometryShader)) &&
             BindStageResources(renderCommandEncoder, pixelShader, usesGeometryShader);
     }
-    PerfTelemetry::Get().gpuBindNs.fetch_add(PerfTelemetry::NowNs() - bindStart, std::memory_order_relaxed);
+    PerfTelemetry::SampleEnd(PerfTelemetry::Get().gpuBindNs, bindStart);
     if (!stageResourcesBound)
     {
         streamout_rendererFinishDrawcall();
@@ -3138,7 +3141,7 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
 
 void MetalRenderer::draw_endSequence()
 {
-    PerfTelemetry::ScopedTimer endTimer(PerfTelemetry::Get().gpuEndNs);
+    PerfTelemetry::SampledTimer endTimer(PerfTelemetry::Get().gpuEndNs);
     LatteDecompilerShader* pixelShader = LatteSHRC_GetActivePixelShader();
     // post-drawcall logic
     if (pixelShader)
