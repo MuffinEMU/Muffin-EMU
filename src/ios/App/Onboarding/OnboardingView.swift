@@ -374,6 +374,10 @@ private struct OnboardingSpeedControlsPage: View {
                         systemImage: "gamecontroller.fill",
                         text: "The on-screen pad can add analog sticks and comfort controls, and any MFi, Xbox, or PlayStation controller works right alongside it."
                     )
+                    OnboardingFactRow(
+                        systemImage: "lifepreserver.fill",
+                        text: "If a game won't start, the screen that appears says what to try, and Copy bug report puts everything a helper needs in one text. It's also in Settings > Help and about."
+                    )
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)

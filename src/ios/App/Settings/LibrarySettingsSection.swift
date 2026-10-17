@@ -101,11 +101,6 @@ struct LibrarySettingsSection: View {
                             "muffin.art.appliedPack", "muffin.art.preApplySnapshot"] {
                     d.removeObject(forKey: key)
                 }
-                for key in [LibraryCardStyle.storageKey, LibraryCardStyle.sizeStorageKey, LibraryGrouping.storageKey,
-                            LibraryFilter.storageKey, "muffin.library.sortOrder", CoverStylePreference.storageKey,
-                            "muffin.art.appliedPack", "muffin.art.preApplySnapshot"] {
-                    d.removeObject(forKey: key)
-                }
                 NotificationCenter.default.post(name: .muffinCoverArtSourcesChanged, object: nil)
             } label: {
                 Label("Reset layout and covers", systemImage: "arrow.counterclockwise")

@@ -62,7 +62,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .resume: return "Resume"
-        case .saveStates: return "Save States"
+        case .saveStates: return "Save states"
         case .screenLayout: return "Screen layout"
         case .externalDisplay: return "External display"
         case .moveControls: return "Move controls"
