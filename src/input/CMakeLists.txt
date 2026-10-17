@@ -96,6 +96,19 @@ if(IOS)
 	)
 endif()
 
+if(ANDROID)
+	# The "GameController" provider is plain C++ behind a C callback table (GCBridgeControllerDesc); nothing
+	# in it is Objective-C, so Android's bridge registers its pads through the same provider. The .mm files
+	# are compiled as C++ here.
+	target_sources(CemuInput PRIVATE
+		api/iOS/GCController.h
+		api/iOS/GCController.mm
+		api/iOS/GCControllerProvider.h
+		api/iOS/GCControllerProvider.mm
+	)
+	set_source_files_properties(api/iOS/GCController.mm api/iOS/GCControllerProvider.mm PROPERTIES LANGUAGE CXX)
+endif()
+
 if(ENABLE_SDL)
 	target_sources(CemuInput PRIVATE
 		api/SDL/SDLController.cpp

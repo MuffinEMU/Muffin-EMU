@@ -3,12 +3,12 @@
 #include "util/helpers/helpers.h"
 #include "config/CemuConfig.h"
 
-#include <OpenSSL/bn.h>
-#include <OpenSSL/ec.h>
-#include <OpenSSL/x509.h>
-#include <OpenSSL/ssl.h>
-#include <OpenSSL/sha.h>
-#include <OpenSSL/ecdsa.h>
+#include <openssl/bn.h>
+#include <openssl/ec.h>
+#include <openssl/x509.h>
+#include <openssl/ssl.h>
+#include <openssl/sha.h>
+#include <openssl/ecdsa.h>
 
 #include "util/crypto/aes128.h"
 

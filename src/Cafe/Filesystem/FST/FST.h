@@ -1,6 +1,6 @@
 #pragma once
 #include "Cemu/ncrypto/ncrypto.h"
-#include <OpenSSL/evp.h>
+#include <openssl/evp.h>
 
 struct FSTFileHandle
 {

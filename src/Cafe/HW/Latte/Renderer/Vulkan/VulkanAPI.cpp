@@ -138,7 +138,10 @@ bool InitializeDeviceVulkan(VkDevice device)
 
 void* dlopen_vulkan_loader()
 {
-#if BOOST_OS_LINUX || BOOST_OS_BSD
+#if BOOST_PLAT_ANDROID
+	// The system loader; every Android with Vulkan ships it under this one name.
+	void* vulkan_so = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
+#elif BOOST_OS_LINUX || BOOST_OS_BSD
 	void* vulkan_so = dlopen("libvulkan.so", RTLD_NOW);
 	if(!vulkan_so)
 		vulkan_so = dlopen("libvulkan.so.1", RTLD_NOW);

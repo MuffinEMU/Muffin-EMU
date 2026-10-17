@@ -96,7 +96,7 @@ bool mic_isConnected(uint32 drcIndex)
 	if( drcIndex != 0 )
 		return false;
 
-#if !BOOST_OS_IOS
+#if !(BOOST_OS_IOS || BOOST_PLAT_ANDROID)
 	// On iOS the GamePad mic is always present: the game can be fed synthetic blow noise
 	// (see mic_mixBlowNoise) without any permission. Whether the *real* device microphone is
 	// captured is decided separately in MICInit via microphone_enabled.
@@ -176,7 +176,7 @@ void micExport_MICInit(PPCInterpreter_t* hCPU)
 	const auto audio_api = IAudioInputAPI::Cubeb;
 #endif
 
-#if BOOST_OS_IOS
+#if BOOST_OS_IOS || BOOST_PLAT_ANDROID
 	// Real microphone capture only when the user opted in (Settings > Audio). Otherwise the
 	// game still sees a connected mic, fed by synthetic noise (Blow button) or silence.
 	const bool useRealMic = config.microphone_enabled;
@@ -208,7 +208,7 @@ void micExport_MICInit(PPCInterpreter_t* hCPU)
 			catch (std::runtime_error& ex)
 			{
 				cemuLog_log(LogType::Force, "can't initialize audio input: {}", ex.what());
-#if BOOST_OS_IOS
+#if BOOST_OS_IOS || BOOST_PLAT_ANDROID
 				// Most likely the microphone permission was denied. Not fatal: fall through with
 				// no input device, so the game gets silence / the Blow button's noise.
 				g_inputAudio.reset();

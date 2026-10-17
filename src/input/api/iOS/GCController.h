@@ -1,6 +1,6 @@
 #pragma once
 
-#if BOOST_OS_IOS
+#if BOOST_OS_IOS || BOOST_PLAT_ANDROID
 
 #include "input/api/Controller.h"
 #include "GCControllerProvider.h"

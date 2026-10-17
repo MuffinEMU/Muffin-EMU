@@ -181,7 +181,7 @@ namespace camera
 
 	sint32 CAMInit(uint32 cameraId, CAMInitInfo_t* camInitInfo, uint32be* error)
 	{
-#if BOOST_OS_IOS
+#if BOOST_OS_IOS || BOOST_PLAT_ANDROID
 		// The game gets an empty camera. Say so once per launch, so a game that quietly goes without it doesn't look broken.
 		static std::atomic_bool s_cameraNoticeShown{ false };
 		if (!s_cameraNoticeShown.exchange(true))

@@ -408,7 +408,7 @@ VkPresentModeKHR SwapchainInfoVk::ChoosePresentMode(const std::vector<VkPresentM
 {
 	m_maxQueued = 0;
 	const auto vsyncState = (VSync)GetConfig().vsync.GetValue();
-#if BOOST_OS_IOS
+#if BOOST_OS_IOS || BOOST_PLAT_ANDROID
 	// iOS always composites on the display's refresh (CAMetalLayer), so MAILBOX/IMMEDIATE add nothing there and MoltenVK only maps
 	// them to "displaySyncEnabled = NO", which can tear. FIFO is the only mode used; SYNC_AND_LIMIT keeps its host-driven vsync.
 	if (vsyncState == VSync::SYNC_AND_LIMIT)

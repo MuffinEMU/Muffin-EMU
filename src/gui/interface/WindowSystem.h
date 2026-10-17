@@ -12,7 +12,8 @@ namespace WindowSystem
 			Wayland,
 			Cocoa,
 			Windows,
-            UIKit
+            UIKit,
+            Android // surface is an ANativeWindow*
 		} backend;
 		void* display = nullptr;
 		void* surface = nullptr;

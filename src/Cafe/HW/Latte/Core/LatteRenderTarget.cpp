@@ -983,7 +983,7 @@ void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPa
 	g_renderer->ImguiEnd();
 }
 
-#if BOOST_OS_IOS
+#if BOOST_OS_IOS || BOOST_PLAT_ANDROID
 std::atomic_uint32_t g_latteSkipHiddenOutputs{0};
 
 void LatteRenderTarget_SetSkipHiddenOutputs(bool tv, bool pad)
@@ -1006,7 +1006,7 @@ static bool LatteRenderTarget_isScreenShown(bool isTVScreen)
 
 void LatteRenderTarget_itHLECopyColorBufferToScanBuffer(MPTR colorBufferPtr, uint32 colorBufferWidth, uint32 colorBufferHeight, uint32 colorBufferSliceIndex, uint32 colorBufferFormat, uint32 colorBufferPitch, Latte::E_HWTILEMODE colorBufferTilemode, uint32 colorBufferSwizzle, uint32 renderTarget)
 {
-#if BOOST_OS_IOS
+#if BOOST_OS_IOS || BOOST_PLAT_ANDROID
 	if (const auto skipFlags = g_latteSkipHiddenOutputs.load(std::memory_order_relaxed))
 	{
 		const bool isTVTarget = (renderTarget & RENDER_TARGET_TV) != 0;
@@ -1047,7 +1047,7 @@ void LatteRenderTarget_itHLECopyColorBufferToScanBuffer(MPTR colorBufferPtr, uin
 	togglePressedLast = togglePressed;
 
 	bool showDRC = swkbd_hasKeyboardInputHook() == false && (isDRCPrimary ^ altScreenRequested);
-#if BOOST_OS_IOS
+#if BOOST_OS_IOS || BOOST_PLAT_ANDROID
 	const auto& windowInfo = WindowSystem::GetWindowInfo();
 	const auto visibleOutputs = windowInfo.visible_outputs.load();
 	// Each output window normally shows its own screen (main = TV, pad = GamePad); output_sources lets either one show
