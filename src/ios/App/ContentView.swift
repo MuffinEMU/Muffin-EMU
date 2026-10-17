@@ -221,13 +221,33 @@ struct BootFailureView: View {
         return ["wux", "wud", "iso", "tmd"].contains(URL(fileURLWithPath: game.romPath).pathExtension.lowercased())
     }
 
-    /// What to do next, in plain words. The engine's own message and the log paths are under Details.
+    /// keys.txt is there, but no key in it opens this game (the bridge's own wording, IOSTitleLaunch).
+    private var keysDontMatch: Bool {
+        !needsCleanRestart && keysAdded == nil && message.contains("no key in keys.txt opens it")
+    }
+
+    /// The engine's message when it already tells the player what to do. Most launch failures are written that
+    /// way (missing ticket, wrong renderer, an update picked instead of the game); the short status lines are
+    /// bridge internals and stay under Details, and the two terse ones a player can hit are put in plain words.
+    private var engineAdvice: String? {
+        let m = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        if m.hasPrefix("Unable to mount title") {
+            return "MuffinEMU couldn't open this game's files. If they were moved, renamed or deleted in the Files app, remove the game from the library and add it again."
+        }
+        if m == "Invalid RPX." { return "This file isn't a Wii U program MuffinEMU can run." }
+        if m == "Not a Wii U title this build can launch." { return m }
+        return m.count >= 50 ? m : nil
+    }
+
+    /// What to do next, in plain words. The engine's own message, when it isn't already this line, and the log
+    /// paths are under Details.
     private var plainLine: String {
         if needsCleanRestart { return "Close MuffinEMU and open it again from your Home Screen, then start a game." }
         if driveWasLost { return "The drive or folder this game is stored on was disconnected. Connect it again, go back and start the game again." }
-        if endedWhileRunning { return "The game stopped. Go back and try it again. If it keeps happening, close and reopen MuffinEMU." }
-        if needsKeys { return "This game is encrypted, so it needs a keys.txt file to start." }
         if let keysAdded { return "Added \(keysAdded) key\(keysAdded == 1 ? "" : "s"). Go back and start the game again. If it still won't start, close and reopen MuffinEMU." }
+        if needsKeys { return "This game is encrypted, so it needs a keys.txt file to start." }
+        if let engineAdvice { return engineAdvice }
+        if endedWhileRunning { return "The game stopped. Go back and try it again. If it keeps happening, close and reopen MuffinEMU." }
         return "This game didn't start. Try again. If it keeps happening, close and reopen MuffinEMU."
     }
 
@@ -291,7 +311,7 @@ struct BootFailureView: View {
                     .frame(maxWidth: 480)
             }
 
-            if needsKeys {
+            if needsKeys || keysDontMatch {
                 Button(action: importKeys) {
                     HStack(spacing: 6) {
                         Image(systemName: "key.fill")
@@ -307,11 +327,13 @@ struct BootFailureView: View {
             // anything, which is itself worth seeing rather than papering over. The logs go out through Share diagnostics.
             DisclosureGroup("Details") {
                 VStack(spacing: 10) {
-                    Text(message.isEmpty ? "The engine didn't report a reason." : message)
-                        .font(.system(.footnote, design: .rounded))
-                        .foregroundColor(.white.opacity(0.75))
-                        .multilineTextAlignment(.center)
-                        .textSelection(.enabled)
+                    if plainLine != message {
+                        Text(message.isEmpty ? "The engine didn't report a reason." : message)
+                            .font(.system(.footnote, design: .rounded))
+                            .foregroundColor(.white.opacity(0.75))
+                            .multilineTextAlignment(.center)
+                            .textSelection(.enabled)
+                    }
 
                     // The last lines the engine logged, in the launch log's own colours, so the line that
                     // decided the boot is readable here without turning the launch log on beforehand.
