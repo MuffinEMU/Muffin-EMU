@@ -121,7 +121,20 @@ private:
 struct ControllerState
 {
 	// when does a axis counts as pressed
+#if BOOST_OS_IOS
+	// Small enough to pass anything a stick can mean, and only large enough to keep out the kMinAxisValue bias
+	// below and float noise. ControllerBase::get_axis_value only returns a stick component whose direction bit
+	// is set, and that bit was only set past 0.1 on that axis, so a stick pushed mostly along one axis had the
+	// other component cut to 0 and its direction snapped to the cardinal: at 40% deflection, 30 degrees off
+	// vertical, the sideways 0.09 was lost. The desktop threshold is also the one the input-settings window
+	// captures a moved axis with, and there is no such window here. Every stick that reaches the core on iOS
+	// has already had its deadzone (the on-screen sticks the player's own, a physical controller's the bridge's
+	// radial 0.25, ios_physical_stick_deadzone in CemuBridge.mm) and both give an exact 0 inside it, so nothing
+	// is let through at rest.
+	constexpr static float kAxisThreshold = 0.001f;
+#else
 	constexpr static float kAxisThreshold = 0.1f;
+#endif
 
 	// on the real console the stick x or y values never really reach 0.0 if one of the axis is moved
 	// some games rely on this due to incorrectly checking if the stick is tilted via if (vstick.x != 0 && vstick.y != 0)
