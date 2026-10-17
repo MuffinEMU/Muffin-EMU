@@ -16,6 +16,8 @@ use idevice::mobile_image_mounter::ImageMounter;
 use idevice::services::cryptexd;
 use idevice::services::cryptexd::assets::Cryptex1Assets;
 use idevice::lockdown::LockdownClient;
+// `connect_rsd` is a method on the RsdService trait; it must be in scope to call it.
+use idevice::RsdService;
 
 use crate::ffi::{cstr, report, MjProgress};
 use crate::link::MuffinJitLink;
