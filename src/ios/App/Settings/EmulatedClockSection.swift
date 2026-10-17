@@ -35,7 +35,7 @@ struct EmulatedClockSection: View {
 
     var body: some View {
         Section {
-            Picker("Speed", selection: speedChoice) {
+            Picker("Clock speed", selection: speedChoice) {
                 ForEach(TimebaseScale.allCases) { scale in
                     Text(scale.title).tag(scale.rawValue)
                 }
@@ -53,17 +53,17 @@ struct EmulatedClockSection: View {
                 }
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
             } else {
-                Text("Automatic: MuffinEMU slows the clock itself if a game doesn't start drawing.")
+                Text("Automatic. MuffinEMU slows the clock if a game doesn't start drawing.")
                     .font(.system(size: 12))
                     .foregroundColor(MuffinTheme.secondaryText)
             }
         } header: {
-            SettingsSectionHeader("Emulated Clock", icon: "clock", accent: .core)
+            SettingsSectionHeader("Emulated clock", icon: "clock", accent: .core)
         } footer: {
             InfoButton.footer(
-                "\(timebase.summary) Changes how fast the game thinks time passes; it doesn't change how fast MuffinEMU runs.",
-                title: "Emulated Clock",
-                text: "Until you choose a value, MuffinEMU picks one itself: if a game hasn't started drawing after 12 seconds, it slows its clock a step (down to 1/64). Choosing a value here turns that off.\n\nWithout the recompiler the emulated CPU is much slower than the console's, so games can fall behind their own timers and never draw a frame. Slowing the game's clock gives them room. Emulation accuracy isn't affected.")
+                "\(timebase.summary) Leave this on automatic unless a game won't start drawing.",
+                title: "Emulated clock",
+                text: "A slower clock gives a game more time to do its work. Without the recompiler, games can fall behind their own timers and never draw a frame.\n\nUntil you choose a value, MuffinEMU slows the clock by itself if a game hasn't started drawing after 12 seconds (down to 1/64). Choosing a value here turns that off. Use Let MuffinEMU choose again to switch automatic back on.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         // Reset settings clears the stored choice from outside this view.

@@ -95,7 +95,7 @@ struct PremiumSettingsSection: View {
         } header: {
             SettingsSectionHeader("Premium", icon: "sparkles", accent: .identity)
         } footer: {
-            InfoButton.footer("Unlocks the pro app icons. Everything else in MuffinEMU is free.")
+            InfoButton.footer("Unlocks the pro app icons. No other feature needs Premium.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }

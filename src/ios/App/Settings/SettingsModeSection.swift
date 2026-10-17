@@ -39,7 +39,7 @@ struct SettingsModeSection: View {
                 }
                 .pickerStyle(.segmented)
                 Text(SettingsMode.isAdvanced(raw: modeRaw)
-                     ? "Everything is shown, including settings most people won't need."
+                     ? "Everything is shown, including the settings most people don't need."
                      : "Only the settings most people need. The rest are off, at their defaults.")
                     .font(.system(size: 12))
                     .foregroundColor(MuffinTheme.secondaryText)
@@ -49,7 +49,7 @@ struct SettingsModeSection: View {
             InfoButton.footer(
                 "Basic hides the advanced settings and puts them back to their defaults.",
                 title: "Settings mode",
-                text: "Basic keeps Settings short. The advanced settings are turned off, which means every one of them goes back to its default, and their rows are hidden.\n\nAdvanced shows all of them: the renderer, scaling filters, gamma, Steady frame rate, CPU cores and the other performance switches, the emulated clock, overlay details, motion tuning, stick feel, audio channels, diagnostics, and the extra options for each game.\n\nWhen you switch to Basic, MuffinEMU first saves what your advanced settings were. When you switch back to Advanced it asks whether to restore them or keep the defaults.\n\nReset settings to defaults (under About) also puts this back to Basic and forgets the saved values.")
+                text: "Basic keeps Settings short. The advanced settings go back to their defaults and their rows are hidden.\n\nAdvanced shows everything: the renderer, scaling filters, gamma, Steady frame rate, CPU cores and other performance switches, the emulated clock, overlay details, motion tuning, stick feel, audio channels, diagnostics, and extra options for each game.\n\nWhen you switch to Basic, MuffinEMU saves your advanced settings. When you switch back, it asks whether to restore them or keep the defaults.\n\nReset settings to defaults (under About) also returns this to Basic and forgets the saved values.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         .alert("Restore your previous advanced settings?", isPresented: $askRestore) {

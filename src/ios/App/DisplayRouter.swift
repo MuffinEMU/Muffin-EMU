@@ -87,9 +87,9 @@ enum ScreenLayout: String, CaseIterable, Identifiable {
 
     var string: String {
         switch self {
-        case .singleScreen: return "Single Screen"
-        case .bothScreens: return "Adaptive (Both Screens)"
-        case .smallGamePadTopRight: return "Both Screens (GamePad Top Right)"
+        case .singleScreen: return "Single screen"
+        case .bothScreens: return "Adaptive (both screens)"
+        case .smallGamePadTopRight: return "Both screens (GamePad top right)"
         }
     }
 

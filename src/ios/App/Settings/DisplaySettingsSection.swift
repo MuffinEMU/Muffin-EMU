@@ -47,7 +47,7 @@ struct DisplaySettingsSection: View {
     var body: some View {
         Section {
             HStack {
-                Text("Screen Layout")
+                Text("Screen layout")
                 Button {
                     screenLayoutInfoShown = true
                 } label: {
@@ -55,11 +55,11 @@ struct DisplaySettingsSection: View {
                 }
                 .foregroundColor(.secondary)
                 .buttonStyle(.plain)
-                .accessibilityLabel("About Screen Layout")
+                .accessibilityLabel("About screen layout")
 
                 Spacer()
 
-                Picker("Screen Layout", selection: $screenLayout) {
+                Picker("Screen layout", selection: $screenLayout) {
                     ForEach(ScreenLayout.allCases) { layout in
                         Text(layout.string).tag(layout)
                     }
@@ -69,7 +69,7 @@ struct DisplaySettingsSection: View {
                 .labelsHidden()
                 .tint(MuffinTheme.accentText)
             }
-            .alert("Screen Layout", isPresented: $screenLayoutInfoShown) {
+            .alert("Screen layout", isPresented: $screenLayoutInfoShown) {
                 Button("OK", role: .cancel) { }
             } message: {
                 Text(screenLayout.description)
@@ -91,7 +91,7 @@ struct DisplaySettingsSection: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Pause the TV screen when it isn't shown")
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        Text("Stops drawing the TV while the GamePad is up. The game keeps running. Saves heat and battery.")
+                        Text("Stops drawing the TV while the GamePad is shown. The game keeps running. Can reduce heat and battery use.")
                             .font(.system(size: 12))
                             .foregroundColor(MuffinTheme.secondaryText)
                     }
@@ -102,7 +102,7 @@ struct DisplaySettingsSection: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Pause the GamePad screen when it isn't shown")
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        Text("Stops drawing the GamePad while the TV is up. The game keeps running. Saves heat and battery.")
+                        Text("Stops drawing the GamePad while the TV is shown. The game keeps running. Can reduce heat and battery use.")
                             .font(.system(size: 12))
                             .foregroundColor(MuffinTheme.secondaryText)
                     }
@@ -116,7 +116,7 @@ struct DisplaySettingsSection: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Allow portrait during games")
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        Text("Hold the phone upright to play: the picture goes along the top and the controls below it. Off keeps games in landscape.")
+                        Text("Hold the phone upright to play, with the picture on top and controls below. Off keeps games in landscape.")
                             .font(.system(size: 12))
                             .foregroundColor(MuffinTheme.secondaryText)
                     }
@@ -140,14 +140,14 @@ struct DisplaySettingsSection: View {
                         .accessibilityLabel("Brightness boost")
                     Text("Strong").font(.system(size: 12)).foregroundColor(MuffinTheme.secondaryText)
                 }
-                Text("Brightness boost lightens the game picture beyond your screen's maximum. Higher settings wash out dark areas.")
+                Text("Makes the picture brighter than your screen's normal maximum. Higher settings can wash out dark areas.")
                     .font(.system(size: 12))
                     .foregroundColor(MuffinTheme.secondaryText)
             }
 
             Toggle(isOn: $maxBrightnessWhilePlaying) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Max screen brightness while playing")
+                    Text("Full screen brightness while playing")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text("Sets your screen to full brightness during a game and puts it back afterwards.")
                         .font(.system(size: 12))
@@ -191,10 +191,10 @@ struct DisplaySettingsSection: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
-                        Text("When a TV is connected, this device shows")
+                        Text("While an external display is connected, this device shows")
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
                         Spacer()
-                        Picker("When a TV is connected, this device shows", selection: $deviceShows) {
+                        Picker("While an external display is connected, this device shows", selection: $deviceShows) {
                             ForEach(DeviceScreenMode.allCases) { mode in
                                 Text(mode.string).tag(mode)
                             }
@@ -216,7 +216,7 @@ struct DisplaySettingsSection: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Show swap button during play")
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        Text("A small button over the game while an external display is connected, to flip the setting above without leaving the game.")
+                        Text("A small button over the game that swaps the screens without leaving the game.")
                             .font(.system(size: 12))
                             .foregroundColor(MuffinTheme.secondaryText)
                     }
@@ -227,9 +227,9 @@ struct DisplaySettingsSection: View {
             SettingsSectionHeader("Display", icon: "rectangle.on.rectangle", accent: .io)
         } footer: {
             InfoButton.footer(
-                "Screen Layout arranges the TV and GamePad on this device. The external display is off until you turn it on, and needs a second screen that MuffinEMU can open a window on; AirPlay mirroring doesn't count.",
+                "Screen layout sets how the TV and GamePad share this device's screen. External displays are off until you turn them on.",
                 title: "Display",
-                text: "The Wii U has two screens: the TV and the GamePad.\n\nScreen Layout: Single Screen shows one at a time with a swap button; Adaptive shows both, stacked in portrait and side by side in landscape; Both Screens (GamePad Top Right) keeps the TV full size with a small GamePad inset.\n\nAllow portrait during games (iPhone): hold the phone upright and the picture goes along the top with the controls below it. Menus stay in landscape. Turn it off if you'd rather a game never turns when the phone tilts; the iOS rotation lock works too.\n\nThe external display is off by default; turn it on before connecting a display. Then choose which Wii U screen it shows, and what this device shows next to it: the other screen, the same screen, or only the controls. It is experimental and hasn't been tested on much hardware.")
+                text: "The Wii U has two screens: the TV and the GamePad. Screen layout sets how they share this device's screen.\n\nSingle Screen shows one at a time, with a swap button. Adaptive shows both, stacked in portrait and side by side in landscape. Both Screens (GamePad Top Right) shows the TV full size with a small GamePad in the corner.\n\nAllow portrait during games (iPhone) lets you hold the phone upright, with the picture on top and the controls below. Menus stay in landscape. Turn it off if you don't want games to turn when you tilt the phone.\n\nUse an external display is experimental. Turn it on before you connect a screen, then choose which Wii U screen it shows and what this device shows next to it: the other screen, the same screen, or only the controls. AirPlay mirroring doesn't count as an external display.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }
