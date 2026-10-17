@@ -13,7 +13,6 @@
 
 #include "Cafe/CafeSystem.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
-#include "Cafe/HW/Latte/Core/LatteThread.h"
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Cafe/Filesystem/FST/KeyCache.h"
 #include "Cemu/Logging/CemuLogging.h"

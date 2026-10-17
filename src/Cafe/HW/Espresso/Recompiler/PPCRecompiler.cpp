@@ -272,6 +272,11 @@ static bool PPCRecompiler_shouldUseDualMapByDefault()
     return false;
 }
 
+// A JIT mapping session is an iOS TXM matter (above); nothing to end on other platforms.
+static void PPCRecompiler_finishJitMappingSession()
+{
+}
+
 DualMapRegion PPCRecompiler_allocateDualMap(size_t size)
 {
     (void)size;
