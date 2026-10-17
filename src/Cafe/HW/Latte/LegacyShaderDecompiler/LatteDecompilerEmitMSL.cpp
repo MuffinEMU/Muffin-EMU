@@ -2278,6 +2278,14 @@ static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContex
 	// Every depth texture read except gather returns a scalar, and so does the emulated compare. Broadcast it to float4 so the
 	// destination swizzle below can pick any component.
 	const bool isScalarResult = (isDepthTexture && !isGather) || emulateCompare;
+	// The sampler's LOD bias (tex{}LodBias, see _emitUniformVariables) is part of every level choice, the way Vulkan's
+	// mipLodBias is: added to the level a SAMPLE_L names, to the bias a SAMPLE_LB adds, to the zero of SAMPLE_LZ and to
+	// the level the GPU derives for a plain SAMPLE. bias() exists in fragment functions only; the other stages have no
+	// derivatives to bias, and sample there at the base level, so the bias is applied as that level. Compare reads
+	// (SAMPLE_C*) are left exactly as they were.
+	const bool hasLodBiasUniform = shaderContext->analyzer.texUnitUsesLodBias.test(texInstruction->textureFetch.textureIndex) && !emulateCompare;
+	const bool isFragmentFunction = shaderContext->shaderType == LatteConst::ShaderType::Pixel;
+	const std::string lodBiasTerm = fmt::format("supportBuffer.tex{}LodBias", texInstruction->textureFetch.textureIndex);
 
 	bool unnormalizationHandled = false;
 	bool useTexelCoordinates = false;
@@ -2548,14 +2556,6 @@ static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContex
     		}
     		// lod or lod bias parameter
     		// 1D textures don't support lod
-    		// The sampler's LOD bias (tex{}LodBias, see _emitUniformVariables) is part of every level choice, the way Vulkan's
-    		// mipLodBias is: added to the level a SAMPLE_L names, to the bias a SAMPLE_LB adds, to the zero of SAMPLE_LZ and to
-    		// the level the GPU derives for a plain SAMPLE. bias() exists in fragment functions only; the other stages have no
-    		// derivatives to bias, and sample there at the base level, so the bias is applied as that level. Compare reads
-    		// (SAMPLE_C*) are left exactly as they were.
-    		const bool hasLodBiasUniform = shaderContext->analyzer.texUnitUsesLodBias.test(texInstruction->textureFetch.textureIndex) && !emulateCompare;
-    		const bool isFragmentFunction = shaderContext->shaderType == LatteConst::ShaderType::Pixel;
-    		const std::string lodBiasTerm = fmt::format("supportBuffer.tex{}LodBias", texInstruction->textureFetch.textureIndex);
     		if (texDim != Latte::E_DIM::DIM_1D && texDim != Latte::E_DIM::DIM_1D_ARRAY && !emulateCompare)
     		{
           		if (texOpcode == GPU7_TEX_INST_SAMPLE_L || texOpcode == GPU7_TEX_INST_SAMPLE_LB || texOpcode == GPU7_TEX_INST_SAMPLE_C_L)
