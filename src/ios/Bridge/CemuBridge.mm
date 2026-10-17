@@ -748,6 +748,7 @@ extern "C" const char* cemu_bridge_device_report(void)
 // not otherwise pull in, and this is one symbol.
 size_t PPCRecompiler_getJitArenaSize();
 size_t PPCRecompiler_getJitArenaUsed();
+void PPCRecompiler_setRuntimeGQRCompiled(bool enabled);
 
 const char* cemu_bridge_memory_headroom_summary(void) {
     static thread_local std::string summary;
@@ -3195,6 +3196,9 @@ bool cemu_bridge_recompiler_enabled(void) {
 
 void cemu_bridge_set_favour_accuracy(bool enabled) {
     g_favourAccuracy.store(enabled);
+    // Paired-single loads and stores whose GQR is only known at run time go back to the interpreter, the
+    // known-good path, while accuracy is favoured (PPCRecompilerImlGenFPU.cpp).
+    PPCRecompiler_setRuntimeGQRCompiled(!enabled);
     if (g_initialized.load())
         ios_apply_cpu_mode();
 }

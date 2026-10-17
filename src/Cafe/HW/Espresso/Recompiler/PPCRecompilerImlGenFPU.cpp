@@ -719,6 +719,17 @@ bool PPCRecompilerImlGen_FCTIWZ(ppcImlGenContext_t* ppcImlGenContext, uint32 opc
 
 bool PPCRecompiler_isUGQRValueKnown(ppcImlGenContext_t* ppcImlGenContext, sint32 gqrIndex, uint32& gqrValue);
 
+// Whether psq_l/psq_st with a GQR only known at run time are compiled (the compare chain below) or left to the
+// interpreter, as the AArch64 build did before. On by default; the iOS bridge turns it off under Favour accuracy,
+// so a game this path gets wrong can still be played on the slower, known-good path. Read when a function is
+// compiled, which is why the bridge sets it before boot.
+std::atomic<bool> g_ppcRecompilerRuntimeGQR{true};
+
+void PPCRecompiler_setRuntimeGQRCompiled(bool enabled)
+{
+	g_ppcRecompilerRuntimeGQR.store(enabled);
+}
+
 void PPCRecompilerImlGen_ClampInteger(ppcImlGenContext_t* ppcImlGenContext, IMLReg reg, sint32 clampMin, sint32 clampMax)
 {
 	IMLReg regTmpCondBool = PPCRecompilerImlGen_loadRegister(ppcImlGenContext, PPCREC_NAME_TEMPORARY + 1);
@@ -839,6 +850,8 @@ bool PPCRecompilerImlGen_PSQ_L(ppcImlGenContext_t* ppcImlGenContext, uint32 opco
 	uint32 knownGQRValue = 0;
 	if ( !PPCRecompiler_isUGQRValueKnown(ppcImlGenContext, gqrIndex, knownGQRValue) )
 	{
+		if (!g_ppcRecompilerRuntimeGQR.load(std::memory_order_relaxed))
+			return false;
 		// generate complex dynamic handler when we dont know the GQR value ahead of time
 		// The iOS port used to give up here on AArch64 and leave the whole function to the interpreter. Only GQR0 is
 		// ever "known" (see PPCRecompiler_isUGQRValueKnown, which assumes its default of 0, i.e. TYPE_F32 and scale 0),
@@ -977,6 +990,8 @@ bool PPCRecompilerImlGen_PSQ_ST(ppcImlGenContext_t* ppcImlGenContext, uint32 opc
 	uint32 gqrValue = 0;
 	if ( !PPCRecompiler_isUGQRValueKnown(ppcImlGenContext, gqrIndex, gqrValue) )
 	{
+		if (!g_ppcRecompilerRuntimeGQR.load(std::memory_order_relaxed))
+			return false;
 		// generate complex dynamic handler when we dont know the GQR value ahead of time
 		// Compiled on AArch64 as well, same reason as in PPCRecompilerImlGen_PSQ_L above.
 		IMLReg gqrRegister = PPCRecompilerImlGen_loadRegister(ppcImlGenContext, PPCREC_NAME_SPR0 + SPR_UGQR0 + gqrIndex);
