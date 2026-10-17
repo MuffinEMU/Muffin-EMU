@@ -60,6 +60,7 @@ bool CemuAndroid_TakeKeyboardRequest(std::u16string& text, size_t& maxLength, ui
 void CemuAndroid_SubmitKeyboard(uint32_t generation, std::u16string text);
 
 // src/ios/Bridge/Core
+std::string IOSCoverArt_GetTitleName(const char* romPath);
 int IOSTitleLaunch_PrepareForegroundTitle(const char* pathStr);
 const char* IOSTitleLaunch_LastErrorDetail();
 int IOSTitleLaunch_ReloadAndCountKeys();
@@ -455,6 +456,18 @@ JNIEXPORT void JNICALL Java_io_github_muffinemu_NativeBridge_submitKeyboard(JNIE
 		env->ReleaseStringChars(jText, chars);
 	}
 	CemuAndroid_SubmitKeyboard((uint32_t)generation, std::move(text));
+}
+
+// The game's own name from its meta.xml, for the library, or null when it has none (homebrew, a bare .rpx)
+// or can't be read. Opens the title's files, so the app calls it off the main thread.
+JNIEXPORT jstring JNICALL Java_io_github_muffinemu_NativeBridge_titleName(JNIEnv* env, jclass, jstring jPath)
+{
+	if (!jPath)
+		return nullptr;
+	const char* path = env->GetStringUTFChars(jPath, nullptr);
+	const std::string name = IOSCoverArt_GetTitleName(path);
+	env->ReleaseStringUTFChars(jPath, path);
+	return name.empty() ? nullptr : env->NewStringUTF(name.c_str());
 }
 
 JNIEXPORT jdouble JNICALL Java_io_github_muffinemu_NativeBridge_framesPerSecond(JNIEnv*, jclass)

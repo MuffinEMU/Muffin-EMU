@@ -39,6 +39,8 @@ object NativeBridge {
     /** A software keyboard the game opened: [generation, maxLength, text], or null. Handed over once. */
     @JvmStatic external fun pendingKeyboard(): Array<String>?
     @JvmStatic external fun submitKeyboard(generation: Int, text: String)
+    /** The game's name from its meta.xml, or null. Reads the title's files: call off the main thread. */
+    @JvmStatic external fun titleName(path: String): String?
 
     fun setButton(button: Button, pressed: Boolean) = setButton(button.ordinal, pressed)
 }

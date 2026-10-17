@@ -38,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -70,6 +71,9 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun Library() {
         val games = remember { mutableStateListOf<File>() }
+        // Each game's own name from its meta.xml, by path, filled in the background once the core is up (it reads
+        // the title through the core, keys included). The file name stands in until then, and for homebrew.
+        val names = remember { mutableStateMapOf<String, String>() }
         var coreReady by remember { mutableStateOf(false) }
         var status by remember { mutableStateOf("Starting the emulator core…") }
         var keyCount by remember { mutableStateOf(-1) }
@@ -88,9 +92,22 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        fun resolveNames() {
+            if (!coreReady) return
+            val pending = games.filter { it.absolutePath !in names }
+            if (pending.isEmpty()) return
+            scope.launch {
+                for (game in pending) {
+                    val name = withContext(Dispatchers.IO) { runCatching { NativeBridge.titleName(game.absolutePath) }.getOrNull() }
+                    names[game.absolutePath] = name ?: game.nameWithoutExtension
+                }
+            }
+        }
+
         fun rescan() {
             games.clear()
             games.addAll(listGames(MuffinApp.romsDir(this)))
+            resolveNames()
         }
 
         LaunchedEffect(Unit) {
@@ -99,6 +116,7 @@ class MainActivity : ComponentActivity() {
             coreReady = ok
             status = NativeBridge.statusText()
             if (ok) keyCount = NativeBridge.reloadAndCountKeys()
+            resolveNames()
         }
 
         val addGame = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -107,6 +125,9 @@ class MainActivity : ComponentActivity() {
         val addKeys = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) copyIn(uri, MuffinApp.mlcDir(this), fixedName = "keys.txt") {
                 if (coreReady) keyCount = NativeBridge.reloadAndCountKeys()
+                // An encrypted game's name can only be read once its key is there: ask again for the ones without.
+                games.filter { names[it.absolutePath] == it.nameWithoutExtension }.forEach { names.remove(it.absolutePath) }
+                resolveNames()
             }
         }
 
@@ -140,7 +161,7 @@ class MainActivity : ComponentActivity() {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(games, key = { it.absolutePath }) { game ->
                     Text(
-                        game.nameWithoutExtension,
+                        names[game.absolutePath] ?: game.nameWithoutExtension,
                         color = ground,
                         fontSize = 17.sp,
                         modifier = Modifier

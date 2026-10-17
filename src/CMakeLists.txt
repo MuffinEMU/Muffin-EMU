@@ -188,6 +188,7 @@ if(ANDROID)
 		ios/Bridge/Core/IOSTitleLaunch.cpp
 		ios/Bridge/Core/IOSTitlePause.cpp
 		ios/Bridge/Core/IOSDlcUpdateImport.cpp
+		ios/Bridge/Core/IOSCoverArt.cpp
 	)
 	target_include_directories(CemuBin PRIVATE android/Bridge ios/Bridge)
 	target_link_libraries(CemuBin PRIVATE
