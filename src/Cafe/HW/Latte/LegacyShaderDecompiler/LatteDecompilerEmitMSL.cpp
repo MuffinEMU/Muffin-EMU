@@ -2123,75 +2123,6 @@ static void _emitTEXSampleCoordInputComponent(LatteDecompilerShaderContext* shad
 	}
 }
 
-static const char* _texGprAccessElemTable[8] = {"x","y","z","w","_","_","_","_"};
-
-static char* _getTexGPRAccess(LatteDecompilerShaderContext* shaderContext, sint32 gprIndex, uint32 dataType, sint8 selX, sint8 selY, sint8 selZ, sint8 selW, char* tempBuffer)
-{
-	// as_type<float>(R{}i.w)
-	*tempBuffer = '\0';
-	uint8 elemCount = (selX >= 0 ? 1 : 0) + (selY >= 0 ? 1 : 0) + (selZ >= 0 ? 1 : 0) + (selW >= 0 ? 1 : 0);
-	if (shaderContext->typeTracker.defaultDataType == LATTE_DECOMPILER_DTYPE_SIGNED_INT)
-	{
-		if (dataType == LATTE_DECOMPILER_DTYPE_SIGNED_INT)
-			; // no conversion
-		else if (dataType == LATTE_DECOMPILER_DTYPE_FLOAT)
-		{
-		    if (elemCount == 1)
-				strcat(tempBuffer, "as_type<float>(");
-			else
-			    strcat(tempBuffer, ("as_type<float" + std::to_string(elemCount) + ">(").c_str());
-		}
-		else
-			cemu_assert_unimplemented();
-		strcat(tempBuffer, _getRegisterVarName(shaderContext, gprIndex));
-		// _texGprAccessElemTable
-		strcat(tempBuffer, ".");
-		if (selX >= 0)
-			strcat(tempBuffer, _texGprAccessElemTable[selX]);
-		if (selY >= 0)
-			strcat(tempBuffer, _texGprAccessElemTable[selY]);
-		if (selZ >= 0)
-			strcat(tempBuffer, _texGprAccessElemTable[selZ]);
-		if (selW >= 0)
-			strcat(tempBuffer, _texGprAccessElemTable[selW]);
-		if (dataType == LATTE_DECOMPILER_DTYPE_SIGNED_INT)
-			; // no conversion
-		else if (dataType == LATTE_DECOMPILER_DTYPE_FLOAT)
-			strcat(tempBuffer, ")");
-		else
-			cemu_assert_unimplemented();
-	}
-	else if (shaderContext->typeTracker.defaultDataType == LATTE_DECOMPILER_DTYPE_FLOAT)
-	{
-		if (dataType == LATTE_DECOMPILER_DTYPE_SIGNED_INT)
-			cemu_assert_unimplemented();
-		else if (dataType == LATTE_DECOMPILER_DTYPE_FLOAT)
-			; // no conversion
-		else
-			cemu_assert_unimplemented();
-		strcat(tempBuffer, _getRegisterVarName(shaderContext, gprIndex));
-		// _texGprAccessElemTable
-		strcat(tempBuffer, ".");
-		if (selX >= 0)
-			strcat(tempBuffer, _texGprAccessElemTable[selX]);
-		if (selY >= 0)
-			strcat(tempBuffer, _texGprAccessElemTable[selY]);
-		if (selZ >= 0)
-			strcat(tempBuffer, _texGprAccessElemTable[selZ]);
-		if (selW >= 0)
-			strcat(tempBuffer, _texGprAccessElemTable[selW]);
-		if (dataType == LATTE_DECOMPILER_DTYPE_SIGNED_INT)
-			cemu_assert_unimplemented();
-		else if (dataType == LATTE_DECOMPILER_DTYPE_FLOAT)
-			; // no conversion
-		else
-			cemu_assert_unimplemented();
-	}
-	else
-		cemu_assert_unimplemented();
-	return tempBuffer;
-}
-
 static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContext, LatteDecompilerTEXInstruction* texInstruction)
 {
 	StringBuf* src = shaderContext->shaderSource;
@@ -2203,8 +2134,6 @@ static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContex
 
 	auto texDim = shaderContext->shader->textureUnitDim[texInstruction->textureFetch.textureIndex];
 
-	char tempBuffer0[32];
-	char tempBuffer1[32];
 	src->add(_getRegisterVarName(shaderContext, texInstruction->dstGpr));
 	src->add(".");
 	const char* resultElemTable[4] = {"x","y","z","w"};
@@ -2461,20 +2390,21 @@ static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContex
     				_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 2, LATTE_DECOMPILER_DTYPE_FLOAT);
     				src->add("))");
 
-    				src->addFmt(", {}", _getTexGPRAccess(shaderContext, texInstruction->srcGpr, LATTE_DECOMPILER_DTYPE_FLOAT, texInstruction->textureFetch.srcSel[3], -1, -1, -1, tempBuffer0));
+    				// compare value. Every coordinate and compare read below goes through _emitTEXSampleCoordInputComponent: a
+    				// selector of 4 or 5 is the constant 0 or 1, which the swizzle table spelled as "R0f._" and the shader did not compile.
+    				src->add(", ");
+    				_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 3, LATTE_DECOMPILER_DTYPE_FLOAT);
     			}
     			else if (texDim == Latte::E_DIM::DIM_CUBEMAP)
     			{
     				// 2 coords + faceId
-    				if (texInstruction->textureFetch.srcSel[0] >= 4 || texInstruction->textureFetch.srcSel[1] >= 4)
-    				{
-    					debugBreakpoint();
-    				}
-    				src->addFmt("redcCUBEReverse({},", _getTexGPRAccess(shaderContext, texInstruction->srcGpr, LATTE_DECOMPILER_DTYPE_FLOAT, texInstruction->textureFetch.srcSel[0], texInstruction->textureFetch.srcSel[1], -1, -1, tempBuffer0));
-				src->add("int(");
+    				src->add("redcCUBEReverse(float2(");
+    				_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 0, LATTE_DECOMPILER_DTYPE_FLOAT);
+    				src->add(", ");
+    				_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 1, LATTE_DECOMPILER_DTYPE_FLOAT);
+    				src->add("), int(");
 				_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 2, LATTE_DECOMPILER_DTYPE_FLOAT);
-				src->add(")");
-    				src->addFmt(")");
+				src->add("))");
     				src->addFmt(", uint(cubeMapArrayIndex{})", texInstruction->textureFetch.textureIndex); // cubemap index
     				// compare value: x/y are the face coordinates and z the face id, so w is the only component left for it.
     				// depthcube_array::sample_compare takes it after the array index; without it the shader does not compile.
@@ -2484,23 +2414,20 @@ static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContex
     			else if (texDim == Latte::E_DIM::DIM_1D)
     			{
     				// 1 coord + 1 unused coord (per  spec) + compare value
-    				if (texInstruction->textureFetch.srcSel[0] >= 4)
-    				{
-    					debugBreakpoint();
-    				}
-    				src->addFmt("{}, {}", _getTexGPRAccess(shaderContext, texInstruction->srcGpr, LATTE_DECOMPILER_DTYPE_FLOAT, texInstruction->textureFetch.srcSel[0], -1, -1, -1, tempBuffer0), _getTexGPRAccess(shaderContext, texInstruction->srcGpr, LATTE_DECOMPILER_DTYPE_FLOAT, texInstruction->textureFetch.srcSel[3], -1, -1, -1, tempBuffer1));
+    				_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 0, LATTE_DECOMPILER_DTYPE_FLOAT);
+    				src->add(", ");
+    				_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 3, LATTE_DECOMPILER_DTYPE_FLOAT);
     			}
 				else
 				{
-					// 2 coords + compare value (as float3)
-    				if (texInstruction->textureFetch.srcSel[0] >= 4 && texInstruction->textureFetch.srcSel[1] >= 4)
-    				{
-    					debugBreakpoint();
-    				}
-					const uint8 compareSelector = texOpcode == GPU7_TEX_INST_SAMPLE_C_L ?
-						texInstruction->textureFetch.srcSel[2] :
-						texInstruction->textureFetch.srcSel[3];
-					src->addFmt("float2({}), {}", _getTexGPRAccess(shaderContext, texInstruction->srcGpr, LATTE_DECOMPILER_DTYPE_FLOAT, texInstruction->textureFetch.srcSel[0], texInstruction->textureFetch.srcSel[1], -1, -1, tempBuffer0), _getTexGPRAccess(shaderContext, texInstruction->srcGpr, LATTE_DECOMPILER_DTYPE_FLOAT, compareSelector, -1, -1, -1, tempBuffer1));
+					// 2 coords + compare value (SAMPLE_C_L keeps its level in w, so its compare value is in z)
+					const sint32 compareComponent = texOpcode == GPU7_TEX_INST_SAMPLE_C_L ? 2 : 3;
+					src->add("float2(");
+					_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 0, LATTE_DECOMPILER_DTYPE_FLOAT);
+					src->add(", ");
+					_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 1, LATTE_DECOMPILER_DTYPE_FLOAT);
+					src->add("), ");
+					_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, compareComponent, LATTE_DECOMPILER_DTYPE_FLOAT);
     			}
     		}
     		else if(texDim == Latte::E_DIM::DIM_2D_ARRAY)
@@ -2528,19 +2455,19 @@ static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContex
     		else if( texDim == Latte::E_DIM::DIM_CUBEMAP )
     		{
     			// 2 coords + faceId
-    			cemu_assert_debug(texInstruction->textureFetch.srcSel[0] < 4);
-    			cemu_assert_debug(texInstruction->textureFetch.srcSel[1] < 4);
-    			src->addFmt("redcCUBEReverse({},", _getTexGPRAccess(shaderContext, texInstruction->srcGpr, LATTE_DECOMPILER_DTYPE_FLOAT, texInstruction->textureFetch.srcSel[0], texInstruction->textureFetch.srcSel[1], -1, -1, tempBuffer0));
-			src->add("int(");
+    			src->add("redcCUBEReverse(float2(");
+    			_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 0, LATTE_DECOMPILER_DTYPE_FLOAT);
+    			src->add(", ");
+    			_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 1, LATTE_DECOMPILER_DTYPE_FLOAT);
+    			src->add("), int(");
 			_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 2, LATTE_DECOMPILER_DTYPE_FLOAT);
-			src->add(")");
-    			src->add(")");
+			src->add("))");
     			src->addFmt(", uint(cubeMapArrayIndex{})", texInstruction->textureFetch.textureIndex); // cubemap index
     		}
     		else if( texDim == Latte::E_DIM::DIM_1D )
     		{
     			// 1 coord
-    			src->add(_getTexGPRAccess(shaderContext, texInstruction->srcGpr, LATTE_DECOMPILER_DTYPE_FLOAT, texInstruction->textureFetch.srcSel[0], -1, -1, -1, tempBuffer0));
+    			_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 0, LATTE_DECOMPILER_DTYPE_FLOAT);
     		}
     		else
     		{
@@ -2594,30 +2521,28 @@ static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContex
     		}
     	}
     	// gradient parameters
+    	// (1D and 1D array textures have no mips in Metal and their sample() takes no lod option at all, so they get none;
+    	// cube maps are left out because the gradients a shader sets are in its own pre-projection space)
     	if (texOpcode == GPU7_TEX_INST_SAMPLE_G)
     	{
-		if (texDim == Latte::E_DIM::DIM_1D)
-		{
-			src->add(", gradient1d(gradH.x, gradV.x)");
-		}
-		else if (texDim == Latte::E_DIM::DIM_2D)
+    		// a bias of b levels is a scale of the gradients by 2^b, since the level is the log2 of their length
+    		const std::string gradScale = hasLodBiasUniform ? fmt::format(" * exp2({})", lodBiasTerm) : std::string();
+		if (texDim == Latte::E_DIM::DIM_2D || texDim == Latte::E_DIM::DIM_2D_ARRAY)
     		{
-    			// a bias of b levels is a scale of the gradients by 2^b, since the level is the log2 of their length
-    			if (hasLodBiasUniform)
-    				src->addFmt(", gradient2d(gradH.xy * exp2({}), gradV.xy * exp2({}))", lodBiasTerm, lodBiasTerm);
-    			else
-    				src->add(", gradient2d(gradH.xy, gradV.xy)");
+    			src->addFmt(", gradient2d(gradH.xy{}, gradV.xy{})", gradScale, gradScale);
     		}
-		else
+		else if (texDim == Latte::E_DIM::DIM_3D)
     		{
-    			cemu_assert_unimplemented();
+    			src->addFmt(", gradient3d(gradH.xyz{}, gradV.xyz{})", gradScale, gradScale);
     		}
     	}
 
     	// offset
-		if( texOpcode == GPU7_TEX_INST_SAMPLE_L || texOpcode == GPU7_TEX_INST_SAMPLE_LB || texOpcode == GPU7_TEX_INST_SAMPLE_G || texOpcode == GPU7_TEX_INST_SAMPLE_LZ || texOpcode == GPU7_TEX_INST_SAMPLE_C_LZ || texOpcode == GPU7_TEX_INST_SAMPLE || texOpcode == GPU7_TEX_INST_SAMPLE_C )
+		if( texOpcode == GPU7_TEX_INST_SAMPLE_L || texOpcode == GPU7_TEX_INST_SAMPLE_LB || texOpcode == GPU7_TEX_INST_SAMPLE_G || texOpcode == GPU7_TEX_INST_SAMPLE_LZ || texOpcode == GPU7_TEX_INST_SAMPLE_C_LZ || texOpcode == GPU7_TEX_INST_SAMPLE || texOpcode == GPU7_TEX_INST_SAMPLE_C || texOpcode == GPU7_TEX_INST_SAMPLE_C_L )
     	{
-    		if( hasOffset )
+    		// sampleCompareEmulate(tex, sampler, coord, compare) takes no offset: an emulated compare (1D, 1D array or 3D
+    		// texture) with one would get a fifth argument and the shader would not compile, so the offset is dropped there
+    		if( hasOffset && !emulateCompare )
     		{
     			uint8 offsetComponentCount = 0;
     			if( texDim == Latte::E_DIM::DIM_1D )
@@ -2799,6 +2724,12 @@ static void _emitTEXGetCompTexLodCode(LatteDecompilerShaderContext* shaderContex
 		// framebuffer fetch assumes one texel per pixel
 		src->add("float lod = 0.0;" _CRLF "float level = 0.0;" _CRLF);
 	}
+	else if (shaderContext->shaderType != LatteConst::ShaderType::Pixel)
+	{
+		// calculate_unclamped_lod needs screen-space derivatives and exists in fragment functions only; the other stages have
+		// no derivatives and sample the base level, so that is the level reported
+		src->add("float lod = 0.0;" _CRLF "float level = 0.0;" _CRLF);
+	}
 	else
 	{
 		src->addFmt("float lod = tex{}.calculate_unclamped_lod(samplr{}, ", textureIndex, textureIndex);
@@ -2851,14 +2782,23 @@ static void _emitTEXGetGradientsHV(LatteDecompilerShaderContext* shaderContext, 
 	StringBuf* src = shaderContext->shaderSource;
 	const char* function = texInstruction->opcode == GPU7_TEX_INST_GET_GRADIENTS_H ? "dfdx" : "dfdy";
 	src->add("{" _CRLF);
-	src->addFmt("float4 gradient = {}(float4(", function);
-	for (sint32 i = 0; i < 4; ++i)
+	if (shaderContext->shaderType != LatteConst::ShaderType::Pixel)
 	{
-		if (i != 0)
-			src->add(", ");
-		_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, i, LATTE_DECOMPILER_DTYPE_FLOAT);
+		// dfdx/dfdy exist in fragment functions only; outside one there is no neighbouring pixel to difference against, so the
+		// gradient is zero (the hardware has no derivatives in those stages either)
+		src->add("float4 gradient = float4(0.0);" _CRLF);
 	}
-	src->add("));" _CRLF);
+	else
+	{
+		src->addFmt("float4 gradient = {}(float4(", function);
+		for (sint32 i = 0; i < 4; ++i)
+		{
+			if (i != 0)
+				src->add(", ");
+			_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, i, LATTE_DECOMPILER_DTYPE_FLOAT);
+		}
+		src->add("));" _CRLF);
+	}
 	for (sint32 i = 0; i < 4; ++i)
 	{
 		const uint8 selector = texInstruction->dstSel[i];
