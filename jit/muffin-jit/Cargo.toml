@@ -1,0 +1,54 @@
+# MuffinEMU — code by the MuffinEMU Development Team.
+# Copyright (c) 2026 MuffinEMU Development Team (Void).
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# muffin-jit is MuffinEMU's own device-link layer. It is written from scratch and
+# depends only on `idevice` (jkcoxson, MIT) for the lockdown / RSD / tunnel / mounter
+# / debug-proxy transports. Nothing is copied from StikJIT, StikDebug, EspressU or
+# Husk; the JIT protocol it speaks is the one MuffinEMU's own recompiler already
+# implements (see src/Cafe/HW/Espresso/Recompiler/PPCRecompiler.cpp).
+
+[package]
+name = "muffin-jit"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "muffin_jit"
+# staticlib: one archive the helper app extension links. cdylib is not used on iOS.
+crate-type = ["staticlib"]
+
+[dependencies]
+# The only outside dependency. rustcrypto keeps it pure-Rust so the iOS cross-build
+# needs no C toolchain for the TLS/crypto backend; obfuscate hides service-name
+# strings exactly as the upstream tools build does.
+idevice = { git = "https://github.com/jkcoxson/idevice", tag = "v0.1.68", default-features = false, features = [
+  "rustcrypto",
+  "tcp",
+  "rsd",
+  "tss",
+  "xpc",
+  "core_device_proxy",
+  "tunnel_tcp_stack",
+  "remote_pairing",
+  "mobile_image_mounter",
+  "cryptexd",
+  "debug_proxy",
+  "mdns",
+  "obfuscate",
+] }
+plist = "1.8.0"
+tokio = { version = "1.44.1", features = ["rt", "rt-multi-thread", "net", "io-util", "time", "macros", "sync"] }
+libc = "0.2.171"
+log = "0.4.27"
+# On-device pairing (iOS 27): advertise `_remotepairing-pairable-host._tcp` so the
+# device's own remoted connects back and pairs. Only this path needs mDNS.
+mdns-sd = "0.19.1"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
