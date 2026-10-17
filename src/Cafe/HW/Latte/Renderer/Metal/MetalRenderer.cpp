@@ -2794,13 +2794,21 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
         encoderState.m_depthClipEnable = zClipEnable;
     }
 
-    // Visibility result mode
+    // Visibility result mode. Only sent when it changes: with no query running (most draws) it stays at the
+    // disabled mode a new encoder starts with, which used to be set again on every draw.
+    MTL::VisibilityResultMode visibilityMode = MTL::VisibilityResultModeDisabled;
+    NS::UInteger visibilityOffset = 0;
     if (m_occlusionQuery.m_active)
     {
-        renderCommandEncoder->setVisibilityResultMode(MTL::VisibilityResultModeCounting, (m_occlusionQuery.m_currentBuffer * OCCLUSION_QUERY_POOL_SIZE + m_occlusionQuery.m_currentIndex) * sizeof(uint64));
+        visibilityMode = MTL::VisibilityResultModeCounting;
+        visibilityOffset = (m_occlusionQuery.m_currentBuffer * OCCLUSION_QUERY_POOL_SIZE + m_occlusionQuery.m_currentIndex) * sizeof(uint64);
     }
-    else
-        renderCommandEncoder->setVisibilityResultMode(MTL::VisibilityResultModeDisabled, 0);
+    if (visibilityMode != encoderState.m_visibilityMode || visibilityOffset != encoderState.m_visibilityOffset)
+    {
+        renderCommandEncoder->setVisibilityResultMode(visibilityMode, visibilityOffset);
+        encoderState.m_visibilityMode = visibilityMode;
+        encoderState.m_visibilityOffset = visibilityOffset;
+    }
 
     // todo - how does culling behave with rects?
     // right now we just assume that their winding is always CW
@@ -3873,35 +3881,38 @@ MetalDrawBreadcrumb* MetalRenderer::BeginDrawBreadcrumb()
     return m_crumb;
 }
 
-void MetalRenderer::RecordBreadcrumbTexture(LatteConst::ShaderType shaderType, uint32 unit, uint32 dim, MTL::Texture* texture, bool fallback)
+void MetalRenderer::RecordBreadcrumbTexture(LatteConst::ShaderType shaderType, uint32 unit, uint32 dim, const LatteTextureView* view, bool fallback)
 {
     if (!m_crumb)
         return;
     if (fallback)
         m_crumb->suspect |= MetalDrawBreadcrumb::SUSPECT_TEXTURE;
-    if (!texture || m_crumb->numTextures >= MetalDrawBreadcrumb::MAX_TEXTURES)
+    if (!view || m_crumb->numTextures >= MetalDrawBreadcrumb::MAX_TEXTURES)
         return;
+    // Plain reads of the Latte view and its texture; see the note on MetalDrawBreadcrumb::textures. The Metal texture
+    // has min(mipLevels, maxPossibleMipLevels) levels (LatteTextureMtl) and the view is cut to what is left from its
+    // first level (LatteTextureViewMtl::CreateSwizzledView), so the same numbers are recorded here.
+    const LatteTexture* texture = view->baseTexture;
+    const sint32 textureMips = std::max<sint32>(1, std::min(texture->mipLevels, texture->maxPossibleMipLevels));
     auto& entry = m_crumb->textures[m_crumb->numTextures++];
     entry.stage = static_cast<uint8>(shaderType);
     entry.unit = static_cast<uint8>(unit);
     entry.type = static_cast<uint8>(dim);
     entry.fallback = fallback ? 1 : 0;
-    entry.width = (uint32)texture->width();
-    entry.height = (uint32)texture->height();
-    entry.depth = (uint32)std::max<NS::UInteger>(texture->depth(), texture->arrayLength());
-    entry.mips = (uint16)texture->mipmapLevelCount();
-    entry.pixelFormat = (uint16)texture->pixelFormat();
-    if (auto* parent = texture->parentTexture())
-    {
-        entry.parentLevel = (uint16)texture->parentRelativeLevel();
-        entry.parentSlice = (uint16)texture->parentRelativeSlice();
-        entry.parentMips = (uint16)parent->mipmapLevelCount();
-        entry.parentLayers = (uint16)parent->arrayLength();
-        // a view has to lie inside the texture it was made from
-        if ((NS::UInteger)entry.parentLevel + texture->mipmapLevelCount() > parent->mipmapLevelCount() ||
-            (NS::UInteger)entry.parentSlice + texture->arrayLength() > std::max<NS::UInteger>(1, parent->arrayLength()) * (parent->textureType() == MTL::TextureTypeCubeArray ? 6 : 1))
-            m_crumb->suspect |= MetalDrawBreadcrumb::SUSPECT_TEXTURE;
-    }
+    entry.isDepth = texture->isDepth ? 1 : 0;
+    entry.width = (uint32)std::max<sint32>(0, texture->width);
+    entry.height = (uint32)std::max<sint32>(0, texture->height);
+    entry.depth = (uint32)std::max<sint32>(0, texture->depth);
+    entry.mips = (uint16)std::max<sint32>(1, std::min(view->numMip, textureMips - view->firstMip));
+    entry.slices = (uint16)std::max<sint32>(0, view->numSlice);
+    entry.format = (uint16)view->format;
+    entry.parentLevel = (uint16)std::max<sint32>(0, view->firstMip);
+    entry.parentSlice = (uint16)std::max<sint32>(0, view->firstSlice);
+    entry.parentMips = (uint16)textureMips;
+    entry.parentLayers = (uint16)std::max<sint32>(0, texture->depth);
+    // a view has to lie inside the texture it was made from
+    if (view->firstMip < 0 || view->firstSlice < 0 || view->firstMip + view->numMip > textureMips || view->firstSlice + view->numSlice > texture->depth)
+        m_crumb->suspect |= MetalDrawBreadcrumb::SUSPECT_TEXTURE;
 }
 
 // Logs what the last draws bound, so a GPU fault can be tied to a buffer, a texture or an index range from the
@@ -3948,7 +3959,7 @@ void MetalRenderer::DumpDrawBreadcrumbs(uint32 firstDraw, uint32 lastDraw, bool 
         for (uint32 i = 0; i < d.numTextures; ++i)
         {
             const auto& t = d.textures[i];
-            textures += fmt::format(" tex{}.{}[{}x{}x{} mips {} fmt {} dim {}{} view of level {} slice {} in {} mips {} layers]", (uint32)t.stage, (uint32)t.unit, t.width, t.height, t.depth, (uint32)t.mips, (uint32)t.pixelFormat, (uint32)t.type, t.fallback ? " FALLBACK" : "", (uint32)t.parentLevel, (uint32)t.parentSlice, (uint32)t.parentMips, (uint32)t.parentLayers);
+            textures += fmt::format(" tex{}.{}[guest {}x{}x{} fmt {:04x}{} dim {}{} view of {} mips {} slices at level {} slice {} in {} mips {} slices]", (uint32)t.stage, (uint32)t.unit, t.width, t.height, t.depth, (uint32)t.format, t.isDepth ? " depth" : "", (uint32)t.type, t.fallback ? " FALLBACK" : "", (uint32)t.mips, (uint32)t.slices, (uint32)t.parentLevel, (uint32)t.parentSlice, (uint32)t.parentMips, (uint32)t.parentLayers);
         }
         cemuLog_log(LogType::Force, "Metal:   textures{}", textures);
     };
@@ -4891,25 +4902,26 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
         
         MTL::Texture* mtlTexture = nullptr;
         bool textureViewFailed = false;
-        const bool integerTexture = shader->textureIsIntegerFormat[relative_textureUnit];
-        MTL::Texture* nullTexture = GetNullSampledTexture(textureDim, integerTexture, depthTexture);
+        const LatteTextureView* recordedView = nullptr; // the view the breadcrumb describes: the one bound, or the one that failed
+        // The typed null texture is only looked up (a map lookup) when a unit really needs it; most units have their texture
+        const auto nullTexture = [&]() { return GetNullSampledTexture(textureDim, shader->textureIsIntegerFormat[relative_textureUnit], depthTexture); };
         if (!textureView)
         {
-            mtlTexture = nullTexture;
+            mtlTexture = nullTexture();
         }
         else if (textureDim == Latte::E_DIM::DIM_1D && (textureView->dim != Latte::E_DIM::DIM_1D))
         {
-            mtlTexture = nullTexture;
+            mtlTexture = nullTexture();
         }
         else if (textureDim == Latte::E_DIM::DIM_2D && (textureView->dim != Latte::E_DIM::DIM_2D && textureView->dim != Latte::E_DIM::DIM_2D_MSAA))
         {
-            mtlTexture = nullTexture;
+            mtlTexture = nullTexture();
         }
         else if (textureDim != Latte::E_DIM::DIM_1D &&
                  textureDim != Latte::E_DIM::DIM_2D &&
                  textureView->dim != textureDim)
         {
-            mtlTexture = nullTexture;
+            mtlTexture = nullTexture();
         }
         else
         {
@@ -4919,16 +4931,25 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
             mtlTexture = textureView->GetSwizzledView(word4);
             PerfTelemetry::SampleEnd(telemetry.gpuTexViewLookupNs, viewStart);
             PerfTelemetry::SampleCount(telemetry.gpuTexViewLookups);
+            recordedView = textureView;
             if (!mtlTexture)
             {
                 // The view could not be created (its base texture was replaced by the null texture after an
                 // allocation failure). A null texture in an argument buffer is a GPU read of address zero.
-                mtlTexture = nullTexture;
+                mtlTexture = nullTexture();
                 textureViewFailed = true;
             }
+            else if (depthTexture && !textureView->baseTexture->isDepth)
+            {
+                // The shader compares against this unit (a depth2d in MSL), but what the game bound is a colour texture
+                // (depth it rendered into a colour target, say). Vulkan samples that with a compare sampler as if it
+                // were depth; what a Metal sampler makes of a colour texture in a depth slot is undefined. Logged so a
+                // device log can tie a wrong shadow to it.
+                cemuLog_logOnce(LogType::Force, "Metal shader {:016x} compares against texture unit {} (format {:04x}), which is a colour texture, not a depth texture; the result of that compare is undefined on Metal", shader->baseHash, relative_textureUnit, (uint32)textureView->format);
+            }
         }
-        
-        RecordBreadcrumbTexture(shader->shaderType, relative_textureUnit, (uint32)textureDim, mtlTexture, textureViewFailed);
+
+        RecordBreadcrumbTexture(shader->shaderType, relative_textureUnit, (uint32)textureDim, recordedView, textureViewFailed);
         
         if (argumentEncoder)
         {
