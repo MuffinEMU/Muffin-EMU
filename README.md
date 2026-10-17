@@ -14,6 +14,7 @@
 
 [![Add to SideStore](https://img.shields.io/badge/add%20to-SideStore%20%7C%20AltStore-E5652E?style=for-the-badge&labelColor=1d1d1f&logo=appstore&logoColor=white)](https://muffinemu.github.io/MuffinEMU/docs/installation.html)
 [![Documentation](https://img.shields.io/badge/docs-muffinemu.github.io-E5652E?style=for-the-badge&labelColor=1d1d1f&logo=readthedocs&logoColor=white)](https://muffinemu.github.io/MuffinEMU/)
+[![Join the Discord](https://img.shields.io/badge/join%20the-Discord-E5652E?style=for-the-badge&labelColor=1d1d1f&logo=discord&logoColor=white)](https://discord.gg/6FG8k29Q5)
 
 **Official website: [MuffinEMU.github.io/MuffinEMU](https://muffinemu.github.io/MuffinEMU/)**
 
@@ -22,7 +23,7 @@
 [Releases](https://github.com/MuffinEMU/Muffin-EMU/releases) ·
 [Report a bug](https://github.com/MuffinEMU/Muffin-EMU/issues/new/choose) ·
 [Discussions](https://github.com/MuffinEMU/Muffin-EMU/discussions) ·
-[Discord](https://muffinemu.github.io/MuffinEMU/discord) ·
+[Discord](https://discord.gg/6FG8k29Q5) ·
 [Community stats](https://github.com/MuffinEMU/Muffin-EMU/blob/stats/STATS.md)
 
 </div>
@@ -103,7 +104,7 @@ MuffinEMU is under active development and releases often. Expect some games not 
 
 ## Compatible games
 
-See [COMPATIBILITY.md](COMPATIBILITY.md) for games that have been verified working on certain devices running MuffinEMU.
+See [COMPATIBILITY.md](COMPATIBILITY.md) for games that have been verified working on certain devices running MuffinEMU. Played something? Tell us in #game-compatibility on the [MuffinEMU Discord](https://discord.gg/6FG8k29Q5).
 
 ## Building
 
