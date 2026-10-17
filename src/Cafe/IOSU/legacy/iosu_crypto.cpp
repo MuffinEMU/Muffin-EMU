@@ -324,6 +324,12 @@ bool iosuCrypto_loadCertificate(uint32 id, std::wstring_view mlcSubpath, std::ws
 			cemuLog_log(LogType::Force, "Private key file has invalid length. Possibly corrupted? File: {}", pkeyPath.generic_string());
 			return false;
 		}
+		else if (pkeyData->size() > 4096)
+		{
+			// decrypted into a 4 KB stack buffer below; a real key file is about 1.2 KB
+			cemuLog_log(LogType::Force, "Private key file is too large to be a key. Possibly corrupted? File: {}", pkeyPath.generic_string());
+			return false;
+		}
 	}
 	// load certificate
 	unsigned char* tempPtr = (unsigned char*)certData->data();
