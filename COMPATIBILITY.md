@@ -12,7 +12,7 @@
 
 **Games reported working in MuffinEMU, the free Wii U emulator for iPhone and iPad.**
 
-[![Games listed](https://img.shields.io/badge/games%20listed-10-E5652E?style=for-the-badge&labelColor=1d1d1f)](#compatible-games)
+[![Games listed](https://img.shields.io/badge/games%20listed-11-E5652E?style=for-the-badge&labelColor=1d1d1f)](#compatible-games)
 [![Report a game](https://img.shields.io/badge/report%20a%20game-open%20an%20issue-E5652E?style=for-the-badge&labelColor=1d1d1f&logo=github&logoColor=white)](https://github.com/MuffinEMU/Muffin-EMU/issues/new/choose)
 [![Back to README](https://img.shields.io/badge/back%20to-README-E5652E?style=for-the-badge&labelColor=1d1d1f)](README.md)
 
@@ -43,6 +43,7 @@ This page lists games that players have reported running in MuffinEMU. Reports c
 | **Super Mario 3D World** | Runs well | 60 fps on an iPhone 13 with JIT. |
 | **Splatoon** | Runs well | 60 fps on an iPhone 12. Another player reports 15 to 30 fps (device not stated). The Wii U version is light on the GPU, so it is a good first game to try. |
 | **The Legend of Zelda: Breath of the Wild** | Playable | Runs really well on an iPhone 15 Pro. 23 to 30 fps with the FPS++ graphic pack on an iPhone 13 Pro Max. One player could not load a save the next day (black screen) on an iPhone 13 Pro Max. |
+| **The Legend of Zelda: Twilight Princess HD** | Playable | 20 to 30 fps on a base iPhone 17 (iOS 27) with MuffinEMU 10.3 and default settings. The graphics look great; the frame rate still needs work. |
 | **Bayonetta** | Runs with issues | Plays, but the audio is delayed and the frame rate is unstable. Reported on an earlier build. |
 | **Call of Duty: Black Ops II** | Runs with issues | Loads and plays. The graphics side still needs work. One report with a video. |
 | **Need for Speed: Most Wanted** | Doesn't work yet | Reported not working on an iPhone 15 Pro with JIT on and keys set up. One report, not resolved yet. |
@@ -87,6 +88,12 @@ Videos for each game can be added below as they are recorded.
 **Status:** Reported working.
 
 <!-- VIDEO: The Legend of Zelda: The Wind Waker HD. Paste an uploaded GitHub video URL (https://github.com/user-attachments/assets/...) on its own line here. -->
+
+### The Legend of Zelda: Twilight Princess HD
+
+**Status:** Playable. 20 to 30 fps on a base iPhone 17 (iOS 27) with MuffinEMU 10.3 and default settings; the graphics look great, the frame rate still needs work.
+
+<!-- VIDEO: The Legend of Zelda: Twilight Princess HD. Paste an uploaded GitHub video URL (https://github.com/user-attachments/assets/...) on its own line here. -->
 
 ## Contributing
 
