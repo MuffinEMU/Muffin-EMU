@@ -642,6 +642,10 @@ namespace LatteDecompiler
 
 		    if (decompilerContext->shaderType == LatteConst::ShaderType::Vertex && usesGeometryShader)
 				decompilerContext->hasUniformVarBlock = true; // uf_verticesPerInstance
+			// the sampler LOD bias of every texture sampled with a level of detail (tex{}LodBias): without the block the
+			// MSL sample code would name a supportBuffer the function never receives
+			if (decompilerContext->analyzer.texUnitUsesLodBias.any())
+				decompilerContext->hasUniformVarBlock = true;
 		}
 #endif
 	}
