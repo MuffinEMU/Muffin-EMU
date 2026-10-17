@@ -109,7 +109,11 @@ class GameActivity : ComponentActivity() {
                                     NativeBridge.setOneCore(MuffinApp.oneCore(this@GameActivity))
                                     thread(name = "Muffin boot") {
                                         val code = NativeBridge.bootTitle(path)
-                                        runOnUiThread { status = if (code == 0) "" else NativeBridge.statusText() }
+                                        runOnUiThread {
+                                            status = if (code == 0) "" else NativeBridge.statusText()
+                                            // Home pressed while it was booting: hold it now that it's up.
+                                            updatePaused()
+                                        }
                                     }
                                 } else if (surfaceLost) {
                                     // A new surface after the old one was destroyed (back from Home): the core
@@ -176,6 +180,19 @@ class GameActivity : ComponentActivity() {
         while (isActive) {
             delay(200)
             if (keyboardOpen) continue
+            // A message the core asked the player to see (WindowSystem::ShowErrorDialog), as "title\nmessage".
+            NativeBridge.pollMessage()?.let { message ->
+                val title = message.substringBefore('\n')
+                val body = message.substringAfter('\n', "")
+                keyboardOpen = true
+                AlertDialog.Builder(this@GameActivity)
+                    .setTitle(title)
+                    .setMessage(body)
+                    .setPositiveButton("OK", null)
+                    .setOnDismissListener { keyboardOpen = false }
+                    .show()
+            }
+            if (keyboardOpen) continue
             val request = NativeBridge.pendingKeyboard() ?: continue
             val generation = request[0].toIntOrNull() ?: continue
             val maxLength = request[1].toIntOrNull() ?: 0
@@ -199,9 +216,14 @@ class GameActivity : ComponentActivity() {
     /** The bridge reports a running frame count; the readout is its change over each second while a game runs. */
     private fun countFrames() = lifecycleScope.launch {
         var last = -1.0
+        var wasRunning = false
         while (isActive) {
             delay(1000)
-            if (!booted || !NativeBridge.isTitleRunning()) { last = -1.0; fps = -1; continue }
+            val running = booted && NativeBridge.isTitleRunning()
+            // The game ended on its own (it quit, or the engine stopped it): say why instead of leaving a black screen.
+            if (wasRunning && !running && status.isEmpty()) status = NativeBridge.statusText().ifEmpty { "The game stopped." }
+            wasRunning = running
+            if (!running) { last = -1.0; fps = -1; continue }
             val now = NativeBridge.framesPerSecond()
             if (last >= 0) fps = (now - last).toInt().coerceAtLeast(0)
             last = now
