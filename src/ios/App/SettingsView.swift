@@ -57,7 +57,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         switch self {
         case .cpu: return "cores threads multicore interpreter speed processor performance"
         case .jit: return "recompiler stikjit stikdebug pairing debugger enabler"
-        case .graphics: return "resolution upscale vsync vulkan metal renderer filter gamma frame rate"
+        case .graphics: return "resolution upscale vsync vulkan metal renderer filter gamma frame rate texture filtering anisotropic sharp blurry distance"
         case .shaderCache: return "shaders stutter precompile cache compile"
         case .emulatedClock: return "timing advanced clock speed"
         case .onScreenControls: return "pad gamepad touch layout buttons skin controller sticks"
@@ -65,7 +65,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         case .emulatedDevices: return "skylanders disney infinity lego dimensions toypad portal figures toys amiibo devices"
         case .display: return "screen external tv layout single screen gamepad position orientation"
         case .audio: return "sound volume latency channels music"
-        case .overlay: return "fps counter stats hud"
+        case .overlay: return "fps counter stats hud performance readout frame rate speed cpu ram"
         case .notifications: return "alerts messages banners"
         case .library: return "games sort list grid cards covers size tap layout"
         case .coverArt: return "covers images artwork box"
