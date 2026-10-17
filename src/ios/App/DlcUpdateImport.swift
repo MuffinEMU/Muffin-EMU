@@ -157,11 +157,12 @@ enum DlcUpdateImport {
         strictMatch: Bool = false,
         allowReinstall: Bool = false
     ) async throws -> ImportedContent {
-        guard source.startAccessingSecurityScopedResource() else {
-            throw ImportError.accessDenied
-        }
+        // Only a file from outside the app's own container has a security scope to start: a folder or
+        // .wua picked from MuffinEMU's own Documents folder returns false here, and treating that as
+        // "no access" refused content that was perfectly readable. The exists check below decides.
         // Held until `import` returns, including across the await below.
-        defer { source.stopAccessingSecurityScopedResource() }
+        let scoped = source.startAccessingSecurityScopedResource()
+        defer { if scoped { source.stopAccessingSecurityScopedResource() } }
 
         guard let mlcRoot = mlcRoot() else { throw ImportError.accessDenied }
         let fileManager = FileManager.default
