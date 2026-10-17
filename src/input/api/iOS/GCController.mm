@@ -42,9 +42,9 @@ GCControllerDevice::GCControllerDevice(size_t player_index,
     // (ios_physical_stick_deadzone in CemuBridge.mm), so a controller feels exactly as it did. The core
     // default (meant for raw desktop controllers with a settings page to change it) was applied on top of
     // the on-screen pads' own, so nothing moved until about 30% of the way out whatever the deadzone
-    // slider said. The core still drops an axis below 0.1 (kAxisThreshold in update_state, which
-    // get_axis_value needs), so that is the least either axis can send. Triggers keep the default: the
-    // GamePad's ZL/ZR are digital here and never read the trigger axis.
+    // slider said. The core's own per-axis cut (kAxisThreshold in update_state, which get_axis_value needs)
+    // is next to nothing on iOS, see ControllerState.h, so what the deadzone lets through is what the title
+    // gets. Triggers keep the default: the GamePad's ZL/ZR are digital here and never read the trigger axis.
     m_settings.axis.deadzone = 0.0f;
     m_settings.rotation.deadzone = 0.0f;
 }
