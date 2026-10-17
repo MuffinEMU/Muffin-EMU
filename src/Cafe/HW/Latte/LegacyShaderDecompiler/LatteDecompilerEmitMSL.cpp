@@ -2722,6 +2722,12 @@ static void _emitTEXGetCompTexLodCode(LatteDecompilerShaderContext* shaderContex
 		// framebuffer fetch assumes one texel per pixel
 		src->add("float lod = 0.0;" _CRLF "float level = 0.0;" _CRLF);
 	}
+	else if (shaderContext->shaderType != LatteConst::ShaderType::Pixel)
+	{
+		// calculate_unclamped_lod needs screen-space derivatives and exists in fragment functions only; the other stages have
+		// no derivatives and sample the base level, so that is the level reported
+		src->add("float lod = 0.0;" _CRLF "float level = 0.0;" _CRLF);
+	}
 	else
 	{
 		src->addFmt("float lod = tex{}.calculate_unclamped_lod(samplr{}, ", textureIndex, textureIndex);
@@ -2774,14 +2780,23 @@ static void _emitTEXGetGradientsHV(LatteDecompilerShaderContext* shaderContext, 
 	StringBuf* src = shaderContext->shaderSource;
 	const char* function = texInstruction->opcode == GPU7_TEX_INST_GET_GRADIENTS_H ? "dfdx" : "dfdy";
 	src->add("{" _CRLF);
-	src->addFmt("float4 gradient = {}(float4(", function);
-	for (sint32 i = 0; i < 4; ++i)
+	if (shaderContext->shaderType != LatteConst::ShaderType::Pixel)
 	{
-		if (i != 0)
-			src->add(", ");
-		_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, i, LATTE_DECOMPILER_DTYPE_FLOAT);
+		// dfdx/dfdy exist in fragment functions only; outside one there is no neighbouring pixel to difference against, so the
+		// gradient is zero (the hardware has no derivatives in those stages either)
+		src->add("float4 gradient = float4(0.0);" _CRLF);
 	}
-	src->add("));" _CRLF);
+	else
+	{
+		src->addFmt("float4 gradient = {}(float4(", function);
+		for (sint32 i = 0; i < 4; ++i)
+		{
+			if (i != 0)
+				src->add(", ");
+			_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, i, LATTE_DECOMPILER_DTYPE_FLOAT);
+		}
+		src->add("));" _CRLF);
+	}
 	for (sint32 i = 0; i < 4; ++i)
 	{
 		const uint8 selector = texInstruction->dstSel[i];
