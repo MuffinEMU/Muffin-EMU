@@ -660,13 +660,19 @@ struct LibraryListRow<Options: View>: View {
         CGFloat(min(max(cardSize, LibraryCardStyle.sizeRange.lowerBound), LibraryCardStyle.sizeRange.upperBound))
     }
 
+    /// One formatter for every row. Making a new one in each row's body was the expensive part of
+    /// scrolling a long list: a formatter loads locale data when it is created.
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter
+    }()
+
     private var detailLine: String {
         var parts: [String] = []
         if let region = game.region { parts.append(region) }
         if let entry = stats.entry(for: game.id) {
-            let relative = RelativeDateTimeFormatter()
-            relative.unitsStyle = .short
-            parts.append("Played " + relative.localizedString(for: entry.last, relativeTo: Date()))
+            parts.append("Played " + Self.relativeFormatter.localizedString(for: entry.last, relativeTo: Date()))
             if entry.count > 1 { parts.append("\(entry.count) launches") }
         } else {
             parts.append("Not played yet")

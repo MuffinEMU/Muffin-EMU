@@ -93,7 +93,14 @@ final class GraphicPackStore: NSObject, ObservableObject {
     private let bridgeQueue = DispatchQueue(label: "com.void.muffinemu.graphicpacks.bridge", qos: .userInitiated)
     private let workQueue = DispatchQueue(label: "com.void.muffinemu.graphicpacks.install", qos: .utility)
     private let defaults = UserDefaults.standard
-    private var cancelRequested = false
+    /// Set on the main thread by `cancel()` and polled from the install queue between zip entries,
+    /// so it goes through a lock rather than being a plain stored property read from two threads.
+    private let cancelLock = NSLock()
+    private var cancelRequestedStorage = false
+    private var cancelRequested: Bool {
+        get { cancelLock.lock(); defer { cancelLock.unlock() }; return cancelRequestedStorage }
+        set { cancelLock.lock(); cancelRequestedStorage = newValue; cancelLock.unlock() }
+    }
     private var apiTask: URLSessionDataTask?
 
     private enum Key {
