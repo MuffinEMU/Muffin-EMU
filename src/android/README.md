@@ -5,7 +5,9 @@ The same core as the iOS app (`Cemu.framework` there, `libCemu.so` here), with a
 - **Renderer:** Vulkan, the core's own backend, straight on the device's driver (no translation layer).
 - **CPU:** the AArch64 recompiler. Android lets an app run code it generates, so there is no JIT enabler step.
 - **Audio:** cubeb's Android backends (AAudio, OpenSL).
-- **Input:** the on-screen pad in `TouchPad.kt`, and any Bluetooth or USB controller Android reports.
+- **Input:** the on-screen pad in `TouchPad.kt`, and any Bluetooth or USB controller Android reports (Nintendo button layout, a 0.25 stick deadzone as on iOS).
+- **Screens:** one picture at a time. The TV/PAD control at the top of the pad swaps it; while the GamePad is shown, touching the picture is a touch on the GamePad's screen.
+- **Software keyboard:** when a game asks for text, a dialog with a text field opens (`GameActivity.watchKeyboard`, the mailbox in `src/gui/android/WindowSystem.cpp`).
 - **Minimum:** Android 10 (API 29), arm64, a Vulkan 1.1 GPU.
 
 ## Layout
@@ -22,7 +24,8 @@ The same core as the iOS app (`Cemu.framework` there, `libCemu.so` here), with a
 ## Where files go on the device
 
 `Android/data/io.github.muffinemu/files/` (the Files app shows it; no permission needed):
-`Roms/` for games (.wua, .wud, .wux, .rpx or an extracted folder), `mlc/` for the console's storage, saves and `keys.txt`.
+`Roms/` for games (.wua, .wud, .wux, .iso, .rpx or an extracted folder), `mlc/` for the console's storage, saves and `keys.txt`.
+Add game in the app copies the picked file there in the background; the original stays where it was.
 
 ## Building
 
