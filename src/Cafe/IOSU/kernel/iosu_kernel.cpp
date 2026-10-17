@@ -463,7 +463,9 @@ namespace iosu
 				return IOS_ERROR_INVALID;
 			}
 			IOSMsgQueueId msgQueueId = resMgr->msgQueueId;
-			_lock.unlock();
+			// The lock stays held while the slot is picked and filled. Every other reader and writer of the handle
+			// table holds it, and IOS_Open comes in from any PPC core: two cores opening a device at the same time
+			// could both pick the same free slot, and the second would overwrite the first's device
 			// create new handle
 			sint32 deviceHandleIndex = -1;
 			for (size_t i = 0; i < MAX_NUM_ACTIVE_DEV_HANDLES; i++)
@@ -485,7 +487,7 @@ namespace iosu
 			sActiveDeviceHandles[deviceHandleIndex].handleCheckValue = devHandle;
 			sActiveDeviceHandles[deviceHandleIndex].path = devicePath;
 			sActiveDeviceHandles[deviceHandleIndex].msgQueueId = msgQueueId;
-			sActiveDeviceHandles[deviceHandleIndex].hasDispatchTargetHandle = false;			
+			sActiveDeviceHandles[deviceHandleIndex].hasDispatchTargetHandle = false;
 			handleOut = devHandle;
 			return IOS_ERROR_OK;
 		}

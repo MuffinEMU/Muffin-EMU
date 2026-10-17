@@ -49,6 +49,8 @@ namespace iosu
 		bool isInitialized;
 	}iosuAcp = { 0 };
 
+	// GetText() is null for an element with no text (<version></version>), which some edited and homebrew meta.xml
+	// files have. sscanf on a null string ended the process, so the value reads as 0 like a missing element does
 	void _xml_parseU32(tinyxml2::XMLElement* xmlElement, const char* name, uint32be* v)
 	{
 		tinyxml2::XMLElement* subElement = xmlElement->FirstChildElement(name);
@@ -57,7 +59,7 @@ namespace iosu
 			return;
 		const char* text = subElement->GetText();
 		uint32 value;
-		if (sscanf(text, "%u", &value) == 0)
+		if (text == nullptr || sscanf(text, "%u", &value) == 0)
 			return;
 		*v = value;
 	}
@@ -70,7 +72,7 @@ namespace iosu
 			return;
 		const char* text = subElement->GetText();
 		uint32 value;
-		if (sscanf(text, "%x", &value) == 0)
+		if (text == nullptr || sscanf(text, "%x", &value) == 0)
 			return;
 		*v = value;
 	}
@@ -83,7 +85,7 @@ namespace iosu
 			return;
 		const char* text = subElement->GetText();
 		uint32 value;
-		if (sscanf(text, "%x", &value) == 0)
+		if (text == nullptr || sscanf(text, "%x", &value) == 0)
 			return;
 		*v = value;
 	}
@@ -96,7 +98,7 @@ namespace iosu
 			return;
 		const char* text = subElement->GetText();
 		uint64 value;
-		if (sscanf(text, "%" SCNx64, &value) == 0)
+		if (text == nullptr || sscanf(text, "%" SCNx64, &value) == 0)
 			return;
 		*v = _swapEndianU64(value);
 	}
