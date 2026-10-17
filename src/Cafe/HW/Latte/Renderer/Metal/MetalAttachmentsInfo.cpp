@@ -21,10 +21,12 @@ MetalAttachmentsInfo::MetalAttachmentsInfo(class CachedFBOMtl* fbo)
 	auto depthTexture = static_cast<LatteTextureViewMtl*>(fbo->depthBuffer.texture);
 	if (depthTexture && depthTexture->GetRGBAView())
 	{
-        depthFormat = depthTexture->format;
+        // The texture's own format, not the view's: a depth view always has the pixel format of the texture it was
+        // made from (LatteTextureViewMtl::CreateSwizzledView), and the pipeline has to name that format
+        depthFormat = depthTexture->baseTexture->format;
         // Same condition as the stencil attachment in CachedFBOMtl: a stencil pixel format for the pipeline only
-        // when the view's format really has stencil, never a depth-only format in the stencil slot
-        hasStencil = fbo->depthBuffer.hasStencil && GetMtlPixelFormatInfo(depthTexture->format, true).hasStencil;
+        // when the texture's format really has stencil, never a depth-only format in the stencil slot
+        hasStencil = fbo->depthBuffer.hasStencil && GetMtlPixelFormatInfo(depthFormat, true).hasStencil;
 	}
 }
 

@@ -76,6 +76,9 @@ struct MetalEncoderState
    	uint32 m_depthSlope = 0;
    	uint32 m_depthClamp = 0;
     bool m_depthClipEnable = true;
+    // A new encoder starts with visibility counting off, the same as these defaults
+    MTL::VisibilityResultMode m_visibilityMode = MTL::VisibilityResultModeDisabled;
+    NS::UInteger m_visibilityOffset = 0;
     struct {
         MTL::Buffer* m_buffer;
         size_t m_offset;
@@ -171,21 +174,26 @@ struct MetalDrawBreadcrumb
         uint64 bufferLength;
     } uniformBuffers[MAX_UNIFORM_BUFFERS]{};
 
+    // Taken from the Latte texture view (plain fields), not from the Metal objects: asking a texture for its size,
+    // levels, format and parent was eight calls into Metal per texture per draw. Sizes are the guest's; a graphic
+    // pack may scale the Metal texture.
     struct
     {
         uint8 stage;
         uint8 unit;
         uint8 type;
         uint8 fallback;
+        uint8 isDepth;
         uint32 width;
         uint32 height;
         uint32 depth;
-        uint16 mips;
-        uint16 pixelFormat;
-        uint16 parentLevel;  // first level of the parent texture this view starts at
-        uint16 parentSlice;  // first slice of the parent texture this view starts at
-        uint16 parentMips;   // level count of the parent texture (0 when the texture is not a view)
-        uint16 parentLayers; // array length of the parent texture
+        uint16 mips;          // levels of the view
+        uint16 slices;        // slices of the view
+        uint16 format;        // Latte format of the view
+        uint16 parentLevel;   // first level of the texture this view starts at
+        uint16 parentSlice;   // first slice of the texture this view starts at
+        uint16 parentMips;    // level count of the texture
+        uint16 parentLayers;  // slice count of the texture (faces for a cube map, planes for a 3D texture)
     } textures[MAX_TEXTURES]{};
 };
 
@@ -697,7 +705,6 @@ private:
 
 	// Transform feedback
 	MTL::Buffer* m_xfbRingBuffer = nullptr;
-	std::vector<MTL::Buffer*> m_retiredXfbRingBuffers;
 
 	// Occlusion queries
 	struct
@@ -738,7 +745,8 @@ private:
 
     // Draw breadcrumbs (see MetalDrawBreadcrumb)
     // Ring capacity is set when the renderer is created, large enough to cover every draw in the command buffers
-    // that can be in flight at once. It is the same on every device (about 1 KB per entry).
+    // that can be in flight at once. It is the same on every device (about 1 KB per entry). The ring itself is
+    // allocated by the first draw that records into it, so a session with breadcrumbs off never pays for it.
     uint32 m_breadcrumbCapacity = 1024;
     std::vector<MetalDrawBreadcrumb> m_breadcrumbs;
     uint32 m_breadcrumbNext = 0;
@@ -775,7 +783,8 @@ private:
 	// Draw breadcrumbs and GPU fault recovery
 	MetalDrawBreadcrumb* BeginDrawBreadcrumb();
 	void DumpDrawBreadcrumbs(uint32 firstDraw, uint32 lastDraw, bool haveRange);
-	void RecordBreadcrumbTexture(LatteConst::ShaderType shaderType, uint32 unit, uint32 dim, MTL::Texture* texture, bool fallback);
+	// view: the Latte view bound to the unit, null when a null texture stands in for a missing one
+	void RecordBreadcrumbTexture(LatteConst::ShaderType shaderType, uint32 unit, uint32 dim, const LatteTextureView* view, bool fallback);
 	bool RecoverFromGpuFault();
 
 	void EnsureImGuiBackend();

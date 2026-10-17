@@ -49,8 +49,8 @@ CachedFBOMtl::CachedFBOMtl(class MetalRenderer* metalRenderer, uint64 key) : Lat
 		depthAttachment->setLoadAction(MTL::LoadActionLoad);
 		depthAttachment->setStoreAction(MTL::StoreActionStore);
 
-		// setup stencil attachment
-		if (depthBuffer.hasStencil && GetMtlPixelFormatInfo(depthBuffer.texture->format, true).hasStencil)
+		// setup stencil attachment (the view carries the texture's own pixel format, so that is the format to ask)
+		if (depthBuffer.hasStencil && GetMtlPixelFormatInfo(depthBuffer.texture->baseTexture->format, true).hasStencil)
 		{
 		    auto stencilAttachment = m_renderPassDescriptor->stencilAttachment();
             stencilAttachment->setTexture(depthTexture);
