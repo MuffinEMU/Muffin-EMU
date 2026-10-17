@@ -491,8 +491,6 @@ void PPCInterpreter_PS_CMPU1(PPCInterpreter_t* hCPU, uint32 Opcode)
 	frB = (Opcode >> 11) & 0x1F;
 	frA = (Opcode >> 16) & 0x1F;
 	crfD = (Opcode >> 21) & (0x7 << 2);
-	double a = hCPU->fpr[frA].fp1;
-	double b = hCPU->fpr[frB].fp1;
 	fcmpu_espresso(hCPU, crfD, hCPU->fpr[frA].fp1, hCPU->fpr[frB].fp1);
 	PPCInterpreter_nextInstruction(hCPU);
 }
