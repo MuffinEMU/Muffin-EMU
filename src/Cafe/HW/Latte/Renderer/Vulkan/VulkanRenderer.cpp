@@ -740,7 +740,7 @@ VulkanRenderer::VulkanRenderer()
 		throw std::runtime_error("Unable to load instanced Vulkan functions");
 
 	// Workaround for BOTW + RADV. Runes like Magnesis and the camera cause GPU crashes.
-#if BOOST_OS_LINUX
+#if BOOST_OS_LINUX && !BOOST_PLAT_ANDROID
 	uint64 currentTitleId = CafeSystem::GetForegroundTitleId();
 	if (currentTitleId == 0x00050000101c9500 || currentTitleId == 0x00050000101c9400 || currentTitleId == 0x00050000101c9300)
 	{

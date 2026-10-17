@@ -11,9 +11,12 @@
 #elif BOOST_OS_BSD
 #include <endian.h>
 #endif
+// Android is a Linux to Boost.Predef, but has no X server; its window comes from the Java side
+#if !defined(__ANDROID__)
 #include <X11/Xlib.h>
 #include <X11/extensions/Xrender.h>
 #include <X11/Xutil.h>
+#endif
 #include "Common/unix/platform.h"
 #elif BOOST_OS_MACOS || BOOST_OS_IOS
 #include <libkern/OSByteOrder.h>

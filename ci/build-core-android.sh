@@ -65,7 +65,8 @@ done
 : > build-android/vcpkg-deps-complete
 if [ "$CONFIGURE_ONLY" = true ]; then exit 0; fi
 
-cmake --build build-android --target CemuBin 2>&1 | tee build.log
+# -k 0: keep going past a failed file, so one run reports every compile error rather than the first
+cmake --build build-android --target CemuBin -- -k 0 2>&1 | tee build.log
 SO=$(find build-android -name libCemu.so -not -path '*/CMakeFiles/*' | head -n1)
 if [ -z "$SO" ]; then echo "::error::the build finished but produced no libCemu.so"; exit 1; fi
 rm -rf build-android/out && mkdir -p build-android/out

@@ -6,7 +6,8 @@
 #include "wglext.h"
 #endif
 
-#if ( BOOST_OS_LINUX || BOOST_OS_BSD ) > 0
+// GLX types below come from Xlib, which Android (a Linux to Boost.Predef) does not have
+#if ( BOOST_OS_LINUX || BOOST_OS_BSD ) > 0 && !BOOST_PLAT_ANDROID
 
 // from Xlib
 #define Bool int
