@@ -59,6 +59,13 @@ class MainActivity : ComponentActivity() {
     private val cream = Color(0xFFF4E9DC)
     private val ground = Color(0xFF17110C)
     private val accent = Color(0xFFF0A35E)
+    /** Counts returns to the library, so it rescans Roms (games dropped in with a file manager) each time. */
+    private var resumes by mutableStateOf(0)
+
+    override fun onResume() {
+        super.onResume()
+        resumes++
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -99,6 +106,8 @@ class MainActivity : ComponentActivity() {
             if (pending.isEmpty()) return
             scope.launch {
                 for (game in pending) {
+                    // Names are read through the core; leave it alone while a game is running and finish on return.
+                    if (NativeBridge.isTitleRunning()) break
                     val name = withContext(Dispatchers.IO) { runCatching { NativeBridge.titleName(game.absolutePath) }.getOrNull() }
                     names[game.absolutePath] = name ?: game.nameWithoutExtension
                 }
@@ -109,6 +118,12 @@ class MainActivity : ComponentActivity() {
             games.clear()
             games.addAll(listGames(MuffinApp.romsDir(this)))
             resolveNames()
+        }
+
+        // Every return after the first (back from a game, or from a file manager) picks up added or removed games.
+        // Kept apart from the start-up effect below: a restart of that one would cancel it mid core start.
+        LaunchedEffect(resumes) {
+            if (resumes > 1) rescan()
         }
 
         LaunchedEffect(Unit) {
