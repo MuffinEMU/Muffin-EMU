@@ -956,7 +956,7 @@ namespace snd_core
 		for (uint32 i = 0; i < g_remix_matrices.GetCount(); ++i)
 		{
 			const auto& entry = g_remix_matrices[i];
-			if (entry.deviceEntry[1].channelIn == __AXFinalMixCBStructDRC->numChannelInput && entry.deviceEntry[1].channelOut == __AXOutDRCOutputChannelCount && !entry.deviceEntry[0].matrix.IsNull())
+			if (entry.deviceEntry[1].channelIn == __AXFinalMixCBStructDRC->numChannelInput && entry.deviceEntry[1].channelOut == __AXOutDRCOutputChannelCount && !entry.deviceEntry[1].matrix.IsNull()) // the DRC entry's own matrix; testing the TV one let a null DRC matrix through
 			{
 				AXIst_ApplyDeviceRemix((sint32be*)__AXDRCBuffer48.GetPtr(), entry.deviceEntry[1].matrix.GetPtr(), __AXFinalMixCBStructDRC->numChannelInput, __AXOutDRCOutputChannelCount, AX_SAMPLES_PER_3MS_48KHZ);
 				break;
