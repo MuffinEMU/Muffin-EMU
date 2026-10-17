@@ -31,6 +31,12 @@ class MuffinApp : Application() {
         fun keysFile(context: Context): File = File(mlcDir(context), "keys.txt")
         fun dataDir(context: Context): File = File(context.filesDir, "CemuData")
 
+        private fun prefs(context: Context) = context.getSharedPreferences("muffin", Context.MODE_PRIVATE)
+
+        /** Run the three emulated cores on one host thread: slower, but some games only run right that way. */
+        fun oneCore(context: Context): Boolean = prefs(context).getBoolean("oneCore", false)
+        fun setOneCore(context: Context, on: Boolean) = prefs(context).edit().putBoolean("oneCore", on).apply()
+
         /** Unpacks assets/CemuData once per app version, then starts the core. Blocking: call off the main thread. */
         fun startCore(context: Context): Boolean {
             if (coreStarted.get()) return true

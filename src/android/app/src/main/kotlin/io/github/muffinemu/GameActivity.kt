@@ -106,6 +106,7 @@ class GameActivity : ComponentActivity() {
                                 if (!booted) {
                                     NativeBridge.setSurface(holder.surface, points.first, points.second, density)
                                     booted = true
+                                    NativeBridge.setOneCore(MuffinApp.oneCore(this@GameActivity))
                                     thread(name = "Muffin boot") {
                                         val code = NativeBridge.bootTitle(path)
                                         runOnUiThread { status = if (code == 0) "" else NativeBridge.statusText() }

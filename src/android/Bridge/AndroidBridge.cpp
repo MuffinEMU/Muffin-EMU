@@ -470,6 +470,13 @@ JNIEXPORT jstring JNICALL Java_io_github_muffinemu_NativeBridge_titleName(JNIEnv
 	return name.empty() ? nullptr : env->NewStringUTF(name.c_str());
 }
 
+// One emulated core per host thread (the default), or all three on one: slower, but some games only run right
+// that way. Read when a title starts, so the app sets it just before bootTitle.
+JNIEXPORT void JNICALL Java_io_github_muffinemu_NativeBridge_setOneCore(JNIEnv*, jclass, jboolean oneCore)
+{
+	GetConfig().cpu_mode = oneCore == JNI_TRUE ? CPUMode::SinglecoreRecompiler : CPUMode::MulticoreRecompiler;
+}
+
 JNIEXPORT jdouble JNICALL Java_io_github_muffinemu_NativeBridge_framesPerSecond(JNIEnv*, jclass)
 {
 	return (jdouble)LatteGPUState.frameCounter; // the app differences this per second

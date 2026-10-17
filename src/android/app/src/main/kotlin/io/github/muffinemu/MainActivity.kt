@@ -32,6 +32,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
@@ -145,6 +146,15 @@ class MainActivity : ComponentActivity() {
                 Button(onClick = { addGame.launch(arrayOf("*/*")) }, enabled = copyStatus?.startsWith("Copying") != true) { Text("Add game") }
                 OutlinedButton(onClick = { addKeys.launch(arrayOf("*/*")) }, enabled = copyStatus?.startsWith("Copying") != true) { Text("Add keys.txt") }
                 OutlinedButton(onClick = { if (!shareLog()) copyStatus = "There's no log yet. Start a game first, then share the log." }) { Text("Share log") }
+            }
+            var oneCore by remember { mutableStateOf(MuffinApp.oneCore(this@MainActivity)) }
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("One CPU core", color = cream, fontSize = 15.sp)
+                    Text("Slower, but some games only run right this way. Applies to the next game you start.", color = cream.copy(alpha = 0.7f), fontSize = 12.sp)
+                }
+                Switch(checked = oneCore, onCheckedChange = { oneCore = it; MuffinApp.setOneCore(this@MainActivity, it) })
             }
             copyStatus?.let {
                 Spacer(Modifier.height(8.dp))
