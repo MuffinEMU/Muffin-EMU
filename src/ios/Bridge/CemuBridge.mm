@@ -4499,6 +4499,10 @@ uint32_t cemu_bridge_storage_read_fault_count(void) {
     return fscShortReadCount();
 }
 
+bool cemu_bridge_has_txm(void) {
+    return ios_has_txm();
+}
+
 bool cemu_bridge_is_title_running(void) {
     // A title that called coreinit exit() has finished even though CafeSystem still holds it,
     // and the UI should see that as the end of the game rather than a frozen one.

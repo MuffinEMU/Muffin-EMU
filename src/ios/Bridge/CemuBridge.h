@@ -510,6 +510,10 @@ int cemu_bridge_cpu_mode(void);
 void cemu_bridge_set_recompiler_enabled(bool enabled);
 bool cemu_bridge_recompiler_enabled(void);
 
+/// Whether this device enforces the Trusted Execution Monitor, which decides whether
+/// the built-in JIT must bless each executable region. Mirrors ios_has_txm().
+bool cemu_bridge_has_txm(void);
+
 /// Speed first, or accuracy first. By default MuffinEMU runs one emulated CPU core (the
 /// recompiler when a JIT enabler is attached, otherwise the interpreter; multi-core is
 /// opt-in through cemu_bridge_set_multicore_enabled), builds shaders in the background,
