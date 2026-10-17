@@ -17,3 +17,5 @@
 #import "IOSGraphicPackBridge.h"
 // The device capability snapshot (Common/DeviceCapabilities.h); plain C.
 #import "CemuDeviceCaps.h"
+// Launches the JIT helper app extension (built-in JIT). On the JIT header search path.
+#import "MuffinJITLauncher.h"

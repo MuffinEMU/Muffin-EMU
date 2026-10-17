@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The helper is a second process that attaches the debugger to the host. Keep its
+	     entitlements minimal and unrestricted, the same lesson as the host's Sideload
+	     entitlements: a restricted entitlement a re-signer can't honour gets the whole
+	     set dropped. get-task-allow keeps the helper consistent with the host it debugs. -->
+	<key>get-task-allow</key>
+	<true/>
+</dict>
+</plist>

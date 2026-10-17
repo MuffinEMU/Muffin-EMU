@@ -551,6 +551,19 @@ jobs:
           rm -rf "$RUNNER_TEMP/proart"
           echo "Pro icon art in place: $(ls src/ios/Resources/Assets.xcassets | grep -c '^AltIcon-pro-.*appiconset$') icon(s)"
 
+      - name: Build the built-in JIT device-link library
+        # The JIT helper extension links libmuffin_jit.a, so it must exist before the
+        # project is generated. Only our own code plus idevice (MIT); pure Rust.
+        if: steps.go.outputs.reuse != 'true'
+        run: |
+          set -eo pipefail
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          ./ci/build-jit-ffi.sh
+
       - name: xcodegen generate
         if: steps.go.outputs.reuse != 'true'
         run: |

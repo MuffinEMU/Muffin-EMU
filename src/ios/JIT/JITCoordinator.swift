@@ -16,6 +16,8 @@ final class JITCoordinator: ObservableObject {
 
     /// The helper extension's bundle identifier (see the helper's Info.plist).
     static let helperIdentifier = "com.void.muffinemu.jithelper"
+    /// Where the last run's log is kept for Copy bug report.
+    static let lastLogKey = "muffin.jit.lastLog"
 
     @Published var isRunning = false
     @Published var lastMessage: String?
@@ -69,6 +71,8 @@ final class JITCoordinator: ObservableObject {
         let result = try JSONDecoder().decode(JITHelperResult.self, from: resultData)
         lastLog = result.log
         lastMessage = result.message
+        // Persisted plainly so Copy bug report can read it without actor hops.
+        UserDefaults.standard.set(result.log, forKey: Self.lastLogKey)
         if !result.success {
             throw CoordinatorError.helper(result.message)
         }

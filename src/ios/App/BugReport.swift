@@ -58,6 +58,10 @@ enum BugReport {
             "texture filtering: \(TextureFiltering.stored.title)",
         ]
         if OneCoreMode.isEnabled { lines.append("one-core mode: on") }
+        if let jitLog = d.stringArray(forKey: JITCoordinator.lastLogKey), !jitLog.isEmpty {
+            lines.append("built-in JIT, last run:")
+            lines.append(contentsOf: jitLog.map { "  " + $0 })
+        }
         return lines.joined(separator: "\n")
     }
 

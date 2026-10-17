@@ -26,6 +26,7 @@ settings:
   # bridging header is plain C and lives in Bridge/.
   HEADER_SEARCH_PATHS:
     - '$(SRCROOT)/Bridge'
+    - '$(SRCROOT)/JIT'
   FRAMEWORK_SEARCH_PATHS:
     - '$(SRCROOT)/../../build-ios/out'
   LD_RUNPATH_SEARCH_PATHS: '$(inherited) @executable_path/Frameworks'
@@ -90,10 +91,23 @@ targets:
           - 'Core/**'
       - path: Resources
         type: group
+      # Built-in JIT, host side only. The helper-only files (MuffinJITLink,
+      # JITHelperCore, JITDeveloperDiskImage) link the device-link library, so they
+      # live in the extension target below, never here.
+      - path: JIT/JITHelperMessages.swift
+      - path: JIT/JITCoordinator.swift
+      - path: JIT/JITSupport.swift
+      - path: JIT/JITEntitlement.swift
+      - path: JIT/JITSetupView.swift
+      - path: JIT/MuffinJITLauncher.h
+      - path: JIT/MuffinJITLauncher.m
 
     dependencies:
       # - package: MeloController
       #   product: Melo-Controller
+      # The JIT helper app extension, embedded in PlugIns/ and launched at runtime.
+      - target: MuffinJITHelper
+        embed: true
       - package: MuffinTouchLab
         product: TouchLabCore
       - package: MuffinTouchLab
@@ -123,3 +137,33 @@ targets:
 
     scheme:
       gatherCoverageData: false
+
+  # The built-in JIT helper: a second process (a process can't debug itself) that links
+  # the device-link library and runs the attach. iOS 17.4+ only, so the host app keeps
+  # its iOS 15 minimum and never loads this library on an older system.
+  MuffinJITHelper:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: '17.4'
+    settings:
+      PRODUCT_NAME: MuffinJITHelper
+      PRODUCT_BUNDLE_IDENTIFIER: com.void.muffinemu.jithelper
+      INFOPLIST_FILE: JITHelper/Info.plist
+      CODE_SIGN_ENTITLEMENTS: JITHelper/Helper.entitlements
+      GENERATE_INFOPLIST_FILE: 'NO'
+      SKIP_INSTALL: 'YES'
+      # Where `import MuffinJitFFI` finds the module map (jit/muffin-jit/include).
+      SWIFT_INCLUDE_PATHS:
+        - '$(SRCROOT)/../../jit/muffin-jit/include'
+      LD_RUNPATH_SEARCH_PATHS: '$(inherited) @executable_path/../../Frameworks'
+    sources:
+      - path: JITHelper/MuffinJITHelperPrincipal.swift
+      - path: JIT/MuffinJITLink.swift
+      - path: JIT/JITHelperCore.swift
+      - path: JIT/JITDeveloperDiskImage.swift
+      - path: JIT/JITHelperMessages.swift
+    dependencies:
+      # Our device-link static library, built by ci/build-jit-ffi.sh before the project
+      # is generated. Linked, not embedded (a static library).
+      - framework: ../../jit/muffin-jit/target/aarch64-apple-ios/release/libmuffin_jit.a
+        embed: false
