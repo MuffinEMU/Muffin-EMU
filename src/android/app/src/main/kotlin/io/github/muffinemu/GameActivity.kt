@@ -61,6 +61,8 @@ class GameActivity : ComponentActivity() {
     // onResume comes before surfaceCreated, so resuming on onResume alone ran the renderer with no surface.
     private var resumed = false
     private var hasSurface = false
+    /** Set when the surface is destroyed, so the next one is given to the core as new rather than as a resize. */
+    private var surfaceLost = false
     private var physicalButtons = 0
     private var lx = 0f; private var ly = 0f; private var rx = 0f; private var ry = 0f; private var lt = 0f; private var rt = 0f
 
@@ -108,15 +110,23 @@ class GameActivity : ComponentActivity() {
                                         val code = NativeBridge.bootTitle(path)
                                         runOnUiThread { status = if (code == 0) "" else NativeBridge.statusText() }
                                     }
-                                } else {
+                                } else if (surfaceLost) {
+                                    // A new surface after the old one was destroyed (back from Home): the core
+                                    // builds a swapchain on it.
+                                    surfaceLost = false
                                     NativeBridge.setSurface(holder.surface, points.first, points.second, density)
                                     updatePaused()
+                                } else {
+                                    // The same surface at a new size (rotation, multi-window). Rebuilding the layer
+                                    // here would race the GPU thread presenting into it; the core resizes instead.
+                                    NativeBridge.resizeSurface(points.first, points.second, density)
                                 }
                             }
 
                             override fun surfaceDestroyed(holder: SurfaceHolder) {
                                 // The window is going away (home button, lock): hold the game until a surface is back.
                                 hasSurface = false
+                                surfaceLost = true
                                 updatePaused()
                                 NativeBridge.setSurface(null, 0, 0, 1f)
                             }
