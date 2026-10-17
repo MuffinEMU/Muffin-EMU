@@ -1618,9 +1618,11 @@ void VulkanRenderer::HandleScreenshotRequest(LatteTextureView* texView, bool pad
 		}
 		break;
 	case VK_FORMAT_R8G8B8_UNORM:
-		std::copy((uint8*)bufferPtr, (uint8*)bufferPtr + size, rgb_data.begin());
+		// reserve() above leaves the size at zero, so writing through begin() stored nothing; give the vector its size first
+		rgb_data.assign((uint8*)bufferPtr, (uint8*)bufferPtr + size);
 		break;
 	case VK_FORMAT_R8G8B8_SRGB:
+		rgb_data.resize(size);
 		std::transform((uint8*)bufferPtr, (uint8*)bufferPtr + size, rgb_data.begin(), SRGBComponentToRGB);
 		break;
 	default:
