@@ -104,10 +104,12 @@ enum WiiUKeys {
     /// unusable file never overwrites a working keys.txt.
     @discardableResult
     static func importKeys(from source: URL) throws -> Int {
-        guard source.startAccessingSecurityScopedResource() else {
-            throw ImportError.accessDenied
-        }
-        defer { source.stopAccessingSecurityScopedResource() }
+        // Only a file from outside the app's own container has a security scope to start. A keys.txt
+        // picked from MuffinEMU's own Documents folder (dropped there from Files) returns false here,
+        // and treating that as "no access" refused a perfectly readable file. The read below is what
+        // decides whether the file can be used.
+        let scoped = source.startAccessingSecurityScopedResource()
+        defer { if scoped { source.stopAccessingSecurityScopedResource() } }
 
         let attributes = try? FileManager.default.attributesOfItem(atPath: source.path)
         if let size = attributes?[.size] as? Int, size > maximumFileSize {

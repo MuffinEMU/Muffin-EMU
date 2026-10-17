@@ -172,7 +172,7 @@ struct GraphicPacksView: View {
             InfoButton.footer(
                 "A folder with a rules.txt, a folder of packs, or a zip of either.",
                 title: "Import packs",
-                text: "Pick a pack folder, a folder that holds several packs, or a zip of either. MuffinEMU checks that it really contains a pack (a rules.txt) before adding it.\n\nImported packs are kept apart from the community download, so updating the community packs never removes them. Importing the same folder name again replaces the earlier copy. To remove an imported pack, open it and choose Remove.\n\nYou can also drop pack folders into graphicPacks inside MuffinEMU's Documents folder in Files."
+                text: "Pick a pack folder, a folder that holds several packs, or a zip of either. MuffinEMU checks that it really contains a pack (a rules.txt) before adding it.\n\nImported packs are kept apart from the community download, so updating the community packs leaves them in place. Importing the same folder name again replaces the earlier copy. To remove an imported pack, open it and choose Remove.\n\nYou can also drop pack folders into graphicPacks inside MuffinEMU's Documents folder in Files."
             )
         }
         .foregroundColor(MuffinTheme.brownDarkest)

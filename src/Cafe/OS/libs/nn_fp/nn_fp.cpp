@@ -42,6 +42,7 @@ namespace nn
 			void Init()
 			{
 				std::unique_lock _l(m_mtx);
+				delete g_fp.fpBufferHeap; // called once per title; the previous title's heap object was leaked
 				g_fp.fpBufferHeap = new VHeap(g_fp.g_fpdAllocatorSpace.GetPtr(), g_fp.g_fpdAllocatorSpace.GetByteSize());
 			}
 
@@ -313,9 +314,9 @@ namespace nn
 			void* notificationHandler = g_fp.notificationHandler;
 			void* notificationHandlerParam = g_fp.notificationHandlerParam;
 			coreinit::OSUnlockMutex(&g_fp.fpMutex);
-			iosu::fpd::FPDNotification* notificationBuffer = g_fp.notificationBuffer.GetPtr();
+			// use the copy: the shared buffer is read outside the lock, which is what the copy was made for
 			for (uint32 i = 0; i < count; i++)
-				PPCCoreCallback(notificationHandler, (uint32)notificationBuffer[i].type, notificationBuffer[i].pid, notificationHandlerParam);
+				PPCCoreCallback(notificationHandler, (uint32)tempBuffer[i].type, tempBuffer[i].pid, notificationHandlerParam);
 			coreinit::OSLockMutex(&g_fp.fpMutex);
 			// query more notifications
 			GetNextNotificationAsync();

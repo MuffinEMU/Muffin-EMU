@@ -239,7 +239,10 @@ class GameManager: ObservableObject {
     @Published var isLoading = false
     @Published var currentGame: GameMetadata?
     @Published var emulationState: EmulationState = .idle {
-        didSet { ScreenBrightness.shared.setGameRunning(emulationState == .running) }
+        didSet {
+            ScreenBrightness.shared.setGameRunning(emulationState == .running)
+            LastSessionEnd.emulationStateChanged(emulationState, game: currentGame)
+        }
     }
     /// Last human-readable message from the engine bridge (e.g. "engine not built yet").
     @Published var lastStatusMessage: String = ""
@@ -1357,12 +1360,33 @@ class GameManager: ObservableObject {
     /// Identifies the current launch. Changed by launchGame and stopEmulation so a boot that
     /// finishes after the user has gone back can tell it is stale.
     private var launchToken = UUID()
+    /// True from registerRenderSurface() starting the engine's initialize-and-boot task until that task has reported
+    /// back on the main actor. The engine takes one boot at a time, and it is not safe to stop it from this thread
+    /// while the boot is still inside it (the stop resets the renderer the boot is building, and tears down the title
+    /// the boot is mounting), so a stop or a second launch that arrives in that window waits for the boot to return.
+    private var bootInFlight = false
+    /// A launch asked for while an earlier launch's boot was still in the engine (Back during "Starting...", then a
+    /// tap on another card). Started once that boot has returned and the deferred stop has run.
+    private var launchWaitingForBoot: GameMetadata?
+    #if os(iOS)
+    /// The retain taken on the TV render view for the engine's benefit in registerRenderSurface(), released by the
+    /// stop once the renderer that drew into it is gone.
+    private var retainedRenderSurface: Unmanaged<UIView>?
+    #endif
 
     func launchGame(_ game: GameMetadata) {
         // A second tap on a card (or the Wii U Menu tile) before the library has gone away would
         // restart the launch underneath the one already booting. Every way back to the library
         // goes through stopEmulation(), which leaves the state at .idle.
         guard emulationState == .idle else { return }
+        if bootInFlight {
+            // Back was pressed while the previous launch was still inside the engine's boot. The engine takes one
+            // boot at a time, so this launch starts the moment that one returns and its deferred stop has run (see
+            // the completion in registerRenderSurface). Nothing else is touched yet: setting .loading here would
+            // mount the Metal view and register a new surface under the boot that is still running.
+            launchWaitingForBoot = game
+            return
+        }
         LibraryPlayStats.shared.recordLaunch(of: game.id)
         launchToken = UUID()
         currentGame = game
@@ -1441,27 +1465,24 @@ class GameManager: ObservableObject {
               let game = currentGame, let engine = emulationEngine else { return false }
         surfaceRegistered = true
 
-        // passRetained, not passUnretained - deliberately keeping this one view alive
-        // for the app's lifetime. Confirmed via a live device SIGSEGV inside
-        // MetalRenderer::BeginFrame() -> AcquireDrawable() -> nextDrawable():
-        // CreateMetalLayer() (MetalLayer.mm) adds the real CAMetalLayer as a sublayer
-        // of this view's CALayer, and the C++ side (MetalLayerHandle) holds a bare,
-        // ARC-invisible `CA::MetalLayer*` to it with no retain of its own. If the view
-        // is deallocated - SwiftUI is free to tear down and rebuild a
-        // UIViewRepresentable's underlying view on essentially any hierarchy change,
-        // e.g. the .loading -> .running transition removing the "Booting..." overlay -
-        // its layer, and therefore our sublayer, goes with it while the GPU thread
-        // still holds a raw pointer, and the very next draw call reads freed memory.
+        // passRetained, not passUnretained: the view has to outlive the renderer. Confirmed via a
+        // live device SIGSEGV inside MetalRenderer::BeginFrame() -> AcquireDrawable() ->
+        // nextDrawable(): the view's own backing layer is the CAMetalLayer the core draws into,
+        // and the C++ side (MetalLayerHandle) holds a bare, ARC-invisible `CA::MetalLayer*` to it
+        // with no retain of its own. If the view is deallocated while the GPU thread still holds
+        // that pointer, the very next draw reads freed memory.
         //
-        // Belt and braces as of the display-routing work: the view handed in here is
-        // DisplayRouter.shared.tvRenderView, which that singleton also holds strongly
-        // and which SwiftUI never owns - it is reparented between the on-device
-        // container and an external display's window rather than recreated. This
-        // retain is now the second reason it survives rather than the only one, and is
-        // kept because the C++ side's ownership is still the thing that is wrong; the
-        // real fix would have it own this lifetime properly.
-        let surfacePtr = Unmanaged.passRetained(uiView).toOpaque()
-        cemu_bridge_register_render_surface(surfacePtr, width, height, dpiScale)
+        // The retain used to be kept for the life of the app, one per launch, and every launch
+        // leaked a MetalLayerView with its CAMetalLayer (and the drawables the layer still held,
+        // up to three screen-sized textures). It is released by stopEngine() instead: by then
+        // CafeSystem::ShutdownTitle() has deleted the renderer, so nothing on the C++ side reads
+        // the layer any more, and the view handed in here (DisplayRouter.shared.tvRenderView,
+        // which that singleton also holds for the whole title and SwiftUI never owns) stays alive
+        // through the engine's own strong g_mainView until the next launch registers its view.
+        let retained = Unmanaged.passRetained(uiView)
+        retainedRenderSurface?.release()
+        retainedRenderSurface = retained
+        cemu_bridge_register_render_surface(retained.toOpaque(), width, height, dpiScale)
 
         // Starting points for titles that need more than the defaults (Splatoon wants sticks and the GamePad screen).
         GameControlHints.applyBeforeLaunch(titleId: game.titleId)
@@ -1469,9 +1490,16 @@ class GameManager: ObservableObject {
         let romPath = game.romPath
         let gameID = game.settingsKey
         let token = launchToken
+        // Resolved before the boot task starts: a task that returned early here would leave bootInFlight set and
+        // every later stop and launch waiting on a boot that never ran.
+        guard let mlcPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("mlc").path else {
+            lastStatusMessage = "MuffinEMU couldn't find its Documents folder, so the game can't start."
+            emulationState = .error
+            return true
+        }
+        bootInFlight = true
         Task.detached(priority: .userInitiated) { [weak self] in
-            guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
-            let mlcPath = documentsPath.appendingPathComponent("mlc").path
             try? FileManager.default.createDirectory(atPath: mlcPath, withIntermediateDirectories: true)
 
             cemu_bridge_log_checkpoint("launchGame: about to call engine.initialize() [background]")
@@ -1672,11 +1700,17 @@ class GameManager: ObservableObject {
 
             await MainActor.run {
                 guard let self else { return }
+                self.bootInFlight = false
                 guard self.launchToken == token, self.emulationState == .loading else {
-                    // Back was pressed (or another launch started) while this boot ran.
-                    // Don't flip the UI to .running; shut down a title that did boot.
-                    if status == CEMU_BRIDGE_OK, self.currentGame == nil {
-                        self.stopEmulation()
+                    // Back was pressed while this boot ran. stopEmulation() took the UI back to the
+                    // library at once and held the engine side of the stop back until now, because
+                    // the engine was still inside this boot; run it here (it shuts down a title that
+                    // did boot and is a no-op for one that failed), then start the launch that was
+                    // waiting on it, if a card was tapped in the meantime.
+                    self.stopEngine()
+                    if let next = self.launchWaitingForBoot {
+                        self.launchWaitingForBoot = nil
+                        self.launchGame(next)
                     }
                     return
                 }
@@ -1727,6 +1761,7 @@ class GameManager: ObservableObject {
 
     func stopEmulation() {
         launchToken = UUID()
+        launchWaitingForBoot = nil
         // Finishes a "Record audio" recording before the title and its audio go away.
         AudioRecorder.shared.stop()
         ScreenRecorder.shared.stop()
@@ -1735,6 +1770,27 @@ class GameManager: ObservableObject {
             AutoCoreHistory.sessionEnded(gameID: gameID, stalled: videoStalled && videoStallKind == 1)
         }
         stopFrameRateMonitor()
+        if bootInFlight {
+            // Back during "Starting...": the engine is still inside this launch's boot on its background task,
+            // mounting the title and building the renderer. Stopping the engine from here would reset that
+            // renderer and shut down that title under it. The UI goes back to the library now (the token above
+            // makes the boot's completion see it is stale), and the engine side of the stop runs from that
+            // completion, once the boot has returned: see registerRenderSurface().
+            emulationState = .idle
+            currentGame = nil
+            ActiveGameSettings.end()
+            return
+        }
+        stopEngine()
+        emulationState = .idle
+        currentGame = nil
+        // The player's own screen layout and controller auto-hide come back if this game had its own.
+        ActiveGameSettings.end()
+    }
+
+    /// The engine side of a stop: the title, the renderer, the render surfaces and the hold on a linked game's
+    /// drive. Safe when no title is running (a launch that failed, or never got as far as the engine).
+    private func stopEngine() {
         #if os(iOS)
         // Resume before stopping, unconditionally, even though nothing here knows or
         // cares whether the title was paused.
@@ -1769,14 +1825,15 @@ class GameManager: ObservableObject {
         // an owner on the C++ side. Ordered after stop() deliberately: the views must
         // outlive the renderer, not the other way round.
         DisplayRouter.shared.titleStopped()
+        // The renderer is gone and the router has let go of the view: see registerRenderSurface() for why the
+        // retain is taken and why it can be released here. The engine's own g_mainView keeps the view alive
+        // until the next launch registers its surface.
+        retainedRenderSurface?.release()
+        retainedRenderSurface = nil
         #endif
         surfaceRegistered = false
         // After the engine has let go of the game's files.
         releaseExternalHold()
-        emulationState = .idle
-        currentGame = nil
-        // The player's own screen layout and controller auto-hide come back if this game had its own.
-        ActiveGameSettings.end()
     }
 
     private func releaseExternalHold() {

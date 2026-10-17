@@ -1579,9 +1579,13 @@ public:
         PPCBlockCache* cache = &PPCBlockCache_getForCurrentThread();
         while (hCPU->remainingCycles > 0)
         {
-            const uint32 gen = s_blockCacheGeneration.load(std::memory_order_acquire);
+            // Relaxed load on the per-block path; the acquire only has to happen when the counter actually changed, and
+            // the fence below pairs with the release increment in PPCInterpreter_invalidateBlockCache so the re-decode
+            // reads the new code. This takes an acquire load (ldar) off every block executed.
+            const uint32 gen = s_blockCacheGeneration.load(std::memory_order_relaxed);
             if (gen != cache->m_generation) [[unlikely]]
             {
+                std::atomic_thread_fence(std::memory_order_acquire);
                 cache->clear("code invalidated");
                 cache->m_generation = gen;
             }

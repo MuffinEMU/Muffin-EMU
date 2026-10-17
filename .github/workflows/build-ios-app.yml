@@ -285,9 +285,13 @@ jobs:
         # request), this run adopts it - promotion without a second compile, held to the same standard:
         #  - the candidate's own record must name the fingerprint this tree has NOW: same core inputs,
         #    same toolchain. Any core input differing, or a newer Xcode since, refuses adoption;
-        #  - the core's artifact must still exist (they expire after 14 days);
+        #  - the core's artifact must still exist (they expire after 14 days), and it must be the
+        #    one the candidate run itself uploaded. Artifacts are matched by name across every run
+        #    of the repository, and a pull request from a fork runs this workflow too, so a core
+        #    picked by name alone could come from any run: the candidate was checked to be this
+        #    repository's own (ci/find-reusable-run.sh), so only its artifact is taken;
         #  - it is re-checked here: stamped fingerprint vs this tree, manifest, binary hash, the
-        #    export gate;
+        #    export gate, and the binary hash the candidate's record wrote down for its core;
         #  - it must be the very core inside the IPAs about to be published (LC_UUID equal).
         # On main a refusal means the next step decides to build instead of reuse. A pull request
         # never promotes, so it reuses regardless, but runs every check so the path is exercised early.
@@ -298,6 +302,7 @@ jobs:
           FP: ${{ steps.fp.outputs.fingerprint }}
           MATCHED: ${{ steps.pointer.outputs.cache-matched-key }}
           META: ${{ steps.plan.outputs.meta }}
+          RID: ${{ steps.plan.outputs.rid }}
           REUSED_APP: ${{ steps.plan.outputs.app }}
         run: |
           set -o pipefail
@@ -309,13 +314,22 @@ jobs:
           FRESH_CORE=$(python3 -c "import json,sys; m=json.load(open(sys.argv[1])); print(m['core_fresh'] and m['core_fingerprint'])" "$META")
           if [ "$FRESH_CORE" = "False" ]; then echo "the candidate reused the current core rather than compiling one: nothing to adopt"; exit 0; fi
           [ "$FRESH_CORE" = "$FP" ] || refuse "the candidate compiled core $FRESH_CORE, this tree is $FP"
+          # The run id goes into the jq filter as a number, so it must be one.
+          case "$RID" in ''|*[!0-9]*) refuse "candidate run id '$RID' is not a number" ;; esac
           ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=cemu-core-$FP&per_page=30" \
-                 --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last | .id // empty') || true
-          [ -n "$ID" ] || refuse "no unexpired artifact cemu-core-$FP"
+                 --jq "[.artifacts[] | select(.expired == false and .workflow_run.id == $RID)] | sort_by(.created_at) | last | .id // empty") || true
+          [ -n "$ID" ] || refuse "run $RID has no unexpired artifact cemu-core-$FP"
           rm -rf build-ios/out; mkdir -p build-ios/out
           gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ID/zip" > core.zip || refuse "could not download the core artifact"
           unzip -q core.zip -d build-ios/out || refuse "the core artifact is not a zip"
           ./ci/core-cache-key.sh --verify build-ios/out || refuse "the core failed its fingerprint self-check"
+          # The self-check above compares the binary with the stamp that travels beside it. This compares
+          # it with what the candidate run wrote into its own build record, which came from that run and
+          # not from the artifact.
+          RECORDED=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('core_binary_sha256') or '')" "$META")
+          [ -n "$RECORDED" ] || refuse "the candidate's build record names no core binary hash"
+          [ "$(shasum -a 256 build-ios/out/Cemu.framework/Cemu | cut -d' ' -f1)" = "$RECORDED" ] \
+            || refuse "the core artifact is not the binary the candidate's build record names"
           ./ci/gate-exports.sh build-ios/out/Cemu.framework || refuse "the core failed the export gate"
           uuid() { otool -l "$1" | awk '/LC_UUID/{getline; getline; print $2; exit}'; }
           [ "$(uuid build-ios/out/Cemu.framework/Cemu)" = "$(uuid "$REUSED_APP/Frameworks/Cemu.framework/Cemu")" ] \
@@ -406,17 +420,43 @@ jobs:
 
       # The control styles under Settings > On-screen Controls > Control style are a vendored
       # Swift package. Its behaviour and layout checks are plain Swift with no UIKit, so they run
-      # here in seconds and fail the build before the long part on any input or layout regression.
+      # here and fail the build before the long part on any input or layout regression.
       # The scratch path keeps the package directory free of build output for xcodegen.
+      #
+      # Compiling the two packages took about two minutes of every run, reused core or not, so
+      # their build directories are cached by the packages' content. A cached build from an
+      # older toolchain can fail to load; the check then starts over from an empty directory
+      # rather than failing the build, so the cache can only save time.
+      - name: Restore the Swift package check builds
+        id: swiftchecks
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ runner.temp }}/touchlab-build
+            ${{ runner.temp }}/loadkit-build
+          key: muffin-swift-checks-v1-${{ hashFiles('src/ios/Packages/**') }}
+
       - name: TouchLab behaviour and layout checks
         run: |
-          swift run --package-path src/ios/Packages/MuffinTouchLab \
-            --scratch-path "$RUNNER_TEMP/touchlab-build" touchlab-check
+          set -eo pipefail
+          check() { swift run --package-path src/ios/Packages/MuffinTouchLab --scratch-path "$RUNNER_TEMP/touchlab-build" touchlab-check; }
+          check || { echo "retrying from a clean build directory"; rm -rf "$RUNNER_TEMP/touchlab-build"; check; }
 
       - name: LoadKit validation and storage checks
         run: |
-          swift run --package-path src/ios/Packages/MuffinLoadKit \
-            --scratch-path "$RUNNER_TEMP/loadkit-build" loadkit-check
+          set -eo pipefail
+          check() { swift run --package-path src/ios/Packages/MuffinLoadKit --scratch-path "$RUNNER_TEMP/loadkit-build" loadkit-check; }
+          check || { echo "retrying from a clean build directory"; rm -rf "$RUNNER_TEMP/loadkit-build"; check; }
+
+      - name: Save the Swift package check builds
+        if: steps.swiftchecks.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ runner.temp }}/touchlab-build
+            ${{ runner.temp }}/loadkit-build
+          key: muffin-swift-checks-v1-${{ hashFiles('src/ios/Packages/**') }}
 
       # The key (ci/vcpkg-cache-key.sh) names the pinned vcpkg, the toolchain and the dependency
       # inputs. The complete set for main's key is saved by vcpkg-cache.yml, which runs on main: a

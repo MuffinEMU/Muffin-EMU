@@ -81,12 +81,21 @@ void FillAccountData(const Account& account, const bool online_enabled, int inde
 	data.simpleAddressId = account.GetSimpleAddressId();
 	data.principalId = account.GetPrincipalId();
 	// NNID
-	std::copy(account.GetAccountId().begin(), account.GetAccountId().end(), data.accountId);
+	// The strings come from account.dat as the user has it; a TimeZoneId such as America/Los_Angeles is longer than its
+	// field, and the copies used to run past the end. They are cut to the field and kept terminated (the slots are
+	// zeroed before this, but a shorter value than last time must not keep the old tail)
+	const auto copyBounded = [](std::string_view value, char* field, size_t fieldSize)
+	{
+		const size_t len = std::min(value.size(), fieldSize - 1);
+		std::copy(value.begin(), value.begin() + len, field);
+		field[len] = '\0';
+	};
+	copyBounded(account.GetAccountId(), data.accountId, sizeof(data.accountId));
 	std::copy(account.GetAccountPasswordCache().begin(), account.GetAccountPasswordCache().end(), data.accountPasswordCache);
 	// country & language
 	data.countryIndex = account.GetCountry();
 	strcpy(data.country, NCrypto::GetCountryAsString(data.countryIndex));
-	std::copy(account.GetTimeZoneId().cbegin(), account.GetTimeZoneId().cend(), data.timeZoneId);
+	copyBounded(account.GetTimeZoneId(), data.timeZoneId, sizeof(data.timeZoneId));
 	data.utcOffset = account.GetUtcOffset() / 1'000'000;
 	// Mii
 	std::copy(account.GetMiiData().begin(), account.GetMiiData().end(), (uint8*)&data.miiData);

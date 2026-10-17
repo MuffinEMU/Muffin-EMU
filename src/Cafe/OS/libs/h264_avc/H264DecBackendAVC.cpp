@@ -54,10 +54,17 @@ namespace H264
 
 		~H264AVCDecoder()
 		{
+			// slices still queued would be decoded into the game's output buffers on the way out. Drop them, then let a
+			// decode that is already running finish before the codec context goes away (Destroy() frees what it is using)
+			{
+				std::unique_lock _l(m_decodeQueueMtx);
+				m_decodeQueue.clear();
+			}
 			m_threadShouldExit = true;
 			m_decodeSem.increment();
 			if (m_decoderThread.joinable())
 				m_decoderThread.join();
+			Destroy();
 		}
 
 		void Init(bool isBufferedMode)

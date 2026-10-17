@@ -146,7 +146,7 @@ struct GameInfoSections: View {
         Section {
             ScreenStatusCallout(tone: .info, message: data.isScraping
                 ? "Reading GameTDB's database\u{2026}"
-                : "There is no game data for this install yet. Scrape it from Settings > Cover + data scraping, or here.")
+                : "There is no game data for this install yet. Scrape it from Settings > Cover art, or here.")
             if data.isScraping {
                 ProgressView(value: data.fraction)
             } else {

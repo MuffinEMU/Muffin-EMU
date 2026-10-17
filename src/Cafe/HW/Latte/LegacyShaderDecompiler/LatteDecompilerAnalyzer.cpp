@@ -655,14 +655,14 @@ namespace LatteDecompiler
 		// check if uniform vars block has at least one variable
 		_initHasUniformVarBlock(decompilerContext);
 
-		if (decompilerContext->shaderType == LatteConst::ShaderType::Pixel)
+		// Every stage, not only the pixel shader: the emitters read tex{N}Scale for every texel-coordinate fetch (LD, or SAMPLE
+		// with unnormalized coordinates), and a vertex shader doing one (heightmaps, skinning palettes) with no other member in
+		// this block would name a supportBuffer / ufBlock the function never receives, and fail to compile.
+		for (sint32 t = 0; t < LATTE_NUM_MAX_TEX_UNITS; t++)
 		{
-			for (sint32 t = 0; t < LATTE_NUM_MAX_TEX_UNITS; t++)
-			{
-				if (decompilerContext->analyzer.texUnitUsesTexelCoordinates.test(t) == false)
-					continue;
-				decompilerContext->hasUniformVarBlock = true; // uf_tex%dScale
-			}
+			if (decompilerContext->analyzer.texUnitUsesTexelCoordinates.test(t) == false)
+				continue;
+			decompilerContext->hasUniformVarBlock = true; // uf_tex%dScale
 		}
 		// assign binding point to uniform var block
 		if (decompilerContext->hasUniformVarBlock)

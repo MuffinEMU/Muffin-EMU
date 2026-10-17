@@ -129,6 +129,14 @@ struct BlowButton: View {
         pressOpen = true
         cancelledByMove = false
         let work = DispatchWorkItem {
+            // A press the system took away before the first render after it began went true and back
+            // unseen by the onChange below, so nothing finished it. By now a render has happened, so
+            // `press.down` says whether the finger is still there; a hold that starts without one would
+            // blow until the next tap.
+            guard pressOpen, press.down else {
+                pressOpen = false
+                return
+            }
             momentary = true
             apply()
             MuffinHaptics.tap()

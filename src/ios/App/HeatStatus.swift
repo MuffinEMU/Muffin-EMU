@@ -60,7 +60,7 @@ enum HeatBand: Int, Comparable {
         case .fair:         return "Fair"
         case .warm:         return "Warm"
         case .hot:          return "Hot"
-        case .extremelyHot: return "Extremely Hot"
+        case .extremelyHot: return "Extremely hot"
         }
     }
 

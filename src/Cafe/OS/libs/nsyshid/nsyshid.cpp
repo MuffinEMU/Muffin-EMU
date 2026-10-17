@@ -307,6 +307,11 @@ namespace nsyshid
 
 	void _debugPrintHex(const std::string prefix, const uint8* data, size_t size)
 	{
+#ifndef CEMU_DEBUG_ASSERT
+		// the dump only goes to the debug log, which release builds don't write. Building the string anyway cost time
+		// on every HIDSetReport, and the toy games send one every frame
+		return;
+#endif
 		constexpr size_t BYTES_PER_LINE = 16;
 
 		std::string out;

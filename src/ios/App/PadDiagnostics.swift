@@ -139,13 +139,13 @@ struct PadDiagnosticsOverlay: View {
             row("paused", isPaused ? "YES" : "no", warn: isPaused)
 
             if diag.activePad == .preview {
-                Text("The experimental new pad is active. If controls don't respond, turn off Use the new pad system in Settings > On-screen Controls > New pad system (preview).")
+                Text("The experimental new pad is active. If controls don't respond, turn off Use the new pad system in Settings > On-screen controls > New pad system (preview).")
                     .font(.system(size: 10, weight: .semibold, design: .rounded))
                     .foregroundColor(.yellow)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: 240, alignment: .leading)
             } else if buttonBindings == 0 {
-                Text("The GamePad has no button bindings, so presses go nowhere while sticks still work. Settings > On-screen Controls > Reset controller bindings.")
+                Text("The GamePad has no button bindings, so presses go nowhere while sticks still work. Settings > On-screen controls > Reset controller bindings.")
                     .font(.system(size: 10, weight: .semibold, design: .rounded))
                     .foregroundColor(.yellow)
                     .fixedSize(horizontal: false, vertical: true)

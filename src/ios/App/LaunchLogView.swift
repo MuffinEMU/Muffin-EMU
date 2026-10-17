@@ -148,7 +148,7 @@ struct LaunchLogView: View {
                         ForEach(Array(store.lines.enumerated()), id: \.offset) { index, line in
                             Text(line)
                                 .font(.system(size: 9, weight: .regular, design: .monospaced))
-                                .foregroundColor(colour(for: line))
+                                .foregroundColor(Self.colour(for: line))
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .id(firstLine + index)
@@ -184,7 +184,7 @@ struct LaunchLogView: View {
     /// the point is to make the handful of lines that decide a boot findable in a wall
     /// of scrolling text, not to colour it in. The *OnDark colours because this panel is
     /// always dark: in light mode several themes' accent is a navy that vanished on it.
-    private func colour(for line: String) -> Color {
+    static func colour(for line: String) -> Color {
         let lower = line.lowercased()
         if lower.contains("crash") || lower.contains("failed") || lower.contains("error")
             || lower.contains("dropped a frame") || lower.contains("not present")

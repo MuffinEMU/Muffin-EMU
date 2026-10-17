@@ -511,8 +511,12 @@ void export_realloc(PPCInterpreter_t* hCPU)
 	ppcDefineParamMEMPTR(mem, void, 0);
 	ppcDefineParamU32(size, 1);
 	MEMPTR<void> result = coreinit::default_MEMAllocFromDefaultHeap(size);
-	memcpy(result.GetPtr(), mem.GetPtr(), size);
-	coreinit::default_MEMFreeToDefaultHeap(mem.GetPtr());
+	// realloc(NULL, size) is a plain allocation. Copying from and freeing guest address 0 corrupted the default heap
+	if (result && mem)
+	{
+		memcpy(result.GetPtr(), mem.GetPtr(), size);
+		coreinit::default_MEMFreeToDefaultHeap(mem.GetPtr());
+	}
 	osLib_returnFromFunction(hCPU, result.GetMPTR());
 }
 
@@ -745,7 +749,10 @@ void export_curl_multi_info_read(PPCInterpreter_t* hCPU)
 				[msg](const MEMPTR<CURL_t>& curl)
 			{
 				const MEMPTR<CURL_t> _curl{ curl };
-				return _curl->curl = msg->easy_handle;
+				// this was an assignment: it overwrote the first handle's host CURL* with the finished one's and matched
+				// it, so with several transfers in one multi handle the result went to the wrong handle and two guest
+				// handles ended up sharing one host handle
+				return _curl->curl == msg->easy_handle;
 			});
 
 			if (it != curlm->curl.cend())
@@ -906,13 +913,17 @@ void export_curl_easy_cleanup(PPCInterpreter_t* hCPU)
 
 	curlDebug_cleanup(curl.GetPtr());
 
+	// read the string pointers before the object is handed back to the guest heap, which may reuse it
+	MEMPTR<char> infoContentType = curl->info_contentType;
+	MEMPTR<char> infoRedirectUrl = curl->info_redirectUrl;
+
 	::curl_easy_cleanup(curl->curl);
 	PPCCoreCallback(g_nlibcurl.free.GetMPTR(), curl.GetMPTR());
 
-	if (curl->info_contentType.IsNull() == false)
-		PPCCoreCallback(g_nlibcurl.free.GetMPTR(), curl->info_contentType.GetMPTR());
-	if (curl->info_redirectUrl.IsNull() == false)
-		PPCCoreCallback(g_nlibcurl.free.GetMPTR(), curl->info_redirectUrl.GetMPTR());
+	if (infoContentType.IsNull() == false)
+		PPCCoreCallback(g_nlibcurl.free.GetMPTR(), infoContentType.GetMPTR());
+	if (infoRedirectUrl.IsNull() == false)
+		PPCCoreCallback(g_nlibcurl.free.GetMPTR(), infoRedirectUrl.GetMPTR());
 
 	osLib_returnFromFunction(hCPU, 0);
 }
@@ -1402,7 +1413,7 @@ void export_curl_easy_getinfo(PPCInterpreter_t* hCPU)
 		case CURLINFO_CONTENT_TYPE:
 		{
 			char* contentType = nullptr;
-			result = curl_easy_getinfo(curlObj, CURLINFO_REDIRECT_URL, &contentType);
+			result = curl_easy_getinfo(curlObj, CURLINFO_CONTENT_TYPE, &contentType); // asked for the redirect URL before, so the game got no content type
 			_updateGuestString(curl.GetPtr(), curl->info_contentType, contentType);
 			*(MEMPTR<char>*)parameter.GetPtr() = curl->info_contentType;
 			break;

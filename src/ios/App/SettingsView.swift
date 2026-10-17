@@ -5,9 +5,207 @@
 
 import SwiftUI
 
-/// Every section is its own View struct (most under Settings/), so the type checker isn't
-/// asked to infer one huge Form expression. ViewBuilder allows at most 10 children per
-/// block, hence the five groups below.
+/// One section of Settings. Each is its own View struct (most under Settings/); this enum is the
+/// index that places it on a page and makes it searchable. Moving a section between pages never
+/// touches its storage keys.
+enum SettingsItem: String, CaseIterable, Identifiable {
+    case cpu, jit, graphics, shaderCache, emulatedClock
+    case onScreenControls, motion, emulatedDevices
+    case display, audio, overlay, notifications
+    case library, coverArt, keys, wiiUMenu
+    case account, network, premium
+    case appearance
+    case files, backup, migration
+    case troubleshooting, deviceReport, diagnostics, about
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .cpu: return "CPU"
+        case .jit: return "JIT"
+        case .graphics: return "Graphics"
+        case .shaderCache: return "Shader cache"
+        case .emulatedClock: return "Emulated clock"
+        case .onScreenControls: return "On-screen controls"
+        case .motion: return "Motion and aiming"
+        case .emulatedDevices: return "Figure portals"
+        case .display: return "Display"
+        case .audio: return "Audio"
+        case .overlay: return "FPS counter"
+        case .notifications: return "Notifications"
+        case .library: return "Library"
+        case .coverArt: return "Cover art"
+        case .keys: return "Wii U keys"
+        case .wiiUMenu: return "Wii U Menu"
+        case .account: return "Account"
+        case .network: return "Online play"
+        case .premium: return "Premium"
+        case .appearance: return "Appearance"
+        case .files: return "Files"
+        case .backup: return "Back up settings"
+        case .migration: return "Move to another device"
+        case .troubleshooting: return "Game won't start?"
+        case .deviceReport: return "Report a problem"
+        case .diagnostics: return "Diagnostics"
+        case .about: return "About"
+        }
+    }
+
+    /// Words people search for besides the title.
+    var keywords: String {
+        switch self {
+        case .cpu: return "cores threads multicore interpreter speed processor performance"
+        case .jit: return "recompiler stikjit stikdebug pairing debugger enabler"
+        case .graphics: return "resolution upscale vsync vulkan metal renderer filter gamma frame rate texture filtering anisotropic sharp blurry distance"
+        case .shaderCache: return "shaders stutter precompile cache compile"
+        case .emulatedClock: return "timing advanced clock speed"
+        case .onScreenControls: return "pad gamepad touch layout buttons skin controller sticks"
+        case .motion: return "gyro motion controller aim gyroscope"
+        case .emulatedDevices: return "skylanders disney infinity lego dimensions toypad portal figures toys amiibo devices"
+        case .display: return "screen external tv layout single screen gamepad position orientation"
+        case .audio: return "sound volume latency channels music"
+        case .overlay: return "fps counter stats hud performance overlay readout frame rate speed cpu ram"
+        case .notifications: return "alerts messages banners"
+        case .library: return "games sort list grid cards covers size tap layout linked folders drive removed restore"
+        case .coverArt: return "covers images artwork box"
+        case .keys: return "keys.txt decrypt online files"
+        case .wiiUMenu: return "home menu launcher"
+        case .account: return "mii profile sign in"
+        case .network: return "online service pretendo nintendo network servers custom play"
+        case .premium: return "supporter unlock purchase restore"
+        case .appearance: return "theme colours colors icon dark light classic flat"
+        case .files: return "storage folders paths location"
+        case .backup: return "backup restore export import reset defaults"
+        case .migration: return "migration export move transfer new device saves games"
+        case .troubleshooting: return "help fix stuck black screen slow crash closes buttons keys troubleshoot won't start"
+        case .deviceReport: return "device info ram chip hardware bug report problem help log crash share"
+        case .diagnostics: return "logs crash report debug"
+        case .about: return "version credits licences licenses reset support"
+        }
+    }
+
+    /// Hidden while Settings mode is Basic (matches what the old single page did).
+    var advancedOnly: Bool { self == .emulatedClock }
+}
+
+/// The pages of Settings. They follow the header colours (SettingsSectionAccent): what decides
+/// whether a game runs, what the player touches, sees and hears, what the app holds for them,
+/// how it looks, then housekeeping.
+enum SettingsCategory: String, CaseIterable, Identifiable {
+    case emulation, controls, screenAndSound, library, accountOnline, appearance, storage, support
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .emulation: return "Performance and graphics"
+        case .controls: return "Controls"
+        case .screenAndSound: return "Screen and sound"
+        case .library: return "Games and library"
+        case .accountOnline: return "Account and online"
+        case .appearance: return "Appearance"
+        case .storage: return "Storage and backup"
+        case .support: return "Help"
+        }
+    }
+
+    /// The line under the title on the hub.
+    var blurb: String {
+        switch self {
+        case .emulation: return "How fast games run and how they look: JIT, CPU, resolution and shaders."
+        case .controls: return "The on-screen pad, motion aiming and figure portals."
+        case .screenAndSound: return "Screen layout, a TV or second screen, audio, the FPS counter and alerts."
+        case .library: return "Wii U keys, how the library looks, cover art and the Wii U Menu."
+        case .accountOnline: return "Your Wii U accounts and online play."
+        case .appearance: return "Theme, colours, the app icon and Premium."
+        case .storage: return "Where files live, settings backups and moving everything to another device."
+        case .support: return "When a game won't start, reporting a problem, diagnostics, credits and reset."
+        }
+    }
+
+    /// A short note at the top of the page about what matters there.
+    var intro: String {
+        switch self {
+        case .emulation: return "The defaults suit most games, so change one thing at a time. Switch Settings mode to Advanced on the main list to see more."
+        case .controls: return "Button size, sticks and opacity are under On-screen controls. Figure portals are for Skylanders, Disney Infinity and LEGO Dimensions."
+        case .screenAndSound: return "Display covers screen layout and a TV or second screen. Audio, the FPS counter and pop-up notifications are here too."
+        case .library: return "Encrypted games need Wii U keys, so they come first. Then how your games look, where cover art comes from, and the Wii U Menu."
+        case .accountOnline: return "An account is only needed for online play. Online play decides which servers games connect to."
+        case .appearance: return "Looks only. None of this changes how games run."
+        case .storage: return "Back up your settings before a big change or an update (Advanced mode). Move to another device exports your saves and settings, and your games if you choose."
+        case .support: return "Copy bug report puts everything a helper needs in one text. Send it when you ask for help."
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .emulation: return "cpu"
+        case .controls: return "gamecontroller"
+        case .screenAndSound: return "tv"
+        case .library: return "square.grid.2x2"
+        case .accountOnline: return "person.crop.circle"
+        case .appearance: return "paintpalette"
+        case .storage: return "externaldrive"
+        case .support: return "questionmark.circle"
+        }
+    }
+
+    var accent: SettingsSectionAccent {
+        switch self {
+        case .emulation: return .core
+        case .controls, .screenAndSound: return .io
+        case .library: return .content
+        case .accountOnline, .appearance: return .identity
+        case .storage, .support: return .system
+        }
+    }
+
+    var items: [SettingsItem] {
+        switch self {
+        case .emulation: return [.cpu, .jit, .graphics, .shaderCache, .emulatedClock]
+        case .controls: return [.onScreenControls, .motion, .emulatedDevices]
+        case .screenAndSound: return [.display, .audio, .overlay, .notifications]
+        case .library: return [.keys, .library, .coverArt, .wiiUMenu]
+        case .accountOnline: return [.account, .network]
+        case .appearance: return [.appearance, .premium]
+        case .storage: return [.files, .backup, .migration]
+        case .support: return [.troubleshooting, .deviceReport, .diagnostics, .about]
+        }
+    }
+
+    func visibleItems(advanced: Bool) -> [SettingsItem] {
+        items.filter { advanced || !$0.advancedOnly }
+    }
+
+    /// The hub's titled groups.
+    static let groups: [(title: String, categories: [SettingsCategory])] = [
+        ("Playing", [.emulation, .controls, .screenAndSound]),
+        ("Your games", [.library, .accountOnline]),
+        ("This app", [.appearance, .storage, .support]),
+    ]
+
+    /// Something on this page that needs the player's attention, shown on the hub in place of the
+    /// blurb: the two things that most often make MuffinEMU look broken. Nil when all is well.
+    @MainActor
+    var attention: String? {
+        switch self {
+        case .emulation: return JITStatus.isActive ? nil : "JIT is off, so games run slower. Open to set it up."
+        case .library: return WiiUKeys.keysFileExists() ? nil : "No keys.txt yet, so encrypted games won't start."
+        default: return nil
+        }
+    }
+
+    func owns(_ item: SettingsItem) -> Bool { items.contains(item) }
+
+    static func category(of item: SettingsItem) -> SettingsCategory {
+        allCases.first { $0.owns(item) } ?? .support
+    }
+}
+
+/// Settings opens on a short list of pages (with search), and each page holds its sections. Every
+/// section is its own View struct, so the type checker isn't asked to infer one huge Form
+/// expression. Searching lists matching sections and opens them directly.
 struct SettingsView: View {
     // Observed so flipping Classic UI or Flat surfaces repaints this subtree immediately.
     @ObservedObject private var uiStyle = UIStyleStore.shared
@@ -16,66 +214,194 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showingIconPicker = false
     @State private var showingThemePicker = false
+    @State private var query = ""
     @ObservedObject private var accountSheets = AccountSheetRouter.shared
-    /// Basic hides the advanced rows (see AdvancedSettings); this view only needs it for whole sections.
+    /// Basic hides the advanced rows (see AdvancedSettings); the pages need it for whole sections.
     @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
 
-    // Grouped the way the section headers are coloured (SettingsSectionAccent): what decides
-    // whether a game runs, then what the player touches, sees and hears, then what the app
-    // holds for them, then identity, then housekeeping with About and Reset last.
-    @ViewBuilder private var formCore: some View {
-        CPUSettingsSection()
-        JITEnablerSection()
-        GraphicsSettingsSection()
-        ShaderCacheSection()
-        if SettingsMode.isAdvanced(raw: settingsModeRaw) {
-            EmulatedClockSection()
+    private var isAdvanced: Bool { SettingsMode.isAdvanced(raw: settingsModeRaw) }
+
+    @ViewBuilder private func sectionView(_ item: SettingsItem) -> some View {
+        switch item {
+        case .cpu: CPUSettingsSection()
+        case .jit: JITEnablerSection()
+        case .graphics: GraphicsSettingsSection()
+        case .shaderCache: ShaderCacheSection()
+        case .emulatedClock: EmulatedClockSection()
+        case .onScreenControls: OnScreenControlsSection()
+        case .motion: MotionSettingsSection()
+        case .emulatedDevices: EmulatedDevicesSettingsSection()
+        case .display: DisplaySettingsSection()
+        case .audio: AudioSettingsSection()
+        case .overlay: OverlaySettingsSection()
+        case .notifications: NotificationSettingsSection()
+        case .library: LibrarySettingsSection(gameManager: gameManager)
+        case .coverArt: CoverDataSettingsSection(gameManager: gameManager)
+        case .keys: KeysSettingsSection()
+        case .wiiUMenu: WiiUMenuSettingsSection()
+        case .account: AccountSettingsSection()
+        case .network: NetworkServiceSettingsSection()
+        case .premium: PremiumSettingsSection()
+        case .appearance:
+            AppearanceSettingsSection(showingIconPicker: $showingIconPicker, showingThemePicker: $showingThemePicker)
+        case .files: FilesSettingsSection()
+        case .backup: SettingsBackupSection()
+        case .migration: MigrationSettingsSection()
+        case .troubleshooting: TroubleshootingSection()
+        case .deviceReport: DeviceReportSection()
+        case .diagnostics: DiagnosticsSection()
+        case .about: AboutSettingsSection()
         }
     }
 
-    @ViewBuilder private var formInput: some View {
-        OnScreenControlsSection()
-        MotionSettingsSection()
-        DisplaySettingsSection()
-        AudioSettingsSection()
-        OverlaySettingsSection()
-        NotificationSettingsSection()
+    private func pageBackground<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        ZStack {
+            MuffinTheme.backgroundGradient
+                .ignoresSafeArea()
+
+            Form {
+                content()
+            }
+        }
+        .navigationTitle(title)
+        .muffinOpaqueNavigationBar(MuffinTheme.formGround)
+        .navigationBarTitleDisplayMode(.inline)
     }
 
-    @ViewBuilder private var formContent: some View {
-        LibrarySettingsSection(gameManager: gameManager)
-        CoverDataSettingsSection(gameManager: gameManager)
-        KeysSettingsSection()
-        WiiUMenuSettingsSection()
-        AccountSettingsSection()
-        NetworkServiceSettingsSection()
-        EmulatedDevicesSettingsSection()
+    private func categoryPage(_ category: SettingsCategory) -> some View {
+        let items = category.visibleItems(advanced: isAdvanced)
+        return ScrollViewReader { reader in
+            pageBackground(category.title) {
+                Section {
+                    Text(category.intro)
+                        .font(.system(size: 13))
+                        .foregroundColor(MuffinTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    // A long page gets a row of its sections at the top, so one tap reaches the one
+                    // you came for instead of scrolling past the others.
+                    if items.count >= 3 {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(items) { item in
+                                    Button(item.title) {
+                                        withAnimation(.easeInOut(duration: 0.25)) { reader.scrollTo(item, anchor: .top) }
+                                    }
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                    .foregroundColor(MuffinTheme.accentText)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 7)
+                                    .background(MuffinTheme.accentText.opacity(0.12), in: Capsule())
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                        .accessibilityElement(children: .contain)
+                        .accessibilityLabel("Jump to a section")
+                    }
+                }
+                ForEach(items) { item in
+                    sectionView(item)
+                        .id(item)
+                }
+            }
+        }
     }
 
-    @ViewBuilder private var formApp: some View {
-        AppearanceSettingsSection(showingIconPicker: $showingIconPicker, showingThemePicker: $showingThemePicker)
-        PremiumSettingsSection()
+    private func iconChip(_ icon: String, _ accent: SettingsSectionAccent) -> some View {
+        Image(systemName: icon)
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundColor(accent.color)
+            .frame(width: 34, height: 34)
+            .background(accent.color.opacity(0.15))
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
     }
 
-    @ViewBuilder private var formSystem: some View {
-        FilesSettingsSection()
-        SettingsBackupSection()
-        MigrationSettingsSection()
-        DeviceReportSection()
-        DiagnosticsSection()
-        AboutSettingsSection()
+    private func hubRow(_ category: SettingsCategory) -> some View {
+        NavigationLink {
+            categoryPage(category)
+        } label: {
+            HStack(spacing: 12) {
+                iconChip(category.icon, category.accent)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(category.title)
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    if let attention = category.attention {
+                        Label(attention, systemImage: "exclamationmark.circle.fill")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(MuffinTheme.cautionText)
+                            .lineLimit(2)
+                    } else {
+                        Text(category.blurb)
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+            }
+            .padding(.vertical, 3)
+        }
     }
 
-    /// Plain Form on iOS's grouped background. Hiding the background makes the text
-    /// unreadable with the current colours.
-    private var settingsForm: some View {
+    private func resultRow(_ item: SettingsItem) -> some View {
+        let category = SettingsCategory.category(of: item)
+        return NavigationLink {
+            pageBackground(item.title) { sectionView(item) }
+        } label: {
+            HStack(spacing: 12) {
+                iconChip(category.icon, category.accent)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.title)
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    Text("In \(category.title)")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.vertical, 3)
+        }
+    }
+
+    /// Sections matching a search: by title, by keyword, or because their page's title matches.
+    private var results: [SettingsItem] {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return [] }
+        return SettingsItem.allCases.filter { item in
+            guard isAdvanced || !item.advancedOnly else { return false }
+            return item.title.lowercased().contains(q)
+                || item.keywords.contains(q)
+                || SettingsCategory.category(of: item).title.lowercased().contains(q)
+        }
+    }
+
+    private var isSearching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    @ViewBuilder private var hub: some View {
         Form {
-            SettingsModeSection()
-            formCore
-            formInput
-            formContent
-            formApp
-            formSystem
+            if isSearching {
+                if results.isEmpty {
+                    Section {
+                        Text("Nothing in Settings matches \"\(query)\".")
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary)
+                    }
+                } else {
+                    Section(header: Text("Results")) {
+                        ForEach(results) { item in
+                            resultRow(item)
+                        }
+                    }
+                }
+            } else {
+                SettingsModeSection()
+                ForEach(SettingsCategory.groups, id: \.title) { group in
+                    Section(header: Text(group.title)) {
+                        ForEach(group.categories) { category in
+                            hubRow(category)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -86,11 +412,12 @@ struct SettingsView: View {
                 MuffinTheme.backgroundGradient
                     .ignoresSafeArea()
 
-                settingsForm
+                hub
             }
             .navigationTitle("Settings")
             .muffinOpaqueNavigationBar(MuffinTheme.formGround)
             .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search settings")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }

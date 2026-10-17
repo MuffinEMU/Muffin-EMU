@@ -136,6 +136,10 @@ final class ThermalMonitor: ObservableObject {
                 Task { @MainActor in self?.thermalStateChanged() }
             }
         cemu_bridge_log_line("iOS thermal: monitoring started, state \(description)")
+        // The notification only fires on a change, so a device that is already hot when the first game
+        // starts gets the same response here that a change to this state would bring: the picture drops to
+        // battery saver before the surface is sized, instead of running at full size until the state next moves.
+        applyAutoThrottleIfNeeded()
     }
 
     private func thermalStateChanged() {

@@ -201,7 +201,10 @@ PipelineObject* MetalPipelineCache::GetRenderPipelineState(const LatteFetchShade
 
 uint64 MetalPipelineCache::CalculatePipelineHash(const LatteFetchShader* fetchShader, const LatteDecompilerShader* vertexShader, const LatteDecompilerShader* geometryShader, const LatteDecompilerShader* pixelShader, const MetalAttachmentsInfo& lastUsedAttachmentsInfo, const MetalAttachmentsInfo& activeAttachmentsInfo, const LatteContextRegister& lcr)
 {
-    // Hash
+    // Hash. The attachment formats go in as the Latte formats themselves: translating each to its Metal pixel format
+    // here was a table lookup per attachment on every draw, and two Latte formats that share a Metal format only
+    // make two pipelines of the same state, which is harmless. (The hash is recomputed from the registers when the
+    // pipeline cache file is loaded, so it is never stored.)
     uint64 stateHash = 0;
     for (int i = 0; i < Latte::GPU_LIMITS::NUM_COLOR_ATTACHMENTS; ++i)
 	{
@@ -209,7 +212,7 @@ uint64 MetalPipelineCache::CalculatePipelineHash(const LatteFetchShader* fetchSh
 		if (format == Latte::E_GX2SURFFMT::INVALID_FORMAT)
             continue;
 
-		stateHash += GetMtlPixelFormat(format, false) + i * 31;
+		stateHash += (uint64)format + i * 31;
 		stateHash = std::rotl<uint64>(stateHash, 7);
 
 		if (activeAttachmentsInfo.colorFormats[i] == Latte::E_GX2SURFFMT::INVALID_FORMAT)
@@ -221,7 +224,7 @@ uint64 MetalPipelineCache::CalculatePipelineHash(const LatteFetchShader* fetchSh
 
 	if (lastUsedAttachmentsInfo.depthFormat != Latte::E_GX2SURFFMT::INVALID_FORMAT)
 	{
-		stateHash += GetMtlPixelFormat(lastUsedAttachmentsInfo.depthFormat, true);
+		stateHash += (uint64)lastUsedAttachmentsInfo.depthFormat;
 		stateHash = std::rotl<uint64>(stateHash, 7);
 		stateHash += lastUsedAttachmentsInfo.hasStencil ? 1 : 0;
 		stateHash = std::rotl<uint64>(stateHash, 1);

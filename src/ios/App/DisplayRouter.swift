@@ -87,9 +87,9 @@ enum ScreenLayout: String, CaseIterable, Identifiable {
 
     var string: String {
         switch self {
-        case .singleScreen: return "Single Screen"
-        case .bothScreens: return "Adaptive (Both Screens)"
-        case .smallGamePadTopRight: return "Both Screens (GamePad Top Right)"
+        case .singleScreen: return "Single screen"
+        case .bothScreens: return "Adaptive (both screens)"
+        case .smallGamePadTopRight: return "Both screens (GamePad top right)"
         }
     }
 
@@ -411,6 +411,9 @@ final class DisplayRouter: ObservableObject {
         ) else { return }
 
         tvSurfaceRegistered = true
+        // A title is booting and the library is off screen: let go of the decoded covers, which can
+        // run to a hundred megabytes or more and would otherwise sit next to the game for its whole run.
+        CoverImageLoader.releaseAll()
         // The view above may have just been created by the `tvRenderView` accessor, in
         // which case it is not in any hierarchy yet. This one call places it AND syncs
         // the pad surface (a no-op outside .dualScreen, leaving the GamePad screen

@@ -272,14 +272,14 @@ struct MigrationSettingsSection: View {
 
     private var exportSection: some View {
         Section {
-            Text("MuffinEMU is moving to a new app identity, and the new one is a separate app that starts empty. This version stops getting updates after this release. Export your data here, install the new MuffinEMU, then import it there.")
+            Text("MuffinEMU is moving to a new app. The new app is separate and starts empty, and this version stops getting updates after this release. Export your data here, install the new MuffinEMU, then import it there.")
                 .font(.system(size: 13))
                 .foregroundColor(MuffinTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
 
             Toggle(isOn: $includeGames) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Include games (Roms folder)")
+                    Text("Include games")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text(gamesCaption)
                         .font(.system(size: 12))
@@ -291,7 +291,7 @@ struct MigrationSettingsSection: View {
 
             if model.plan != nil {
                 SettingsRow(label: "Export size", value: MigrationArchive.format(archiveBytes), icon: "archivebox")
-                SettingsRow(label: "Free space", value: freeBytes.map(MigrationArchive.format) ?? "unknown", icon: "internaldrive")
+                SettingsRow(label: "Free space", value: freeBytes.map(MigrationArchive.format) ?? "Unknown", icon: "internaldrive")
             }
 
             if shortOfSpace {
@@ -307,7 +307,7 @@ struct MigrationSettingsSection: View {
                 Button {
                     model.export(includeGames: includeGames)
                 } label: {
-                    Label("Export everything", systemImage: "square.and.arrow.up")
+                    Label("Export data", systemImage: "square.and.arrow.up")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                 }
                 .disabled(model.isBusy || model.plan == nil || shortOfSpace)
@@ -336,12 +336,12 @@ struct MigrationSettingsSection: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         } header: {
-            SettingsSectionHeader("Move to the new MuffinEMU", icon: "arrow.right.circle", accent: .system)
+            SettingsSectionHeader("Move to another device", icon: "arrow.right.circle", accent: .system)
         } footer: {
             InfoButton.footer(
                 "Keep MuffinEMU open on screen while it runs.",
-                title: "Move to the new MuffinEMU",
-                text: "Export everything writes one file to Files, in MuffinEMU > Migration. It holds your saves, installed updates and DLC, accounts, keys.txt, otp.bin and seeprom.bin, compiled shader caches, graphic packs, save states, settings, favourites and appearance.\n\nGames (the Roms folder, and base games installed into the Wii U storage) are left out unless you turn on Include games. Without them the export is much smaller, and you can copy your games into the new app in Files. Screen recordings, save backups, logs and other caches are never included. The premium unlock isn't carried over; enter it again in the new app.\n\nThe export runs only while MuffinEMU is open on screen, and keeps the screen awake. You can stop it at any time. Before it starts, MuffinEMU checks that there's enough free space, and the file is kept out of device backups.\n\nWhen it's done, share the file to the new MuffinEMU's Files folder or to another device, install the new MuffinEMU, and choose Import from the old MuffinEMU there. Delete the export afterwards to get the space back.")
+                title: "Move to another device",
+                text: "Export data writes one file to Files, in MuffinEMU > Migration. It holds your saves, updates and DLC, accounts, keys.txt, otp.bin and seeprom.bin, shader caches, graphic packs, save states, settings, favourites and appearance.\n\nGames are left out unless you turn on Include games. That keeps the export much smaller, and you can copy your games into the new app in Files instead. Screen recordings, save backups and logs aren't included. Premium isn't carried over, so enter it again in the new app.\n\nKeep MuffinEMU open on screen while it runs. You can stop it at any time. MuffinEMU checks there is enough free space first, and the file is kept out of device backups.\n\nWhen it's done, share the file to the new MuffinEMU's Files folder or to another device, install the new MuffinEMU, and choose Import from the old MuffinEMU there. Delete the export afterwards to get the space back.")
         }
         .confirmationDialog("Delete this export?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) { model.deleteLastExport() }
@@ -420,9 +420,9 @@ struct MigrationSettingsSection: View {
             SettingsSectionHeader("Import an export", icon: "tray.and.arrow.down", accent: .system)
         } footer: {
             InfoButton.footer(
-                "Merges with what's here. A newer file is never replaced without asking.",
+                "Adds to what's here. A newer file isn't replaced without asking.",
                 title: "Import an export",
-                text: "Pick the .muffinmove file you exported from the old MuffinEMU. It can be on this device or in iCloud Drive. This also works to restore your data after reinstalling MuffinEMU.\n\nMuffinEMU checks the file first and shows what it would change. Files that aren't here yet are added, and files that are older than the export's are updated. If a file here is newer than the export's copy, you choose whether to keep it or replace it; saves that are replaced are moved to save-backups first, not deleted. Every file is checked as it is copied, so a damaged export can't leave a half-written file behind, and an interrupted import can simply be run again.\n\nIt works only while MuffinEMU is open on screen. When it finishes, close MuffinEMU and open it again.")
+                text: "Choose the .muffinmove file you exported from the old MuffinEMU. It can be on this device or in iCloud Drive. It also works for restoring your data after reinstalling.\n\nMuffinEMU checks the file first and shows what it would change. New files are added and older files are updated. If a file here is newer than the export's copy, you choose whether to keep it or replace it. Replaced saves are moved to save-backups first, not deleted. If an import is interrupted, run it again.\n\nIt works only while MuffinEMU is open on screen. When it finishes, close MuffinEMU and open it again.")
         }
         .confirmationDialog("Import this export?", isPresented: confirming, titleVisibility: .visible) {
             if let found = model.analysis {

@@ -477,7 +477,7 @@ enum WiiUMenu {
                              replaceDiffering: true, operations: &operations, skipped: &skipped)
                 }
                 if let usr = child(source, named: "usr") {
-                    notes.append("Found usr. Existing files there (including saves) are never replaced.")
+                    notes.append("Found usr. Existing files there (including saves) are kept as they are.")
                     try plan(source: usr, destination: mlc01.appendingPathComponent("usr"), relativePrefix: "mlc01/usr",
                              replaceDiffering: false, operations: &operations, skipped: &skipped)
                 }

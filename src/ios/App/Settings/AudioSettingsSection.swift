@@ -80,9 +80,9 @@ struct AudioSettingsSection: View {
         Section {
             Toggle(isOn: $autoRecord) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Save all audio automatically")
+                    Text("Record game audio automatically")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text("Records every game's music and sound to an M4A in Files > MuffinEMU > Recordings, from start to quit.")
+                    Text("Saves each game's sound as an M4A file in Files > MuffinEMU > Recordings.")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -98,7 +98,7 @@ struct AudioSettingsSection: View {
             SettingsSectionHeader("Audio", icon: "speaker.wave.2", accent: .io)
         } footer: {
             InfoButton.footer(
-                "TV and GamePad audio have their own volume and channel layout. GamePad audio plays through this device's speaker or headphones. Use the microphone to give games your real voice and sounds through the GamePad mic; otherwise the in-game Blow button covers games that ask you to blow.",
+                "TV and GamePad audio have separate volumes. Turn on the microphone for games that listen to your voice.",
                 title: "Audio",
                 text: fullText)
         }
@@ -203,7 +203,7 @@ struct AudioSettingsSection: View {
         }
         .alert("Microphone access is off", isPresented: $showMicDenied) {
             Button("Open Settings") { MicrophoneAccess.openSystemSettings() }
-            Button("Not Now", role: .cancel) {}
+            Button("Not now", role: .cancel) {}
         } message: {
             Text("MuffinEMU can't use your \(deviceName)'s microphone until you allow it in iOS Settings. Until then, games use the Blow button in the top bar instead.")
         }
@@ -242,6 +242,6 @@ struct AudioSettingsSection: View {
     }
 
     private var fullText: String {
-        "TV and GamePad audio are separate tracks with their own on/off, volume and channel layout.\n\nChannels: Mono mixes everything to one channel, Stereo splits left and right (default), Surround asks the game for more channels; most games only use stereo. Turning TV or GamePad audio on or off, and changing channels, applies the next time you start a game.\n\nGamePad audio plays whatever the game sends to the GamePad speaker. Many games send nothing different from the TV mix.\n\nUse microphone feeds your device's real microphone to games that ask for the GamePad mic, while the game has the mic open. iOS asks for permission the first time you turn it on; if you say no, it switches back off. While it's on, the in-game Blow button is hidden. When it's off, games still see a GamePad mic, but it only hears the Blow button (a simulated puff of air) and iOS never asks for permission. Microphone volume (50 is normal, 100 is twice as loud) applies the next time a game opens the mic."
+        "TV audio and GamePad audio are separate, each with its own on/off and volume. GamePad audio plays through this device's speaker or headphones. Many games send the GamePad nothing different from the TV sound.\n\nChannels (Advanced mode): Mono mixes everything into one channel, Stereo is left and right (the default), and Surround asks the game for more channels. Most games only use stereo. Turning audio on or off, and changing channels, applies the next time you start a game.\n\nUse microphone sends your device's microphone to games that ask for the GamePad mic. iOS asks for permission the first time; if you say no, it switches back off. When it is off, games that ask you to blow can use the Blow button in the top bar instead.\n\nMicrophone volume applies the next time a game opens the microphone."
     }
 }

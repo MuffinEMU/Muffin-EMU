@@ -394,8 +394,12 @@ private struct PreviewStickView: View {
                                                  calibrationRaw: id == "stickL" ? calibrationLeft : calibrationRight)
                     onStick(id == "stickL" ? 0 : 1, out)
                 }
+                // Recentre on the lift itself, as the shipping pad's JoystickControl does: a flick handled
+                // entirely between two renders never shows `touching` as true, and the knobOffset fallback
+                // below is then the only thing that recentres it.
                 .onEnded { _ in
                     if !pushed { click() }
+                    recentre()
                 }
         )
         .allowsHitTesting(isInteractive)
