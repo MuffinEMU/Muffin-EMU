@@ -6,10 +6,13 @@
 import SwiftUI
 import UIKit
 
-/// One-tap copy of the chip, memory and build details a bug report needs. Its own section
-/// above Diagnostics because it is the first thing to send when something is wrong.
+/// One-tap copy of everything a bug report needs: the device, the main settings, the engine's last
+/// status and the tail of the launch log (BugReport.swift), plus the device line on its own and the
+/// log files for the share sheet. Its own section above Diagnostics because it is the first thing to
+/// send when something is wrong.
 struct DeviceReportSection: View {
     @State private var deviceReportCopied = false
+    @State private var bugReportCopied = false
     /// Computed on demand. PlatformCapabilities.summary is appended because only the Swift side
     /// knows which SDK this binary was built against. @MainActor because ThermalMonitor and
     /// HeatStatus are main-actor isolated.
@@ -22,8 +25,35 @@ struct DeviceReportSection: View {
             + (HeatStatus.temperatureCelsius.map { String(format: " (battery %.0f C)", $0) } ?? " (no sensor reading)")
     }
 
+    /// ShareLink where it exists (iOS 16 and later), the same share sheet through UIKit before that.
+    @ViewBuilder private var shareLogsButton: some View {
+        let files = BugReport.logFiles
+        if !files.isEmpty {
+            if #available(iOS 16.0, *) {
+                ShareLink(items: files) { Label("Share log files", systemImage: "square.and.arrow.up") }
+            } else {
+                Button { DocumentImport.presentShare(files) } label: { Label("Share log files", systemImage: "square.and.arrow.up") }
+            }
+        }
+    }
+
     var body: some View {
         Section {
+            Button {
+                UIPasteboard.general.string = BugReport.text(game: nil)
+                bugReportCopied = true
+            } label: {
+                Label(bugReportCopied ? "Copied" : "Copy bug report",
+                      systemImage: bugReportCopied ? "checkmark" : "doc.on.clipboard")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+            }
+            Text("Your device, your main settings, what the engine last reported and the end of the launch log, as one text to paste into a message or a GitHub issue. No account names or files.")
+                .font(.system(size: 12))
+                .foregroundColor(MuffinTheme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+
+            shareLogsButton
+
             Text(deviceReport)
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundColor(MuffinTheme.secondaryText)
@@ -33,13 +63,15 @@ struct DeviceReportSection: View {
                 UIPasteboard.general.string = deviceReport
                 deviceReportCopied = true
             } label: {
-                Label(deviceReportCopied ? "Copied" : "Copy device report",
+                Label(deviceReportCopied ? "Copied" : "Copy device report only",
                       systemImage: deviceReportCopied ? "checkmark" : "doc.on.doc")
             }
         } header: {
-            SettingsSectionHeader("Device report", icon: "iphone", accent: .system)
+            SettingsSectionHeader("Report a problem", icon: "iphone", accent: .system)
         } footer: {
-            InfoButton.footer("Send this with any bug report. It lists your chip, memory and app build.")
+            InfoButton.footer("Copy bug report gathers what a helper asks for first. Share log files sends the full logs.",
+                title: "Report a problem",
+                text: "Copy bug report puts one text on the clipboard: your device (chip, memory, app build), the settings that decide how games run (CPU mode, JIT, renderer, resolution), the game you last started, what the engine last reported and the last lines of the launch log. Paste it into your message when you ask for help.\n\nShare log files sends the engine's full log.txt and the crash log, for the cases where the short report isn't enough.\n\nThe launch log is always collected; Show launch log under Diagnostics only decides whether it is drawn over the screen while a game starts.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }

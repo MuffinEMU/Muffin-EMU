@@ -209,6 +209,9 @@ struct BootFailureView: View {
     /// Keys the player added from this screen. Nil until they do.
     @State private var keysAdded: Int?
     @State private var keysError: String?
+    @State private var reportCopied = false
+    /// The end of the launch log, taken once when the screen appears: the lines that explain the failure.
+    @State private var logTail: [String] = []
 
     /// An encrypted disc image or game folder, with no keys.txt installed: the likely reason it didn't start. Homebrew
     /// (.rpx, .elf, .wuhb), decrypted dumps and .wua archives don't need keys.
@@ -240,6 +243,7 @@ struct BootFailureView: View {
                 }
             }
         }
+        .onAppear { logTail = BugReport.launchLogTail(14) }
     }
 
     private func importKeys() {
@@ -307,6 +311,23 @@ struct BootFailureView: View {
                         .foregroundColor(.white.opacity(0.75))
                         .multilineTextAlignment(.center)
                         .textSelection(.enabled)
+
+                    // The last lines the engine logged, in the launch log's own colours, so the line that
+                    // decided the boot is readable here without turning the launch log on beforehand.
+                    if !logTail.isEmpty {
+                        VStack(alignment: .leading, spacing: 1) {
+                            ForEach(Array(logTail.enumerated()), id: \.offset) { _, line in
+                                Text(line)
+                                    .font(.system(size: 9, weight: .regular, design: .monospaced))
+                                    .foregroundColor(LaunchLogView.colour(for: line))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        .padding(10)
+                        .background(Color.white.opacity(0.06))
+                        .cornerRadius(8)
+                        .textSelection(.enabled)
+                    }
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.top, 8)
@@ -319,7 +340,23 @@ struct BootFailureView: View {
             // Only where the logs can explain something. Not on the restart screen (the logs are from the game that
             // already ended, and its own screen offered them), a disconnected drive, or missing keys.
             if !needsCleanRestart && !driveWasLost && !needsKeys {
-                shareDiagnosticsButton
+                HStack(spacing: 10) {
+                    Button {
+                        UIPasteboard.general.string = BugReport.text(game: game)
+                        reportCopied = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: reportCopied ? "checkmark" : "doc.on.clipboard")
+                                .font(.system(size: 14, weight: .semibold))
+                            Text(reportCopied ? "Copied" : "Copy bug report")
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        }
+                    }
+                    .buttonStyle(MuffinBarButtonStyle())
+                    .accessibilityHint("Copies your device, settings, this game and the end of the launch log as one text to paste when you ask for help.")
+
+                    shareDiagnosticsButton
+                }
             }
 
             if needsCleanRestart {
@@ -1562,9 +1599,9 @@ struct EmptyGamesView: View {
 
     private var heading: String {
         switch kind {
-        case .emptyLibrary: return "No Games Yet"
-        case .noFavourites: return "No Favourites Yet"
-        case .noSearchMatch: return "No Matches"
+        case .emptyLibrary: return "No games yet"
+        case .noFavourites: return "No favourites yet"
+        case .noSearchMatch: return "No matches"
         }
     }
 

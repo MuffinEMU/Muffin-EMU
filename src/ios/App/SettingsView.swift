@@ -45,7 +45,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         case .files: return "Files"
         case .backup: return "Back up settings"
         case .migration: return "Move to another device"
-        case .deviceReport: return "Device report"
+        case .deviceReport: return "Report a problem"
         case .diagnostics: return "Diagnostics"
         case .about: return "About"
         }
@@ -77,7 +77,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         case .files: return "storage folders paths location"
         case .backup: return "backup restore export import reset defaults"
         case .migration: return "migration export move transfer new device saves games"
-        case .deviceReport: return "device info ram chip hardware"
+        case .deviceReport: return "device info ram chip hardware bug report problem help log crash share"
         case .diagnostics: return "logs crash report debug"
         case .about: return "version credits licences licenses reset support"
         }
@@ -118,7 +118,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .accountOnline: return "Your profile and the online service."
         case .appearance: return "Theme, colours, the app icon and Premium."
         case .storage: return "Where files live, settings backups and moving everything to another device."
-        case .support: return "Device report, diagnostics, credits and reset."
+        case .support: return "Bug report, diagnostics, credits and reset."
         }
     }
 
@@ -132,7 +132,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .accountOnline: return "An account is only needed for online play. The online service decides which servers games connect to."
         case .appearance: return "Looks only. None of this changes how games run."
         case .storage: return "Back up your settings before a big change or an update (Advanced mode). Move to another device exports your saves and settings, and your games if you choose."
-        case .support: return "Copy the device report and send it when you ask for help."
+        case .support: return "Copy bug report puts everything a helper needs in one text. Send it when you ask for help."
         }
     }
 
