@@ -39,7 +39,7 @@ struct SettingsModeSection: View {
                 }
                 .pickerStyle(.segmented)
                 Text(SettingsMode.isAdvanced(raw: modeRaw)
-                     ? "Everything is shown, including the settings most people never need."
+                     ? "Everything is shown, including settings most people won't need."
                      : "Only the settings most people need. The rest are off, at their defaults.")
                     .font(.system(size: 12))
                     .foregroundColor(MuffinTheme.secondaryText)
