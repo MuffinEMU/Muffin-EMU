@@ -2697,8 +2697,12 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
 
     // Depth stencil state
 
-    const bool hasDepthStencilAttachment = m_state.m_activeFBO.m_fbo->depthBuffer.texture != nullptr;
-    MTL::DepthStencilState* depthStencilState = m_depthStencilCache->GetDepthStencilState(LatteGPUState.contextNew, hasDepthStencilAttachment);
+    // What the pass really has bound, not what the guest asked for: a depth texture whose view could not be made is not
+    // attached (CachedFBOMtl), and a depth texture without stencil brings no stencil attachment. A depth or stencil test
+    // against an attachment the pass does not have is undefined on Metal and is left off, as it is on Vulkan.
+    const bool hasDepthAttachment = m_state.m_activeFBO.m_attachmentsInfo.depthFormat != Latte::E_GX2SURFFMT::INVALID_FORMAT;
+    const bool hasStencilAttachment = hasDepthAttachment && m_state.m_activeFBO.m_attachmentsInfo.hasStencil;
+    MTL::DepthStencilState* depthStencilState = m_depthStencilCache->GetDepthStencilState(LatteGPUState.contextNew, hasDepthAttachment, hasStencilAttachment);
     if (depthStencilState != encoderState.m_depthStencilState)
     {
         renderCommandEncoder->setDepthStencilState(depthStencilState);
@@ -2706,7 +2710,7 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     }
 
     // Stencil reference
-    bool stencilEnable = hasDepthStencilAttachment && LatteGPUState.contextNew.DB_DEPTH_CONTROL.get_STENCIL_ENABLE();
+    bool stencilEnable = hasStencilAttachment && LatteGPUState.contextNew.DB_DEPTH_CONTROL.get_STENCIL_ENABLE();
     if (stencilEnable)
     {
         bool backStencilEnable = LatteGPUState.contextNew.DB_DEPTH_CONTROL.get_BACK_STENCIL_ENABLE();
