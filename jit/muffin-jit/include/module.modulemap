@@ -1,0 +1,7 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// SPDX-License-Identifier: GPL-3.0-only
+module MuffinJitFFI {
+    header "muffin_jit.h"
+    link "muffin_jit"
+    export *
+}

@@ -23,6 +23,8 @@
 use std::ffi::{c_char, c_void};
 
 use idevice::debug_proxy::{DebugProxyClient, DebugserverCommand};
+// `connect_rsd` is a method on the RsdService trait; it must be in scope to call it.
+use idevice::RsdService;
 
 use crate::ffi::{report, MjProgress};
 use crate::link::MuffinJitLink;
