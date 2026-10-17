@@ -237,7 +237,14 @@ PipelineInfo* VulkanRenderer::draw_createGraphicsPipeline(uint32 indexCount)
 	PipelineCompiler* pipelineCompiler = new PipelineCompiler();
 
 	bool requiresRobustBufferAccess = PipelineCompiler::CalcRobustBufferAccessRequirement(vertexShader, pixelShader, geometryShader);
-	pipelineCompiler->InitFromCurrentGPUState(pipelineInfo, LatteGPUState.contextNew, vkFBO->GetRenderPassObj(), requiresRobustBufferAccess);
+	if (!pipelineCompiler->InitFromCurrentGPUState(pipelineInfo, LatteGPUState.contextNew, vkFBO->GetRenderPassObj(), requiresRobustBufferAccess))
+	{
+		// The pipeline layout could not be created (logged there). The result used to be ignored and the compile went ahead
+		// against a layout that doesn't exist. Keep the pipeline info registered with no VkPipeline instead: draws with this
+		// state are skipped, like a pipeline the device can't run.
+		delete pipelineCompiler;
+		return pipelineInfo;
+	}
 	pipelineCompiler->TrackAsCached(vsBaseHash, pipelineHash);
 
 	// use heuristics based on parameter patterns to determine if the current drawcall is essential (non-skipable)
@@ -479,7 +486,10 @@ void VulkanRenderer::draw_prepareDynamicOffsetsForDescriptorSet(uint32 shaderSta
 
 uint64 VulkanRenderer::GetDescriptorSetStateHash(LatteDecompilerShader* shader)
 {
-	uint64 hash = 0;
+	// The Texture filtering setting goes into every sampler a descriptor set holds (LatteTexture_applyAnisotropySetting in
+	// draw_getOrCreateDescriptorSet). Without it in the key, a set built before the player changed the setting kept being
+	// handed out with the old samplers, so the change showed only on textures that had never been drawn.
+	uint64 hash = (uint64)(uint32)(g_latteAnisotropyOverride.load(std::memory_order_relaxed) + 2);
 
 	const sint32 textureCount = shader->resourceMapping.getTextureCount();
 	for (int i = 0; i < textureCount; ++i)
