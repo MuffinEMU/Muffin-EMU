@@ -42,6 +42,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
     case recordScreen
     case scanAmiibo
     case recentreAim
+    case reportProblem
     case quit
     // case wiiUMenu   // see EXTENSION POINT above
 
@@ -70,6 +71,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
         case .recordScreen: return "Record screen"
         case .scanAmiibo: return "Scan amiibo"
         case .recentreAim: return "Recentre aim"
+        case .reportProblem: return "Copy bug report"
         case .quit: return "Quit game"
         }
     }
@@ -85,6 +87,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
         case .recordScreen: return "video.circle"
         case .scanAmiibo: return "wave.3.right"
         case .recentreAim: return "scope"
+        case .reportProblem: return "doc.on.clipboard"
         case .quit: return "xmark.circle"
         }
     }
@@ -100,6 +103,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
         case .recordScreen: return "Records the screen the game is showing, at the game's own resolution and with its sound, to a video in the Recordings folder in Files. Choose it again to stop."
         case .scanAmiibo: return "Opens a list of amiibo files to scan. The game has to be asking for an amiibo."
         case .recentreAim: return "Takes the way you are holding the device now as straight ahead, then goes back to the game."
+        case .reportProblem: return "Copies one text for a bug report about this game: your device, the main settings, what the engine last reported and the end of the log. The game keeps running; paste it when you ask for help."
         case .quit: return "Asks before leaving the game."
         }
     }
@@ -183,6 +187,8 @@ struct HomeMenuActions {
     let toggleRecording: () -> Void
     let toggleScreenRecording: () -> Void
     let scanAmiibo: () -> Void
+    /// Puts BugReport.text for the running game on the clipboard.
+    let copyBugReport: () -> Void
 }
 
 private struct HomeMenuRow: Identifiable {
@@ -224,6 +230,8 @@ struct HomeMenuOverlay: View {
     @State private var page = Page.root
     @State private var focus = 0
     @State private var rowsHeight: CGFloat = 280
+    /// The bug report row shows a checkmark once it has copied, for as long as the menu is open.
+    @State private var bugReportCopied = false
     /// The highlight is for controller players: shown from the start when one is connected, and once
     /// a controller button is used otherwise, so a touch player is not handed a row that looks chosen.
     @State private var usingController = ControllerPresence.isConnected()
@@ -416,6 +424,14 @@ struct HomeMenuOverlay: View {
                 cemu_bridge_motion_recenter()
                 actions.resume()
             }
+        case .reportProblem:
+            // Stays open, like the recording rows, so the checkmark shows the copy happened.
+            var row = make {
+                actions.copyBugReport()
+                bugReportCopied = true
+            }
+            row.isSelected = bugReportCopied
+            return row
         case .quit:
             // Dropped, not disabled, while a save is being written: quitting tears the title down under it.
             return canQuit ? make(destructive: true, { show(.confirmQuit) }) : nil

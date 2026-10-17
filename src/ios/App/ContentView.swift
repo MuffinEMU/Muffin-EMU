@@ -2224,7 +2224,8 @@ struct EmulatorViewOptimized: View {
                 swapScreens: swapScreensFromHomeMenu,
                 toggleRecording: { AudioRecorder.shared.toggle(gameName: gameName) },
                 toggleScreenRecording: { ScreenRecorder.shared.toggle(gameName: gameName) },
-                scanAmiibo: { showAmiibo = true }
+                scanAmiibo: { showAmiibo = true },
+                copyBugReport: { UIPasteboard.general.string = BugReport.text(game: game) }
             )
         )
     }
