@@ -42,6 +42,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
     case recordScreen
     case scanAmiibo
     case recentreAim
+    case performanceReadout
     case reportProblem
     case quit
     // case wiiUMenu   // see EXTENSION POINT above
@@ -71,6 +72,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
         case .recordScreen: return "Record screen"
         case .scanAmiibo: return "Scan amiibo"
         case .recentreAim: return "Recentre aim"
+        case .performanceReadout: return "Performance readout"
         case .reportProblem: return "Copy bug report"
         case .quit: return "Quit game"
         }
@@ -87,6 +89,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
         case .recordScreen: return "video.circle"
         case .scanAmiibo: return "wave.3.right"
         case .recentreAim: return "scope"
+        case .performanceReadout: return "speedometer"
         case .reportProblem: return "doc.on.clipboard"
         case .quit: return "xmark.circle"
         }
@@ -103,6 +106,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
         case .recordScreen: return "Records the screen the game is showing, at the game's own resolution and with its sound, to a video in the Recordings folder in Files. Choose it again to stop."
         case .scanAmiibo: return "Opens a list of amiibo files to scan. The game has to be asking for an amiibo."
         case .recentreAim: return "Takes the way you are holding the device now as straight ahead, then goes back to the game."
+        case .performanceReadout: return "Shows the FPS readout over the game until you quit it. Settings > Performance overlay chooses its corner and what else it lists."
         case .reportProblem: return "Copies one text for a bug report about this game: your device, the main settings, what the engine last reported and the end of the log. The game keeps running; paste it when you ask for help."
         case .quit: return "Asks before leaving the game."
         }
@@ -232,6 +236,8 @@ struct HomeMenuOverlay: View {
     @State private var rowsHeight: CGFloat = 280
     /// The bug report row shows a checkmark once it has copied, for as long as the menu is open.
     @State private var bugReportCopied = false
+    /// The overlay as the core has it now: Settings' value at boot, or the last toggle here.
+    @State private var readoutShown = cemu_bridge_overlay_position() != Int32(ScreenPosition.disabled.rawValue)
     /// The highlight is for controller players: shown from the start when one is connected, and once
     /// a controller button is used otherwise, so a touch player is not handed a row that looks chosen.
     @State private var usingController = ControllerPresence.isConnected()
@@ -424,6 +430,19 @@ struct HomeMenuOverlay: View {
                 cemu_bridge_motion_recenter()
                 actions.resume()
             }
+        case .performanceReadout:
+            // Written straight to the core, which reads the position every frame, and not to Settings: a
+            // look at the frame rate during one game is not a change of the player's setting. Where the
+            // setting has a corner, that corner; with the overlay off in Settings, the top left.
+            var row = make {
+                let stored = ScreenPosition(rawValue: UserDefaults.standard.object(forKey: OverlaySettings.positionKey) as? Int
+                                            ?? OverlaySettings.defaultPosition.rawValue) ?? .disabled
+                let shown = stored == .disabled ? ScreenPosition.topLeft : stored
+                cemu_bridge_set_overlay_position(Int32((readoutShown ? ScreenPosition.disabled : shown).rawValue))
+                readoutShown.toggle()
+            }
+            row.isSelected = readoutShown
+            return row
         case .reportProblem:
             // Stays open, like the recording rows, so the checkmark shows the copy happened.
             var row = make {
