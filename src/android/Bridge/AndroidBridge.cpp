@@ -106,7 +106,9 @@ void onGameExited()
 // Input. One emulated GamePad, fed by the on-screen pad and a physical controller the app reads through
 // Android's input events. The core polls through the GameController provider's callback table.
 constexpr int kBitA = 0, kBitB = 1, kBitX = 2, kBitY = 3, kBitL = 4, kBitR = 5, kBitZL = 6, kBitZR = 7,
-	kBitMinus = 8, kBitPlus = 9, kBitStickL = 10, kBitStickR = 11;
+	kBitMinus = 8, kBitPlus = 9, kBitStickL = 10, kBitStickR = 11,
+	// the d-pad sits at 16-19 in GCController.mm's layout, which the provider reads these bits with
+	kBitDUp = 16, kBitDDown = 17, kBitDLeft = 18, kBitDRight = 19;
 
 int buttonBit(int button)
 {
@@ -124,10 +126,10 @@ int buttonBit(int button)
 	case ANDROID_PAD_PLUS: return kBitPlus;
 	case ANDROID_PAD_STICK_L: return kBitStickL;
 	case ANDROID_PAD_STICK_R: return kBitStickR;
-	case ANDROID_PAD_UP: return kButtonUp;
-	case ANDROID_PAD_DOWN: return kButtonDown;
-	case ANDROID_PAD_LEFT: return kButtonLeft;
-	case ANDROID_PAD_RIGHT: return kButtonRight;
+	case ANDROID_PAD_UP: return kBitDUp;
+	case ANDROID_PAD_DOWN: return kBitDDown;
+	case ANDROID_PAD_LEFT: return kBitDLeft;
+	case ANDROID_PAD_RIGHT: return kBitDRight;
 	default: return -1;
 	}
 }
