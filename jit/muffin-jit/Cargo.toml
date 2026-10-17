@@ -50,5 +50,6 @@ mdns-sd = "0.19.1"
 opt-level = "z"
 lto = true
 codegen-units = 1
-strip = true
+# No strip: this is a static library that gets linked into the helper extension, so
+# its exported symbols must survive. The final app link dead-strips what it doesn't use.
 panic = "abort"

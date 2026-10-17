@@ -34,10 +34,12 @@ if [ ! -f "$OUT" ]; then
   exit 1
 fi
 echo "built $(du -h "$OUT" | cut -f1): $OUT"
-# A quick sanity check that the exported symbols are present.
+# A quick sanity check that the exported symbols are present. Match the bare name so
+# it works whether or not the platform prefixes an underscore.
 if command -v nm >/dev/null 2>&1; then
-  for sym in _muffin_jit_connect _muffin_jit_enable _muffin_jit_pair_on_device; do
-    nm "$OUT" 2>/dev/null | grep -q "$sym" || { echo "::error::missing symbol $sym"; exit 1; }
+  syms="$(nm -g "$OUT" 2>/dev/null || nm "$OUT" 2>/dev/null)"
+  for sym in muffin_jit_connect muffin_jit_enable muffin_jit_pair_on_device; do
+    printf '%s\n' "$syms" | grep -q "$sym" || { echo "::error::missing symbol $sym"; exit 1; }
   done
   echo "exported symbols present"
 fi
