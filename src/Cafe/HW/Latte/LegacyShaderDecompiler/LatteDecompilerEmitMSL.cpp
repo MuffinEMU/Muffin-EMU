@@ -2540,7 +2540,9 @@ static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContex
     	// offset
 		if( texOpcode == GPU7_TEX_INST_SAMPLE_L || texOpcode == GPU7_TEX_INST_SAMPLE_LB || texOpcode == GPU7_TEX_INST_SAMPLE_G || texOpcode == GPU7_TEX_INST_SAMPLE_LZ || texOpcode == GPU7_TEX_INST_SAMPLE_C_LZ || texOpcode == GPU7_TEX_INST_SAMPLE || texOpcode == GPU7_TEX_INST_SAMPLE_C || texOpcode == GPU7_TEX_INST_SAMPLE_C_L )
     	{
-    		if( hasOffset )
+    		// sampleCompareEmulate(tex, sampler, coord, compare) takes no offset: an emulated compare (1D, 1D array or 3D
+    		// texture) with one would get a fifth argument and the shader would not compile, so the offset is dropped there
+    		if( hasOffset && !emulateCompare )
     		{
     			uint8 offsetComponentCount = 0;
     			if( texDim == Latte::E_DIM::DIM_1D )
