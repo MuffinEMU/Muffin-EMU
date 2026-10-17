@@ -609,7 +609,18 @@ void PPCRecompiler_visitAddressNoBlock(uint32 enterAddress)
         PPCRecompilerState.recompilerSpinlock.unlock();
         return;
     }
-    PPCRecompilerState.targetQueue.emplace(enterAddress);
+    try
+    {
+        PPCRecompilerState.targetQueue.emplace(enterAddress);
+    }
+    catch (const std::bad_alloc&)
+    {
+        // Out of memory on a PPC core thread, with the spinlock held: release it and leave the entry unvisited, so the
+        // interpreter keeps running the code and asks again later. Letting this escape would keep the lock taken
+        // forever (every compile worker and invalidation spins on it) and end the thread with an unhandled exception.
+        PPCRecompilerState.recompilerSpinlock.unlock();
+        return;
+    }
     ppcRecompilerInstanceData->ppcRecompilerDirectJumpTable[enterAddress / 4] = PPCRecompiler_leaveRecompilerCode_visited;
     PPCRecompilerState.recompilerSpinlock.unlock();
     s_threadPool.Notify();
