@@ -38,12 +38,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -68,6 +70,20 @@ class MainActivity : ComponentActivity() {
         var coreReady by remember { mutableStateOf(false) }
         var status by remember { mutableStateOf("Starting the emulator core…") }
         var keyCount by remember { mutableStateOf(-1) }
+        // What is being copied in, or the last copy's error. A disc image runs to tens of gigabytes, so the copy
+        // runs off the main thread and the list waits for it.
+        var copyStatus by remember { mutableStateOf<String?>(null) }
+        val scope = rememberCoroutineScope()
+
+        fun copyIn(uri: Uri, dir: File, fixedName: String? = null, then: () -> Unit) {
+            val name = fixedName ?: queryDisplayName(uri) ?: "game"
+            copyStatus = "Copying $name…"
+            scope.launch {
+                val error = withContext(Dispatchers.IO) { runCatching { importInto(uri, dir, name) }.exceptionOrNull() }
+                copyStatus = error?.let { "Couldn't copy $name: ${it.message ?: it.javaClass.simpleName}" }
+                then()
+            }
+        }
 
         fun rescan() {
             games.clear()
@@ -83,14 +99,10 @@ class MainActivity : ComponentActivity() {
         }
 
         val addGame = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            if (uri != null) {
-                importInto(uri, MuffinApp.romsDir(this))
-                rescan()
-            }
+            if (uri != null) copyIn(uri, MuffinApp.romsDir(this)) { rescan() }
         }
         val addKeys = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            if (uri != null) {
-                importInto(uri, MuffinApp.mlcDir(this), fixedName = "keys.txt")
+            if (uri != null) copyIn(uri, MuffinApp.mlcDir(this), fixedName = "keys.txt") {
                 if (coreReady) keyCount = NativeBridge.reloadAndCountKeys()
             }
         }
@@ -105,13 +117,17 @@ class MainActivity : ComponentActivity() {
             )
             Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(onClick = { addGame.launch(arrayOf("*/*")) }) { Text("Add game") }
-                OutlinedButton(onClick = { addKeys.launch(arrayOf("*/*")) }) { Text("Add keys.txt") }
+                Button(onClick = { addGame.launch(arrayOf("*/*")) }, enabled = copyStatus?.startsWith("Copying") != true) { Text("Add game") }
+                OutlinedButton(onClick = { addKeys.launch(arrayOf("*/*")) }, enabled = copyStatus?.startsWith("Copying") != true) { Text("Add keys.txt") }
+            }
+            copyStatus?.let {
+                Spacer(Modifier.height(8.dp))
+                Text(it, color = cream.copy(alpha = 0.8f), fontSize = 13.sp)
             }
             Spacer(Modifier.height(16.dp))
             if (games.isEmpty()) {
                 Text(
-                    "No games yet. Add a game file (.wua, .wud, .wux, .rpx), or put games in\n" +
+                    "No games yet. Add a game file (.wua, .wud, .wux, .iso, .rpx), or put games in\n" +
                         "Android/data/io.github.muffinemu/files/Roms with a file manager.",
                     color = cream.copy(alpha = 0.8f), fontSize = 14.sp
                 )
@@ -136,7 +152,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun listGames(dir: File): List<File> {
-        val extensions = setOf("wua", "wud", "wux", "rpx")
+        val extensions = setOf("wua", "wud", "wux", "iso", "rpx")
         val files = dir.listFiles() ?: return emptyList()
         return files.filter { f ->
             f.isFile && f.extension.lowercase() in extensions ||
@@ -145,11 +161,21 @@ class MainActivity : ComponentActivity() {
         }.sortedBy { it.name.lowercase() }
     }
 
-    /** Copies a picked document into MuffinEMU's own folder; the original is left where it is. */
-    private fun importInto(uri: Uri, dir: File, fixedName: String? = null) {
-        val name = fixedName ?: queryDisplayName(uri) ?: "game"
+    /**
+     * Copies a picked document into MuffinEMU's own folder; the original is left where it is. Blocking. The copy
+     * goes to name.part and is renamed at the end, so a copy cut short never shows up in the library as a game.
+     */
+    private fun importInto(uri: Uri, dir: File, name: String) {
         val target = File(dir, name)
-        contentResolver.openInputStream(uri)?.use { input -> target.outputStream().use { input.copyTo(it) } }
+        val partial = File(dir, "$name.part")
+        try {
+            val input = contentResolver.openInputStream(uri) ?: error("the file couldn't be opened")
+            input.use { src -> partial.outputStream().use { src.copyTo(it, bufferSize = 1 shl 20) } }
+            target.delete()
+            if (!partial.renameTo(target)) error("the copy couldn't be put in place")
+        } finally {
+            partial.delete()
+        }
     }
 
     private fun queryDisplayName(uri: Uri): String? {

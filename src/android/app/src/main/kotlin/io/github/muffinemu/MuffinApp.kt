@@ -38,10 +38,13 @@ class MuffinApp : Application() {
                 if (coreStarted.get()) return true
                 val data = dataDir(context)
                 val stamp = File(data, ".stamp")
-                if (!stamp.exists() || stamp.readText() != DATA_STAMP) {
+                // Keyed to the install, so an update that ships new profiles or fonts unpacks them again.
+                val installed = context.packageManager.getPackageInfo(context.packageName, 0).lastUpdateTime
+                val wanted = "$DATA_STAMP-$installed"
+                if (!stamp.exists() || stamp.readText() != wanted) {
                     data.deleteRecursively()
                     copyAssetDir(context, "CemuData", data)
-                    stamp.writeText(DATA_STAMP)
+                    stamp.writeText(wanted)
                 }
                 val ok = NativeBridge.initialize(mlcDir(context).absolutePath, data.absolutePath)
                 coreStarted.set(ok)
