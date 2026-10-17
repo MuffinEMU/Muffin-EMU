@@ -486,7 +486,10 @@ void VulkanRenderer::draw_prepareDynamicOffsetsForDescriptorSet(uint32 shaderSta
 
 uint64 VulkanRenderer::GetDescriptorSetStateHash(LatteDecompilerShader* shader)
 {
-	uint64 hash = 0;
+	// The Texture filtering setting goes into every sampler a descriptor set holds (LatteTexture_applyAnisotropySetting in
+	// draw_getOrCreateDescriptorSet). Without it in the key, a set built before the player changed the setting kept being
+	// handed out with the old samplers, so the change showed only on textures that had never been drawn.
+	uint64 hash = (uint64)(uint32)(g_latteAnisotropyOverride.load(std::memory_order_relaxed) + 2);
 
 	const sint32 textureCount = shader->resourceMapping.getTextureCount();
 	for (int i = 0; i < textureCount; ++i)
