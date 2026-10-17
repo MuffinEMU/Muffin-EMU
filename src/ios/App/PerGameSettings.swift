@@ -310,7 +310,7 @@ struct GameOptionsView: View {
         var id: String { rawValue }
         var title: String {
             switch self {
-            case .useGlobalDefault: return "Use Global Default"
+            case .useGlobalDefault: return "Use the global setting"
             case .on: return "On"
             case .off: return "Off"
             }

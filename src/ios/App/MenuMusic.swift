@@ -224,7 +224,7 @@ struct MenuMusicSettingsGroup: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Theme music")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
-                Text("Plays MuffinEMU's themes, or your own tracks, on loop in the menus, never in a game.")
+                Text("Plays MuffinEMU's themes, or your own tracks, on loop in the menus. It stops when a game starts.")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
