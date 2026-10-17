@@ -3,6 +3,7 @@
 #include "PPCInterpreterHelper.h"
 
 #include<math.h>
+#include <cmath>
 
 // floating point utility
 
@@ -228,7 +229,13 @@ void PPCInterpreter_FCTIWZ(PPCInterpreter_t* hCPU, uint32 Opcode)
 
 	double b = hCPU->fpr[frB].fpr;
 	uint64 v;
-	if (b > (double)0x7FFFFFFF)
+	if (b != b)
+	{
+		// NaN converts to 0x80000000 on the real CPU. Casting a NaN to an integer is undefined in C++ and the arm64
+		// conversion instruction yields 0, so this case has to be explicit.
+		v = (uint64)0x80000000;
+	}
+	else if (b > (double)0x7FFFFFFF)
 	{
 		v = (uint64)0x7FFFFFFF;
 	}
@@ -258,7 +265,12 @@ void PPCInterpreter_FCTIW(PPCInterpreter_t* hCPU, uint32 Opcode)
 
 	double b = hCPU->fpr[frB].fpr;
 	uint64 v;
-	if (b > (double)0x7FFFFFFF)
+	if (b != b)
+	{
+		// NaN converts to 0x80000000 on the real CPU (see FCTIWZ)
+		v = (uint64)0x80000000;
+	}
+	else if (b > (double)0x7FFFFFFF)
 	{
 		v = (uint64)0x7FFFFFFF;
 	}
@@ -269,13 +281,10 @@ void PPCInterpreter_FCTIW(PPCInterpreter_t* hCPU, uint32 Opcode)
 	else
 	{
 		// todo: Support for other rounding modes than NEAR
-		double t = b + 0.5;
-		sint32 i = (sint32)t;
-		if (t - i < 0 || (t - i == 0 && b > 0))
-		{
-			i--;
-		}
-		v = (uint64)i;
+		// Round half to even, which is what the default FPSCR rounding mode does. The previous add-0.5-and-adjust
+		// code rounded exact halves whose nearest even neighbour is further from zero the wrong way (3.5 gave 3).
+		// nearbyint follows the host rounding mode, which is round-to-nearest-even and is never changed.
+		v = (uint64)(uint32)(sint32)std::nearbyint(b);
 	}
 	hCPU->fpr[frD].guint = 0xFFF8000000000000ULL | v;
 	if (v == 0 && ((*(uint64*)&b) >> 63))

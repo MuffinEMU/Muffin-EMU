@@ -33,7 +33,8 @@ static bool checkAdditionOverflow(uint32 x, uint32 y, uint32 r)
 static void PPCInterpreter_ADD(PPCInterpreter_t* hCPU, uint32 opcode)
 {
 	PPC_OPC_TEMPL3_XO();
-	hCPU->gpr[rD] = (int)hCPU->gpr[rA] + (int)hCPU->gpr[rB];
+	// unsigned so the wrap-around is defined (signed overflow is undefined behaviour)
+	hCPU->gpr[rD] = hCPU->gpr[rA] + hCPU->gpr[rB];
 	if (opHasRC())
 		ppc_update_cr0(hCPU, hCPU->gpr[rD]);
 	PPCInterpreter_nextInstruction(hCPU);
@@ -123,7 +124,8 @@ static void PPCInterpreter_ADDI(PPCInterpreter_t* hCPU, uint32 opcode)
 	sint32 rD, rA;
 	uint32 imm;
 	PPC_OPC_TEMPL_D_SImm(opcode, rD, rA, imm);
-	hCPU->gpr[rD] = (rA ? (int)hCPU->gpr[rA] : 0) + (int)imm;
+	// unsigned so the wrap-around is defined (signed overflow is undefined behaviour)
+	hCPU->gpr[rD] = (rA ? hCPU->gpr[rA] : 0u) + imm;
 	PPCInterpreter_nextInstruction(hCPU);
 }
 
@@ -842,28 +844,12 @@ static void PPCInterpreter_SRAWI(PPCInterpreter_t* hCPU, uint32 opcode)
 	sint32 rS, rA;
 	uint32 SH;
 	PPC_OPC_TEMPL_X(opcode, rS, rA, SH);
-	hCPU->gpr[rA] = hCPU->gpr[rS];
-	hCPU->xer_ca = 0;
-	if (hCPU->gpr[rA] & 0x80000000)
-	{
-		uint32 ca = 0;
-		for (uint32 i = 0; i < SH; i++)
-		{
-			if (hCPU->gpr[rA] & 1)
-				ca = 1;
-			hCPU->gpr[rA] >>= 1;
-			hCPU->gpr[rA] |= 0x80000000;
-		}
-		if (ca)
-			hCPU->xer_ca = 1;
-	}
-	else
-	{
-		if (SH > 31)
-			hCPU->gpr[rA] = 0;
-		else
-			hCPU->gpr[rA] >>= SH;
-	}
+	// SH is a 5-bit field, so the shift is always in range. CA is set when the value is negative and any of the SH bits
+	// shifted out were one; the old per-bit loop did the same thing one bit at a time.
+	const uint32 v = hCPU->gpr[rS];
+	const uint32 droppedBits = v & ((1u << SH) - 1u);
+	hCPU->xer_ca = (uint8)((v >> 31) & (droppedBits != 0 ? 1u : 0u));
+	hCPU->gpr[rA] = (uint32)((sint32)v >> SH);
 	if (opHasRC())
 		ppc_update_cr0(hCPU, hCPU->gpr[rA]);
 	PPCInterpreter_nextInstruction(hCPU);
