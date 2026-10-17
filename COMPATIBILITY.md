@@ -90,7 +90,7 @@ Videos for each game can be added below as they are recorded.
 
 ## Contributing
 
-Have another game working in MuffinEMU, or tested one of these games on a different device? The quickest way to share it is #game-compatibility on the [MuffinEMU Discord](https://discord.gg/6FG8k29Q5); you can also open an issue as below.
+Have another game working in MuffinEMU, or tested one of these games on a different device? The quickest way to share it is #game-tests on the [MuffinEMU Discord](https://discord.gg/6FG8k29Q5); you can also open an issue as below.
 
 **Help expand the compatibility list!** [Open a GitHub issue](https://github.com/MuffinEMU/Muffin-EMU/issues/new/choose) with the following information. If the game crashes or misbehaves, use the *Bug report* form.
 

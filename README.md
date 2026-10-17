@@ -104,7 +104,7 @@ MuffinEMU is under active development and releases often. Expect some games not 
 
 ## Compatible games
 
-See [COMPATIBILITY.md](COMPATIBILITY.md) for games that have been verified working on certain devices running MuffinEMU. Played something? Tell us in #game-compatibility on the [MuffinEMU Discord](https://discord.gg/6FG8k29Q5).
+See [COMPATIBILITY.md](COMPATIBILITY.md) for games that have been verified working on certain devices running MuffinEMU. Played something? Tell us in #game-tests on the [MuffinEMU Discord](https://discord.gg/6FG8k29Q5).
 
 ## Building
 
