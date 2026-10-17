@@ -163,9 +163,34 @@ GCBridgeControllerState pollState(void*)
 	return s;
 }
 
+// The device's gyroscope and accelerometer as the GamePad's motion, in the same frames and with the same final
+// mapping as the iOS app (IOSMotion.mm, whose header explains them). The app hands over each reading already turned
+// into the screen's frame (right, up, out of the screen): the ground vector in g and the turn rate in rad/s.
+// Readings are averaged between the core's polls, so the rate it integrates covers the whole interval.
+struct MotionSamples
+{
+	std::mutex mutex;
+	double sumAcc[3]{};
+	double sumGyro[3]{};
+	int count = 0;
+	double lastTimestamp = 0.0;
+	GCBridgeMotionState last{};
+} g_motion;
+
 GCBridgeMotionState pollMotion(void*)
 {
-	return GCBridgeMotionState{}; // no motion yet: the device's sensors come in a later step
+	std::lock_guard lock(g_motion.mutex);
+	if (g_motion.count > 0)
+	{
+		const double n = (double)g_motion.count;
+		g_motion.last.accelerometer = GCBridgeVec3{(float)(g_motion.sumAcc[0] / n), (float)(g_motion.sumAcc[1] / n), (float)(g_motion.sumAcc[2] / n)};
+		g_motion.last.gyroscope = GCBridgeVec3{(float)(g_motion.sumGyro[0] / n), (float)(g_motion.sumGyro[1] / n), (float)(g_motion.sumGyro[2] / n)};
+		g_motion.last.timestamp = g_motion.lastTimestamp;
+		for (int i = 0; i < 3; i++)
+			g_motion.sumAcc[i] = g_motion.sumGyro[i] = 0.0;
+		g_motion.count = 0;
+	}
+	return g_motion.last; // unchanged timestamp: the core keeps its last sample
 }
 
 void inputStart()
@@ -487,6 +512,27 @@ JNIEXPORT jstring JNICALL Java_io_github_muffinemu_NativeBridge_gameTdbId(JNIEnv
 JNIEXPORT void JNICALL Java_io_github_muffinemu_NativeBridge_setOneCore(JNIEnv*, jclass, jboolean oneCore)
 {
 	GetConfig().cpu_mode = oneCore == JNI_TRUE ? CPUMode::SinglecoreRecompiler : CPUMode::MulticoreRecompiler;
+}
+
+// One motion reading in the screen frame: the ground vector in g (r) and the angular rate in rad/s (w), with the
+// sensor's own time in seconds. Mapped as IOSMotion.mm's Submit(): acc = (r.x, -r.z, r.y), gyro = (w.x, -w.z, w.y).
+JNIEXPORT void JNICALL Java_io_github_muffinemu_NativeBridge_submitMotion(JNIEnv*, jclass, jfloat rx, jfloat ry, jfloat rz, jfloat wx, jfloat wy, jfloat wz, jdouble timestamp)
+{
+	const double acc[3] = {rx, -rz, ry};
+	const double gyro[3] = {wx, -wz, wy};
+	for (int i = 0; i < 3; i++)
+		if (!std::isfinite(acc[i]) || !std::isfinite(gyro[i]))
+			return; // one NaN would spoil the core's orientation estimate for good
+	if (!std::isfinite(timestamp))
+		return;
+	std::lock_guard lock(g_motion.mutex);
+	for (int i = 0; i < 3; i++)
+	{
+		g_motion.sumAcc[i] += acc[i];
+		g_motion.sumGyro[i] += gyro[i];
+	}
+	g_motion.count++;
+	g_motion.lastTimestamp = std::max(g_motion.lastTimestamp, (double)timestamp);
 }
 
 JNIEXPORT jdouble JNICALL Java_io_github_muffinemu_NativeBridge_framesPerSecond(JNIEnv*, jclass)

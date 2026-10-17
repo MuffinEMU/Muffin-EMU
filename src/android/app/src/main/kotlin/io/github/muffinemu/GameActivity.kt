@@ -64,6 +64,13 @@ class GameActivity : ComponentActivity() {
     /** Set when the surface is destroyed, so the next one is given to the core as new rather than as a resize. */
     private var surfaceLost = false
     private var physicalButtons = 0
+    /** The phone's own sensors as the GamePad's gyro and accelerometer. */
+    private val motion by lazy {
+        MotionInput(this) {
+            @Suppress("DEPRECATION")
+            (if (android.os.Build.VERSION.SDK_INT >= 30) display?.rotation else windowManager.defaultDisplay.rotation) ?: android.view.Surface.ROTATION_0
+        }
+    }
     private var lx = 0f; private var ly = 0f; private var rx = 0f; private var ry = 0f; private var lt = 0f; private var rt = 0f
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -238,10 +245,12 @@ class GameActivity : ComponentActivity() {
         super.onResume()
         resumed = true
         updatePaused()
+        motion.start()
     }
 
     override fun onPause() {
         super.onPause()
+        motion.stop()
         resumed = false
         NativeBridge.releaseAllButtons()
         updatePaused()

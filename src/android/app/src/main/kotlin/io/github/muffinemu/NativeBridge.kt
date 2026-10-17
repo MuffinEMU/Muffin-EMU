@@ -45,6 +45,8 @@ object NativeBridge {
     @JvmStatic external fun gameTdbId(path: String): String?
     /** One core instead of three; applies to the next title started. */
     @JvmStatic external fun setOneCore(oneCore: Boolean)
+    /** A motion reading in the screen frame: ground vector in g, rate in rad/s, sensor time in seconds. */
+    @JvmStatic external fun submitMotion(rx: Float, ry: Float, rz: Float, wx: Float, wy: Float, wz: Float, timestamp: Double)
 
     fun setButton(button: Button, pressed: Boolean) = setButton(button.ordinal, pressed)
 }
