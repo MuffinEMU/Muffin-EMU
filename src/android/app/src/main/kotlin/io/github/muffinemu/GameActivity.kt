@@ -43,6 +43,10 @@ class GameActivity : ComponentActivity() {
 
     private var status by mutableStateOf("")
     private var booted = false
+    // The game runs only while the activity is in front AND has a surface to present into. Back from Home,
+    // onResume comes before surfaceCreated, so resuming on onResume alone ran the renderer with no surface.
+    private var resumed = false
+    private var hasSurface = false
     private var physicalButtons = 0
     private var lx = 0f; private var ly = 0f; private var rx = 0f; private var ry = 0f; private var lt = 0f; private var rt = 0f
 
@@ -66,6 +70,7 @@ class GameActivity : ComponentActivity() {
                             override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
                                 val density = resources.displayMetrics.density
                                 val points = (width / density).toInt() to (height / density).toInt()
+                                hasSurface = true
                                 if (!booted) {
                                     NativeBridge.setSurface(holder.surface, points.first, points.second, density)
                                     booted = true
@@ -75,12 +80,14 @@ class GameActivity : ComponentActivity() {
                                     }
                                 } else {
                                     NativeBridge.setSurface(holder.surface, points.first, points.second, density)
+                                    updatePaused()
                                 }
                             }
 
                             override fun surfaceDestroyed(holder: SurfaceHolder) {
                                 // The window is going away (home button, lock): hold the game until a surface is back.
-                                NativeBridge.setPaused(true)
+                                hasSurface = false
+                                updatePaused()
                                 NativeBridge.setSurface(null, 0, 0, 1f)
                             }
                         })
@@ -101,20 +108,26 @@ class GameActivity : ComponentActivity() {
         }
     }
 
+    private fun updatePaused() {
+        if (booted) NativeBridge.setPaused(!(resumed && hasSurface))
+    }
+
     override fun onResume() {
         super.onResume()
-        if (booted) NativeBridge.setPaused(false)
+        resumed = true
+        updatePaused()
     }
 
     override fun onPause() {
         super.onPause()
+        resumed = false
         NativeBridge.releaseAllButtons()
-        if (booted) NativeBridge.setPaused(true)
+        updatePaused()
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        if (booted) NativeBridge.stopTitle()
+        if (booted && !isChangingConfigurations) NativeBridge.stopTitle()
     }
 
     // ---- physical controllers (Bluetooth or USB): keys and axes straight from the input system
@@ -141,6 +154,19 @@ class GameActivity : ComponentActivity() {
 
     private fun pushPhysical() = NativeBridge.setPhysicalState(physicalButtons, lx, ly, rx, ry, lt, rt)
 
+    /**
+     * A radial deadzone, rescaled so the stick still reaches full tilt: controller sticks rarely rest at exactly
+     * zero, and a worn one drifts enough to walk a character. The same 0.25 the iOS bridge applies to
+     * physical sticks (ios_physical_stick_deadzone in CemuBridge.mm), so a controller feels the same on both.
+     */
+    private fun deadzone(x: Float, y: Float): Pair<Float, Float> {
+        val dz = 0.25f
+        val mag = kotlin.math.sqrt(x * x + y * y)
+        if (mag <= dz) return 0f to 0f
+        val scale = minOf(1f, (mag - dz) / (1f - dz)) / mag
+        return x * scale to y * scale
+    }
+
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         val button = keyToButton(keyCode) ?: return super.onKeyDown(keyCode, event)
         if (event.repeatCount == 0) {
@@ -159,10 +185,9 @@ class GameActivity : ComponentActivity() {
 
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
         if (event.source and InputDevice.SOURCE_JOYSTICK != InputDevice.SOURCE_JOYSTICK) return super.onGenericMotionEvent(event)
-        lx = event.getAxisValue(MotionEvent.AXIS_X)
-        ly = -event.getAxisValue(MotionEvent.AXIS_Y) // the core wants +y up
-        rx = event.getAxisValue(MotionEvent.AXIS_Z)
-        ry = -event.getAxisValue(MotionEvent.AXIS_RZ)
+        // the core wants +y up
+        deadzone(event.getAxisValue(MotionEvent.AXIS_X), -event.getAxisValue(MotionEvent.AXIS_Y)).let { lx = it.first; ly = it.second }
+        deadzone(event.getAxisValue(MotionEvent.AXIS_Z), -event.getAxisValue(MotionEvent.AXIS_RZ)).let { rx = it.first; ry = it.second }
         lt = maxOf(event.getAxisValue(MotionEvent.AXIS_LTRIGGER), event.getAxisValue(MotionEvent.AXIS_BRAKE))
         rt = maxOf(event.getAxisValue(MotionEvent.AXIS_RTRIGGER), event.getAxisValue(MotionEvent.AXIS_GAS))
         // A hat switch reports the d-pad as axes
