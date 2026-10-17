@@ -932,6 +932,10 @@ bool PipelineCompiler::InitFromCurrentGPUState(PipelineInfo* pipelineInfo, const
 	if (result != VK_SUCCESS)
 	{
 		cemuLog_log(LogType::Force, "Failed to create pipeline layout: {}", result);
+		// The references the destructor drops are only taken at the end of this function. Forget the objects here, or the
+		// destructor would take a reference the pipeline and render pass never got (their counts went to -1).
+		m_vkrObjPipeline = nullptr;
+		m_renderPassObj = nullptr;
 		return false;
 	}
 

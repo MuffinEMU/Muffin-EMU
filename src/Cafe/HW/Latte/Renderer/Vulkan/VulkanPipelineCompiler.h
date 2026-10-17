@@ -51,7 +51,7 @@ public:
 	static void CompileThreadPool_Stop();
 	static void CompileThreadPool_QueueCompilation(PipelineCompiler* v);
 
-	VkPipelineLayout m_pipelineLayout;
+	VkPipelineLayout m_pipelineLayout{ VK_NULL_HANDLE };
 	VKRObjectRenderPass* m_renderPassObj{};
 	bool m_requestRobustBufferAccess{false};
 

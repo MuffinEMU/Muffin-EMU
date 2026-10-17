@@ -547,7 +547,7 @@ private:
 	bool UpdateSwapchainProperties(bool mainWindow);
 	void SwapBuffer(bool mainWindow);
 
-	VkDescriptorSetLayout m_swapchainDescriptorSetLayout;
+	VkDescriptorSetLayout m_swapchainDescriptorSetLayout{ VK_NULL_HANDLE };
 
 	VkQueue m_graphicsQueue, m_presentQueue;
 
