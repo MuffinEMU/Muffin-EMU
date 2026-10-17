@@ -30,7 +30,7 @@ struct CreateAccountView: View {
             ZStack {
                 MuffinTheme.backgroundGradient.ignoresSafeArea()
 
-                Form {
+                Form { Group {
                     Section {
                         Text("A new account plays offline. It can't be linked to a Pretendo ID here, so games will still ask you to link one. To play online, link a Pretendo ID on a real Wii U, then use Import from Wii U in Settings > Account.")
                             .font(.system(size: 13, design: .rounded))
@@ -105,7 +105,7 @@ struct CreateAccountView: View {
                     } footer: {
                         Text("Only needed if you later link this account to an NNID/PNID for online play.")
                     }
-                }
+                }.muffinGlassRows()}.muffinGlassFormGround()
             }
             .navigationTitle("New Account")
             .muffinOpaqueNavigationBar(MuffinTheme.formGround)

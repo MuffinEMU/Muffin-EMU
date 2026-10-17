@@ -63,6 +63,7 @@ struct OnboardingView: View {
                     ? "Finishes the guide and opens your library."
                     : "Goes to the next page of the guide.")
             }
+            .muffinGlassContainer(spacing: 16)
         }
         .padding(.horizontal, 24)
         .padding(.top, 8)
@@ -79,6 +80,9 @@ struct OnboardingView: View {
             }
         }
         .animation(.easeOut(duration: 0.18), value: page)
+        .padding(.horizontal, MuffinGlass.isActive ? 12 : 0)
+        .padding(.vertical, MuffinGlass.isActive ? 8 : 0)
+        .muffinGlassOnly(in: Capsule())
         .accessibilityHidden(true)
     }
 
@@ -119,13 +123,14 @@ private enum OnboardingHero {
                 .padding(.bottom, 4)
         case .symbol(let name):
             ZStack {
-                Circle().fill(MuffinTheme.cream)
+                Circle().fill(MuffinGlass.isActive ? Color.clear : MuffinTheme.cream)
                 Image(systemName: name)
                     .font(.system(size: 30, weight: .semibold))
                     .foregroundColor(MuffinTheme.accentText)
             }
             .frame(width: 72, height: 72)
-            .shadow(color: MuffinTheme.shadow.opacity(0.18), radius: 10, x: 0, y: 4)
+            .muffinGlassOnly(in: Circle(), tint: MuffinTheme.pixelBlue.opacity(0.35))
+            .shadow(color: MuffinTheme.shadow.opacity(MuffinGlass.isActive ? 0 : 0.18), radius: 10, x: 0, y: 4)
             .accessibilityHidden(true)
         }
     }

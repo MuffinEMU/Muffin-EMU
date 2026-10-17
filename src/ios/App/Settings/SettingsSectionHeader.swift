@@ -68,10 +68,11 @@ struct SettingsSectionHeader: View {
                 .foregroundColor(accent.color)
                 // A tinted chip gives the header a constant height regardless of glyph width.
                 .frame(width: 22, height: 22)
-                .background(
+                .muffinGlassBackground(in: RoundedRectangle(cornerRadius: 9, style: .continuous),
+                                       tint: accent.color.opacity(0.4)) {
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
                         .fill(accent.color.opacity(0.16))
-                )
+                }
 
             Text(title)
                 .font(.system(size: 13, weight: .bold, design: .rounded))

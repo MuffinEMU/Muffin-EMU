@@ -32,7 +32,7 @@ struct GraphicPacksView: View {
     private var sourceFirst: Bool { game == nil || store.installed == nil || store.updateAvailable || store.isBusy || store.packs.isEmpty }
 
     private var list: some View {
-        List {
+        List { Group {
             if sourceFirst { GraphicPackSourceSection(store: store) }
             if store.gameRunning { runningCallout }
 
@@ -45,7 +45,7 @@ struct GraphicPacksView: View {
             if !sourceFirst { GraphicPackSourceSection(store: store) }
             importSection
             attributionSection
-        }
+        }.muffinGlassRows()}.muffinGlassFormGround()
         .navigationTitle("Graphic Packs")
         .muffinOpaqueNavigationBar(MuffinTheme.formGround)
         #if os(iOS)
@@ -370,7 +370,7 @@ struct GraphicPackGameListView: View {
     @State private var search = ""
 
     var body: some View {
-        List {
+        List { Group {
             if store.packs.isEmpty {
                 Section {
                     ScreenEmptyState(systemImage: "square.stack.3d.up", headline: "No graphic packs yet",
@@ -380,7 +380,7 @@ struct GraphicPackGameListView: View {
             } else {
                 GraphicPackGameListSection(packs: store.packs, search: $search)
             }
-        }
+        }.muffinGlassRows()}.muffinGlassFormGround()
         .searchable(text: $search, prompt: "Search games and packs")
         .navigationTitle("All Packs")
         .muffinOpaqueNavigationBar(MuffinTheme.formGround)
@@ -402,7 +402,7 @@ struct GraphicPackGameView: View {
     }
 
     var body: some View {
-        List {
+        List { Group {
             if store.gameRunning {
                 Section {
                     ScreenStatusCallout(tone: .info, message: "A game is running. Packs can only be changed after you close it.")
@@ -410,7 +410,7 @@ struct GraphicPackGameView: View {
                 .listRowBackground(Color.clear)
             }
             GraphicPackCategorySections(packs: livePacks, store: store, profile: .current, suggestWorkarounds: false)
-        }
+        }.muffinGlassRows()}.muffinGlassFormGround()
         .navigationTitle(game)
         .muffinOpaqueNavigationBar(MuffinTheme.formGround)
         #if os(iOS)
@@ -662,7 +662,7 @@ struct GraphicPackDetailView: View {
 
     @ViewBuilder private var content: some View {
         if let pack {
-            Form {
+            Form { Group {
                 Section {
                     Toggle(isOn: Binding(get: { pack.enabled }, set: { wantOn in
                         // The list's own prompt covers partial support; here the support note is on screen already.
@@ -738,7 +738,7 @@ struct GraphicPackDetailView: View {
                     }
                 }
                 .foregroundColor(MuffinTheme.brownDarkest)
-            }
+            }.muffinGlassRows()}.muffinGlassFormGround()
             .confirmationDialog("Remove this imported pack?", isPresented: $confirmingRemove, titleVisibility: .visible) {
                 Button("Remove", role: .destructive) {
                     store.removeImported(pack)
