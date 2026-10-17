@@ -46,12 +46,29 @@ case "$*" in
 esac
 SH
 chmod +x "$T/bin/gh"; export PATH="$T/bin:$PATH"
-touch MuffinEMU.ipa MuffinEMU-fakesigned.ipa MuffinEMU.app.dSYM.zip; echo x > MuffinEMU.ipa; echo x > MuffinEMU-fakesigned.ipa; echo x > MuffinEMU.app.dSYM.zip
+# Real (tiny) IPAs: the publishing scripts read CFBundleShortVersionString out of the zip
+# (lib-release.sh ipa_version) to put the app version in the release notes, and a stand-in that is
+# not a zip fails every publish before it reaches the writes under test. Stamped 7.7, the shape
+# "Choose the version" gives a numbered build, so the notes checks below can look for it.
+mkipa() {   # mkipa FILE VERSION
+  python3 - "$1" "$2" <<'PY'
+import plistlib, sys, zipfile
+with zipfile.ZipFile(sys.argv[1], "w") as z:
+    z.writestr("Payload/MuffinEMU.app/Info.plist",
+               plistlib.dumps({"CFBundleExecutable": "MuffinEMU", "CFBundleShortVersionString": sys.argv[2]}))
+PY
+}
+mkipa MuffinEMU.ipa 7.7; mkipa MuffinEMU-fakesigned.ipa 7.7; echo x > MuffinEMU.app.dSYM.zip
 
 FAILS=0
 ok()   { echo "ok:   $1"; }
 bad()  { echo "FAIL: $1"; FAILS=$((FAILS + 1)); }
 writes() { cat "$DRY_RUN_LOG" 2>/dev/null || true; }
+# The notes the last publish would have attached: the --notes-file it named is still on disk.
+notes() { local f; f=$(writes | sed -n 's/.*--notes-file \([^ ]*\).*/\1/p' | head -n1); [ -n "$f" ] && cat "$f" || true; }
+
+# ---- the version read out of an IPA, which every install source has to list exactly
+V=$( . ci/lib-release.sh; ipa_version MuffinEMU.ipa ) && [ "$V" = "7.7" ] && ok "ipa_version reads CFBundleShortVersionString out of the IPA" || bad "ipa_version gave '$V', expected 7.7"
 run_nightly() {   # run_nightly NAME EXPECT(publish|skip|refuse) then env assignments...
   local name="$1" expect="$2"; shift 2
   : > "$DRY_RUN_LOG"
@@ -69,6 +86,7 @@ MAIN="EVENT=push REF=refs/heads/main CHANNEL=main"
 run_nightly "eligible build of main publishes (the newer main commit only touches docs)" publish $MAIN SHA="$C4" NIGHTLY_SHA="$C3" NIGHTLY_EXISTS=1
 writes | grep -q 'gh release upload nightly' && writes | grep -q 'gh release edit nightly' && ok "  ...it uploads to, and edits, the nightly release" || bad "  ...nightly writes missing"
 writes | grep -v 'nightly' | grep -q . && bad "  ...it wrote something that is not nightly: $(writes | grep -v nightly)" || ok "  ...and touched nothing but nightly"
+notes | grep -q '^\*\*App version:\*\* 7.7$' && ok "  ...and its notes name the version stamped into the IPA" || { bad "  ...notes do not name the app version"; notes; }
 run_nightly "a dispatch on main is eligible too" publish EVENT=workflow_dispatch REF=refs/heads/main CHANNEL=main SHA="$C4" NIGHTLY_SHA="$C2" NIGHTLY_EXISTS=1
 run_nightly "no nightly yet: it is created" publish $MAIN SHA="$C4" NIGHTLY_SHA= NIGHTLY_EXISTS=0
 writes | grep -q 'gh release create nightly' && ok "  ...with gh release create" || bad "  ...create missing"
@@ -106,6 +124,7 @@ echo "$W" | grep -q "gh release create experimental-feature-x-${F1:0:7} .* --pre
 echo "$W" | grep -q -- "--title Experimental: Shader cache (feature/x @ ${F1:0:7})" && ok "  ...titled 'Experimental: <name> (<branch> @ <sha7>)'" || bad "  ...title wrong"
 echo "$W" | grep -q "gh release create experimental MuffinEMU.ipa" && ok "  ...and the rolling 'experimental' release" || bad "  ...rolling release missing"
 echo "$W" | grep -q "refs/tags/experimental" && ok "  ...and its tag moved" || bad "  ...tag move missing"
+notes | grep -q '^- \*\*App version:\*\* 7.7$' && ok "  ...and its notes name the version stamped into the IPA" || { bad "  ...notes do not name the app version"; notes; }
 echo "$W" | grep -E 'nightly|release (create|edit|upload) v[0-9]|trollstore|docs/' && bad "  ...it touched nightly, a numbered release or a source" || ok "  ...and touched neither nightly, a numbered release nor any source"
 run_exp "a re-dispatch of the same experiment updates in place" publish "${EXP[@]}" ROLLING_EXISTS=1
 run_exp "main is refused" refuse EVENT=workflow_dispatch REF=refs/heads/main REF_NAME=main CHANNEL=experimental SHA="$C4" TAG=experimental-main-${C4:0:7} TITLE="Experimental: x (main @ ${C4:0:7})" SHORT_NAME=x
