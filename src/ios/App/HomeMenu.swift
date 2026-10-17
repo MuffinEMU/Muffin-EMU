@@ -238,6 +238,8 @@ struct HomeMenuOverlay: View {
     @State private var bugReportCopied = false
     /// The overlay as the core has it now: Settings' value at boot, or the last toggle here.
     @State private var readoutShown = cemu_bridge_overlay_position() != Int32(ScreenPosition.disabled.rawValue)
+    /// The corner the readout was in when it was last turned off here, so turning it on puts it back.
+    private static var hiddenReadoutCorner: Int32?
     /// The highlight is for controller players: shown from the start when one is connected, and once
     /// a controller button is used otherwise, so a touch player is not handed a row that looks chosen.
     @State private var usingController = ControllerPresence.isConnected()
@@ -432,13 +434,21 @@ struct HomeMenuOverlay: View {
             }
         case .performanceReadout:
             // Written straight to the core, which reads the position every frame, and not to Settings: a
-            // look at the frame rate during one game is not a change of the player's setting. Where the
-            // setting has a corner, that corner; with the overlay off in Settings, the top left.
+            // look at the frame rate during one game is not a change of the player's setting. Turning it off
+            // remembers the corner the core had (this game's own corner, if it has one), and turning it on
+            // again goes back there; with the overlay off from the start, the Settings corner or the top left.
             var row = make {
-                let stored = ScreenPosition(rawValue: UserDefaults.standard.object(forKey: OverlaySettings.positionKey) as? Int
-                                            ?? OverlaySettings.defaultPosition.rawValue) ?? .disabled
-                let shown = stored == .disabled ? ScreenPosition.topLeft : stored
-                cemu_bridge_set_overlay_position(Int32((readoutShown ? ScreenPosition.disabled : shown).rawValue))
+                let off = Int32(ScreenPosition.disabled.rawValue)
+                if readoutShown {
+                    Self.hiddenReadoutCorner = cemu_bridge_overlay_position()
+                    cemu_bridge_set_overlay_position(off)
+                } else {
+                    let stored = Int32(UserDefaults.standard.object(forKey: OverlaySettings.positionKey) as? Int
+                                       ?? OverlaySettings.defaultPosition.rawValue)
+                    let corner = [Self.hiddenReadoutCorner, stored].compactMap { $0 }.first { $0 != off }
+                        ?? Int32(ScreenPosition.topLeft.rawValue)
+                    cemu_bridge_set_overlay_position(corner)
+                }
                 readoutShown.toggle()
             }
             row.isSelected = readoutShown
