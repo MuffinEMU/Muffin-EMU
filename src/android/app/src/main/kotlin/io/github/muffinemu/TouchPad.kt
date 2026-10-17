@@ -37,11 +37,20 @@ import kotlin.math.min
  * surface's own pixels, which the core maps onto the picture (VPADController, LatteRenderTarget_getScreenImageArea).
  */
 @Composable
-fun TouchPad(modifier: Modifier = Modifier, showsGamePad: Boolean = false, onSwapScreens: () -> Unit = {}) {
+fun TouchPad(
+    modifier: Modifier = Modifier,
+    showsGamePad: Boolean = false,
+    onSwapScreens: () -> Unit = {},
+    /** False while a physical controller is in use: nothing is drawn, and the first touch brings the pad back. */
+    visible: Boolean = true,
+    onTouchedWhileHidden: () -> Unit = {},
+) {
     val layout = remember { PadLayout() }
     // pointerInput below is set up once; these keep it reading the current values.
     val gamePadShown = rememberUpdatedState(showsGamePad)
     val swap = rememberUpdatedState(onSwapScreens)
+    val shown = rememberUpdatedState(visible)
+    val reveal = rememberUpdatedState(onTouchedWhileHidden)
     val pressed = remember { mutableStateOf(setOf<NativeBridge.Button>()) }
     val stickOffset = remember { mutableStateOf(Offset.Zero) } // left stick thumb, pixels from its centre
     val rightStickOffset = remember { mutableStateOf(Offset.Zero) }
@@ -57,7 +66,11 @@ fun TouchPad(modifier: Modifier = Modifier, showsGamePad: Boolean = false, onSwa
                         val size = Size(this.size.width.toFloat(), this.size.height.toFloat())
                         for (change in event.changes) {
                             val id = change.id
-                            if (change.changedToDownIgnoreConsumed()) {
+                            if (change.changedToDownIgnoreConsumed() && !shown.value) {
+                                // The pad was hidden for a controller: this touch only brings it back.
+                                reveal.value()
+                                change.consume()
+                            } else if (change.changedToDownIgnoreConsumed()) {
                                 val control = layout.hit(change.position, size)
                                     ?: if (gamePadShown.value) PadControl.Screen else null
                                 if (control != null) {
@@ -126,7 +139,7 @@ fun TouchPad(modifier: Modifier = Modifier, showsGamePad: Boolean = false, onSwa
                 }
             }
     ) {
-        layout.draw(this, pressed.value, stickOffset.value, rightStickOffset.value, showsGamePad)
+        if (visible) layout.draw(this, pressed.value, stickOffset.value, rightStickOffset.value, showsGamePad)
     }
 }
 

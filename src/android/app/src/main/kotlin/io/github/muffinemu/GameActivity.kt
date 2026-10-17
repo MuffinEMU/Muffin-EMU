@@ -51,6 +51,8 @@ class GameActivity : ComponentActivity() {
 
     private var status by mutableStateOf("")
     private var showsGamePad by mutableStateOf(false)
+    /** The on-screen pad steps aside while a physical controller is being used, as on iOS. */
+    private var padVisible by mutableStateOf(true)
     /** Frames the core finished in the last second, or -1 before the first count. */
     private var fps by mutableStateOf(-1)
     private var keyboardOpen = false
@@ -128,7 +130,9 @@ class GameActivity : ComponentActivity() {
                     onSwapScreens = {
                         showsGamePad = !showsGamePad
                         NativeBridge.setShowsGamePad(showsGamePad)
-                    }
+                    },
+                    visible = padVisible,
+                    onTouchedWhileHidden = { padVisible = true }
                 )
 
                 if (fps >= 0 && status.isEmpty()) {
@@ -254,6 +258,7 @@ class GameActivity : ComponentActivity() {
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         val button = keyToButton(keyCode) ?: return super.onKeyDown(keyCode, event)
+        padVisible = false
         if (event.repeatCount == 0) {
             physicalButtons = physicalButtons or (1 shl button.ordinal)
             pushPhysical()
@@ -270,6 +275,8 @@ class GameActivity : ComponentActivity() {
 
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
         if (event.source and InputDevice.SOURCE_JOYSTICK != InputDevice.SOURCE_JOYSTICK) return super.onGenericMotionEvent(event)
+        // A stick resting slightly off centre keeps sending events; only a real push hides the pad.
+        if (kotlin.math.abs(event.getAxisValue(MotionEvent.AXIS_X)) > 0.5f || kotlin.math.abs(event.getAxisValue(MotionEvent.AXIS_Y)) > 0.5f) padVisible = false
         // the core wants +y up
         deadzone(event.getAxisValue(MotionEvent.AXIS_X), -event.getAxisValue(MotionEvent.AXIS_Y)).let { lx = it.first; ly = it.second }
         deadzone(event.getAxisValue(MotionEvent.AXIS_Z), -event.getAxisValue(MotionEvent.AXIS_RZ)).let { rx = it.first; ry = it.second }
