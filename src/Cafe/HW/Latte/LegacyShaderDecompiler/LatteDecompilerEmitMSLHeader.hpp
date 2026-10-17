@@ -133,6 +133,17 @@ namespace LatteDecompiler
 			uniformOffsets.offset_texScale[t] = uniformCurrentOffset;
 			uniformCurrentOffset += 8;
 		}
+		// The sampler's LOD bias for every texture sampled with a level of detail. A Metal sampler has no LOD bias (Vulkan's
+		// mipLodBias), so the shader adds it itself, and the renderer writes the register's value (plus a graphic pack's) here per draw.
+		for (sint32 t = 0; t < LATTE_NUM_MAX_TEX_UNITS; t++)
+		{
+			if (decompilerContext->analyzer.texUnitUsesLodBias.test(t) == false)
+				continue;
+			uniformCurrentOffset = (uniformCurrentOffset + 3) & ~3;
+			src->addFmt("float tex{}LodBias;" _CRLF, t);
+			uniformOffsets.offset_texLodBias[t] = uniformCurrentOffset;
+			uniformCurrentOffset += 4;
+		}
 		// define verticesPerInstance + streamoutBufferBaseX
 		if (shader->shaderType == LatteConst::ShaderType::Vertex &&
 			(usesGeometryShader ||

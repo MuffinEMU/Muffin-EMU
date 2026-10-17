@@ -791,6 +791,19 @@ static void InitUniformLayoutFromDecompiler(
         }
     }
 
+    // Texture LOD bias uniforms (Metal only; every other backend leaves these offsets at -1)
+    shader->uniform.list_ufTexLodBias.clear();
+    for (sint32 t = 0; t < LATTE_NUM_MAX_TEX_UNITS; t++)
+    {
+        if (offsets.offset_texLodBias[t] >= 0)
+        {
+            LatteUniformTextureScaleEntry_t entry{};
+            entry.texUnit = t;
+            entry.uniformLocation = offsets.offset_texLodBias[t];
+            shader->uniform.list_ufTexLodBias.push_back(entry);
+        }
+    }
+
     shader->uniform.loc_verticesPerInstance = offsets.offset_verticesPerInstance;
 
     // Streamout buffers

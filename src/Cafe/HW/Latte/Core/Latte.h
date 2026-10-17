@@ -193,3 +193,24 @@ void Latte_CollectLeftovers(std::vector<std::string>& leftovers);
 // the highest scheduling class, and the Metal renderer paces each present to the game's own frame
 // interval. Read when the GPU thread starts and once per present.
 extern std::atomic<bool> g_latteFullSpeedRenders;
+
+// Settings > Graphics > Texture filtering: the anisotropic ratio as log2 (1 = 2x ... 4 = 16x), or -1 for what each game
+// asks for. Set by the iOS bridge at any time and read per draw by the sampler setup of the Metal and Vulkan backends.
+extern std::atomic<sint32> g_latteAnisotropyOverride;
+
+// The ratio a texture is sampled at once the Texture filtering setting is applied to what the game (or a graphic pack)
+// asked for, as log2. The setting only raises the ratio, and only for textures the game filters: a texture it samples
+// point by point, or without mips, is left alone, as anisotropic filtering would blur what it is meant to show.
+inline sint32 LatteTexture_applyAnisotropySetting(sint32 maxAniso, const _LatteRegisterSetSampler& samplerWords)
+{
+	const sint32 setting = g_latteAnisotropyOverride.load(std::memory_order_relaxed);
+	if (setting <= maxAniso)
+		return maxAniso;
+	const auto filterMin = samplerWords.WORD0.get_XY_MIN_FILTER();
+	const auto filterMag = samplerWords.WORD0.get_XY_MAG_FILTER();
+	const bool pointSampled = filterMin == Latte::LATTE_SQ_TEX_SAMPLER_WORD0_0::E_XY_FILTER::POINT || filterMin == Latte::LATTE_SQ_TEX_SAMPLER_WORD0_0::E_XY_FILTER::ANISO_POINT ||
+		filterMag == Latte::LATTE_SQ_TEX_SAMPLER_WORD0_0::E_XY_FILTER::POINT || filterMag == Latte::LATTE_SQ_TEX_SAMPLER_WORD0_0::E_XY_FILTER::ANISO_POINT;
+	if (pointSampled || samplerWords.WORD0.get_MIP_FILTER() == Latte::LATTE_SQ_TEX_SAMPLER_WORD0_0::E_Z_FILTER::NONE)
+		return maxAniso;
+	return std::min<sint32>(setting, 4);
+}

@@ -58,6 +58,40 @@ enum DownscaleFilterSetting {
     static let defaultValue = ScaleFilter.linear
 }
 
+/// Settings > Graphics > Texture filtering, backing cemu_bridge_set_anisotropic_filtering(): the anisotropic
+/// ratio applied to every texture a game filters, or the game's own. The raw value is the log2 of the ratio
+/// the bridge takes (-1 for the game's own), so the stored value is what the engine reads.
+enum TextureFiltering: Int, CaseIterable, Identifiable {
+    case gameDefault = -1
+    case x2 = 1
+    case x4 = 2
+    case x8 = 3
+    case x16 = 4
+
+    var id: Int { rawValue }
+
+    var title: String {
+        switch self {
+        case .gameDefault: return "Game default"
+        case .x2: return "2x anisotropic"
+        case .x4: return "4x anisotropic"
+        case .x8: return "8x anisotropic"
+        case .x16: return "16x anisotropic"
+        }
+    }
+
+    static let storageKey = "muffin.render.textureFiltering"
+    static let defaultValue: TextureFiltering = .gameDefault
+
+    static var stored: TextureFiltering {
+        TextureFiltering(rawValue: UserDefaults.standard.object(forKey: storageKey) as? Int ?? defaultValue.rawValue) ?? defaultValue
+    }
+
+    static func applyToBridge() {
+        cemu_bridge_set_anisotropic_filtering(Int32(stored.rawValue))
+    }
+}
+
 /// Backs cemu_bridge_set_display_gamma(). minValue/maxValue mirror the bridge's clamp so the
 /// slider can't show a position the push would silently correct.
 enum DisplayGammaSetting {
@@ -108,6 +142,7 @@ struct GraphicsSettingsSection: View {
     @AppStorage(FullSpeedRenders.storageKey) private var fullSpeedRenders = FullSpeedRenders.defaultValue
     @AppStorage(FullSpeedRenders.shaderModeKey) private var fullSpeedShaderMode = FullSpeedRenders.defaultShaderMode.rawValue
     @AppStorage(FrameStretch.storageKey) private var frameStretchEnabled = FrameStretch.defaultValue
+    @AppStorage(TextureFiltering.storageKey) private var textureFilteringRaw = TextureFiltering.defaultValue.rawValue
     @AppStorage(MoltenVKBuild.storageKey) private var moltenVKRaw = MoltenVKBuild.defaultValue.rawValue
     @AppStorage("muffin.render.upsideDown") private var upsideDownEnabled = false
     @AppStorage(DisplayGammaSetting.storageKey) private var displayGamma = DisplayGammaSetting.defaultValue
@@ -143,6 +178,7 @@ struct GraphicsSettingsSection: View {
                 downscalePicker
             }
             resolutionPicker
+            textureFilteringPicker
             if favourPerformance {
                 Text("Favour performance is on (Settings > CPU), so the picture is drawn at Balanced at most, with linear scaling.")
                     .font(.system(size: 12))
@@ -305,6 +341,25 @@ struct GraphicsSettingsSection: View {
         .foregroundColor(MuffinTheme.brownDarkest)
     }
 
+    private var textureFilteringPicker: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Picker("Texture filtering", selection: $textureFilteringRaw) {
+                ForEach(TextureFiltering.allCases) { level in
+                    Text(level.title).tag(level.rawValue)
+                }
+            }
+            .pickerStyle(.menu)
+            .tint(MuffinTheme.accentText)
+            .foregroundColor(MuffinTheme.brownDarkest)
+            .onChange(of: textureFilteringRaw) { _ in TextureFiltering.applyToBridge() }
+            Text(textureFilteringRaw == TextureFiltering.gameDefault.rawValue
+                 ? "Textures are filtered the way each game asks for."
+                 : "Textures seen at an angle, like floors and roads, stay sharper further away. Applies to the next frame.")
+                .font(.system(size: 12))
+                .foregroundColor(MuffinTheme.secondaryText)
+        }
+    }
+
     private var stretchToggle: some View {
         Toggle(isOn: $frameStretchEnabled) {
             Text("Stretch picture to fill the screen")
@@ -424,7 +479,7 @@ struct GraphicsSettingsSection: View {
 
     private var fullText: String {
         """
-        Steady frame rate puts rendering ahead of everything else MuffinEMU does: the graphics thread gets first call on the fastest cores, each frame is shown at the game's own Wii U frame rate (steady, and never faster than the console), and debugging extras are skipped. Every shader the game has used before is built while the game loads, so those never cause a hitch or a flicker. The first time something brand new appears, its shader has to be built: "Wait for it" holds the frame until it's ready (a short hitch, never a missing object), "Keep going" draws without it once (no hitch, but it can be missing for a moment). Either way it's saved, so it happens only once. This choice wins over Favour accuracy, Favour performance and Compile shaders in the background. Takes effect the next time you start a game.
+        Steady frame rate puts rendering ahead of everything else MuffinEMU does: the graphics thread gets first call on the fastest cores, each frame is shown at the game's own Wii U frame rate (steady, and never faster than the console), and debugging extras are skipped. Every shader the game has used before is built while the game loads, so those are ready before they're needed. The first time something brand new appears, its shader has to be built: "Wait for it" holds the frame until it's ready (a short hitch, and the object is drawn), "Keep going" draws without it once (no hitch, but it can be missing for a moment). Either way it's saved, so it happens only once. This choice wins over Favour accuracy, Favour performance and Compile shaders in the background. Takes effect the next time you start a game.
 
         Metal is the default renderer. Vulkan (MoltenVK) goes through a translation layer and may work better for some games, at some cost to speed. Takes effect the next time you launch a game.
 
@@ -435,6 +490,8 @@ struct GraphicsSettingsSection: View {
         \(renderScale.summary)
 
         Resolution changes the size of the picture MuffinEMU draws, not the resolution the game runs at - nothing about the emulation changes with it. Takes effect the next time you launch a game.
+
+        Texture filtering raises the anisotropic filtering of the textures a game draws, so surfaces seen at an angle (a road ahead, a floor, a wall running away from the camera) keep their detail further into the distance instead of going blurry. Game default leaves each texture at the level the game set for it; 2x to 16x only ever raise that, and textures a game draws without smoothing or without mip levels are left as they are, since filtering them would blur what they are meant to show. It costs little on these GPUs. Applies to the next frame.
 
         Stretch picture to fill the screen fills the screen's own shape instead of keeping the Wii U's 1280x720 proportions, which otherwise letterboxes with bars on two sides. Off keeps the picture undistorted; on trades that for using every pixel. Takes effect on the very next frame.
 

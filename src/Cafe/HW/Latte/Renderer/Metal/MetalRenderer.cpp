@@ -4854,11 +4854,17 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
         if (samplerBinding >= 0 && stageSamplerIndex != LATTE_DECOMPILER_SAMPLER_NONE)
         {
             uint32 samplerIndex = stageSamplerIndex + LatteDecompiler_getTextureSamplerBaseIndex(shader->shaderType);
-            _LatteRegisterSetSampler* samplerWords = LatteGPUState.contextNew.SQ_TEX_SAMPLER + samplerIndex;
+            // A copy of the register: a graphic pack's anisotropy and the Texture filtering setting belong to this texture.
+            // Written into the live register, as before, they carried over to whatever texture the game bound to the same
+            // sampler next (the Vulkan backend keeps it local too).
+            _LatteRegisterSetSampler samplerWords = LatteGPUState.contextNew.SQ_TEX_SAMPLER[samplerIndex];
+            sint32 maxAniso = (sint32)samplerWords.WORD0.get_MAX_ANISO_RATIO();
             if (textureView && textureView->baseTexture->overwriteInfo.anisotropicLevel >= 0)
-                samplerWords->WORD0.set_MAX_ANISO_RATIO(textureView->baseTexture->overwriteInfo.anisotropicLevel);
+                maxAniso = textureView->baseTexture->overwriteInfo.anisotropicLevel;
+            maxAniso = LatteTexture_applyAnisotropySetting(maxAniso, samplerWords);
+            samplerWords.WORD0.set_MAX_ANISO_RATIO((uint32)maxAniso);
             const uint64 samplerStart = PerfTelemetry::SampleStart();
-            sampler = m_samplerCache->GetSamplerState(LatteGPUState.contextNew, shader->shaderType, stageSamplerIndex, samplerWords, depthTexture);
+            sampler = m_samplerCache->GetSamplerState(LatteGPUState.contextNew, shader->shaderType, stageSamplerIndex, &samplerWords, depthTexture);
             PerfTelemetry::SampleEnd(telemetry.gpuSamplerLookupNs, samplerStart);
             PerfTelemetry::SampleCount(telemetry.gpuSamplerLookups);
         }
@@ -4967,6 +4973,38 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
                 float* xyScale = LatteTexture_getEffectiveTextureScale(shader->shaderType, entry.texUnit);
                 memcpy(entry.currentValue, xyScale, sizeof(float) * 2);
                 memcpy(GET_UNIFORM_DATA_PTR(entry.uniformLocation), xyScale, sizeof(float) * 2);
+            }
+        }
+        if (shader->uniform.list_ufTexLodBias.empty() == false)
+        {
+            // What the Vulkan backend puts in the sampler's mipLodBias (VulkanRendererCore.cpp): the sampler register's bias,
+            // then a graphic pack's relative or absolute one. A Metal sampler has no LOD bias, so the shader reads it from here.
+            sint32 hostTextureUnitBase = LATTE_CEMU_PS_TEX_UNIT_BASE;
+            if (shader->shaderType == LatteConst::ShaderType::Vertex)
+                hostTextureUnitBase = LATTE_CEMU_VS_TEX_UNIT_BASE;
+            else if (shader->shaderType == LatteConst::ShaderType::Geometry)
+                hostTextureUnitBase = LATTE_CEMU_GS_TEX_UNIT_BASE;
+            const uint32 samplerBaseIndex = LatteDecompiler_getTextureSamplerBaseIndex(shader->shaderType);
+            for (auto& entry : shader->uniform.list_ufTexLodBias)
+            {
+                float lodBias = 0.0f;
+                const uint32 stageSamplerIndex = shader->textureUnitSamplerAssignment[entry.texUnit];
+                if (stageSamplerIndex != LATTE_DECOMPILER_SAMPLER_NONE)
+                {
+                    const _LatteRegisterSetSampler* samplerWords = LatteGPUState.contextNew.SQ_TEX_SAMPLER + stageSamplerIndex + samplerBaseIndex;
+                    sint32 iLodBias = samplerWords->WORD1.get_LOD_BIAS();
+                    const LatteTextureView* boundView = m_state.m_textures[hostTextureUnitBase + entry.texUnit];
+                    if (boundView)
+                    {
+                        const auto& overwrite = boundView->baseTexture->overwriteInfo;
+                        if (overwrite.hasRelativeLodBias)
+                            iLodBias += overwrite.relativeLodBias;
+                        if (overwrite.hasLodBias)
+                            iLodBias = overwrite.lodBias;
+                    }
+                    lodBias = (float)iLodBias / 64.0f;
+                }
+                *GET_UNIFORM_DATA_PTR(entry.uniformLocation) = lodBias;
             }
         }
         if (shader->uniform.loc_alphaTestRef >= 0)

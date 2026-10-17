@@ -1558,6 +1558,7 @@ class GameManager: ObservableObject {
                 UserDefaults.standard.object(forKey: "muffin.render.framebufferFetch") as? Bool ?? true)
             cemu_bridge_set_emulate_missing_effects(
                 UserDefaults.standard.object(forKey: "muffin.render.emulateMissingEffects") as? Bool ?? false)
+            TextureFiltering.applyToBridge()
             cemu_bridge_set_display_gamma(Float(
                 UserDefaults.standard.object(forKey: DisplayGammaSetting.storageKey) as? Double
                     ?? DisplayGammaSetting.defaultValue))
