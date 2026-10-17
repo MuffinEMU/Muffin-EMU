@@ -237,7 +237,14 @@ PipelineInfo* VulkanRenderer::draw_createGraphicsPipeline(uint32 indexCount)
 	PipelineCompiler* pipelineCompiler = new PipelineCompiler();
 
 	bool requiresRobustBufferAccess = PipelineCompiler::CalcRobustBufferAccessRequirement(vertexShader, pixelShader, geometryShader);
-	pipelineCompiler->InitFromCurrentGPUState(pipelineInfo, LatteGPUState.contextNew, vkFBO->GetRenderPassObj(), requiresRobustBufferAccess);
+	if (!pipelineCompiler->InitFromCurrentGPUState(pipelineInfo, LatteGPUState.contextNew, vkFBO->GetRenderPassObj(), requiresRobustBufferAccess))
+	{
+		// The pipeline layout could not be created (logged there). The result used to be ignored and the compile went ahead
+		// against a layout that doesn't exist. Keep the pipeline info registered with no VkPipeline instead: draws with this
+		// state are skipped, like a pipeline the device can't run.
+		delete pipelineCompiler;
+		return pipelineInfo;
+	}
 	pipelineCompiler->TrackAsCached(vsBaseHash, pipelineHash);
 
 	// use heuristics based on parameter patterns to determine if the current drawcall is essential (non-skipable)
