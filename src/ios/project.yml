@@ -156,14 +156,18 @@ targets:
       SWIFT_INCLUDE_PATHS:
         - '$(SRCROOT)/../../jit/muffin-jit/include'
       LD_RUNPATH_SEARCH_PATHS: '$(inherited) @executable_path/../../Frameworks'
+      # Link our device-link static library by full path. -force_load keeps every
+      # exported symbol (the C ABI the Swift calls), which a plain link can dead-strip.
+      # Built by ci/build-jit-ffi.sh before the project is generated.
+      OTHER_LDFLAGS:
+        - '-force_load'
+        - '$(SRCROOT)/../../jit/muffin-jit/target/aarch64-apple-ios/release/libmuffin_jit.a'
+        # The Rust crypto backend's randomness can resolve to SecRandomCopyBytes.
+        - '-framework'
+        - 'Security'
     sources:
       - path: JITHelper/MuffinJITHelperPrincipal.swift
       - path: JIT/MuffinJITLink.swift
       - path: JIT/JITHelperCore.swift
       - path: JIT/JITDeveloperDiskImage.swift
       - path: JIT/JITHelperMessages.swift
-    dependencies:
-      # Our device-link static library, built by ci/build-jit-ffi.sh before the project
-      # is generated. Linked, not embedded (a static library).
-      - framework: ../../jit/muffin-jit/target/aarch64-apple-ios/release/libmuffin_jit.a
-        embed: false
