@@ -15,6 +15,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -44,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -116,9 +119,11 @@ class MainActivity : ComponentActivity() {
                 color = cream.copy(alpha = 0.7f), fontSize = 13.sp
             )
             Spacer(Modifier.height(16.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            // Scrolls sideways on a narrow phone rather than squeezing the buttons.
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
                 Button(onClick = { addGame.launch(arrayOf("*/*")) }, enabled = copyStatus?.startsWith("Copying") != true) { Text("Add game") }
                 OutlinedButton(onClick = { addKeys.launch(arrayOf("*/*")) }, enabled = copyStatus?.startsWith("Copying") != true) { Text("Add keys.txt") }
+                OutlinedButton(onClick = { if (!shareLog()) copyStatus = "There's no log yet. Start a game first, then share the log." }) { Text("Share log") }
             }
             copyStatus?.let {
                 Spacer(Modifier.height(8.dp))
@@ -149,6 +154,24 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /**
+     * Hands the engine's log.txt to another app (mail, chat, a file manager). Android 11 and later hide
+     * Android/data from most file managers, so this is the dependable way to get the log off the device
+     * when a game won't start. False when there is no log yet.
+     */
+    private fun shareLog(): Boolean {
+        val log = File(MuffinApp.mlcDir(this), "log.txt")
+        if (!log.isFile) return false
+        val uri = FileProvider.getUriForFile(this, "$packageName.files", log)
+        val send = Intent(Intent.ACTION_SEND)
+            .setType("text/plain")
+            .putExtra(Intent.EXTRA_STREAM, uri)
+            .putExtra(Intent.EXTRA_SUBJECT, "MuffinEMU log")
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        startActivity(Intent.createChooser(send, "Share log"))
+        return true
     }
 
     private fun listGames(dir: File): List<File> {

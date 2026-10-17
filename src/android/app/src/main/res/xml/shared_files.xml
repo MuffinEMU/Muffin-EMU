@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What MainActivity's Share log can hand to another app: files under MuffinEMU's own folders only. -->
+<paths>
+    <external-files-path name="files" path="." />
+    <files-path name="private" path="." />
+</paths>
