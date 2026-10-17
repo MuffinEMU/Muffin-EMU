@@ -390,6 +390,56 @@ LatteCMDPtr LatteCP_itSetRegistersGeneric(LatteCMDPtr cmd, uint32 nWords, TRegRa
 	return cmd;
 }
 
+// Same as LatteCP_itSetRegistersGeneric, but also reports whether any register ended up with a different value than it
+// held before. The fast draw path uses this to keep a draw sequence going across writes that change nothing: games re-set
+// the same textures, samplers and render state between draws all the time, and ending the sequence for those sent the
+// next draw through the full state setup (shaders, render targets, every bound texture) for a state that had not changed.
+template<uint32 TRegisterBase>
+bool LatteCP_itSetRegistersGeneric2(LatteCMDPtr cmd, uint32 nWords, uint32& registerStartOut, uint32& registerEndOut)
+{
+	uint32 registerOffset = LatteReadCMD();
+	uint32 registerIndex = TRegisterBase + registerOffset;
+	uint32 registerStartIndex = registerIndex;
+	uint32 registerEndIndex = registerStartIndex + nWords;
+#ifdef CEMU_DEBUG_ASSERT
+	cemu_assert_debug((registerIndex + nWords) <= LATTE_MAX_REGISTER);
+#endif
+	registerStartOut = registerStartIndex;
+	registerEndOut = registerEndIndex;
+	bool hasRegChange = false;
+	uint32* outputReg = (uint32*)(LatteGPUState.contextRegister + registerIndex);
+	if (LatteGPUState.contextControl0 == 0x80000077)
+	{
+		// state shadowing enabled
+		uint32* shadowAddrs = LatteGPUState.contextRegisterShadowAddr + registerIndex;
+		sint32 indexCounter = 0;
+		while (--nWords)
+		{
+			uint32 dataWord = LatteReadCMD();
+			MPTR regShadowAddr = shadowAddrs[indexCounter];
+			if (regShadowAddr)
+				*(uint32*)(memory_base + regShadowAddr) = _swapEndianU32(dataWord);
+			hasRegChange |= (outputReg[indexCounter] != dataWord);
+			outputReg[indexCounter] = dataWord;
+			indexCounter++;
+		}
+	}
+	else
+	{
+		// state shadowing disabled
+		while (--nWords)
+		{
+			uint32 dataWord = LatteReadCMD();
+			hasRegChange |= (*outputReg != dataWord);
+			*outputReg = dataWord;
+			outputReg++;
+		}
+	}
+	// some register writes trigger special behavior
+	LatteCP_itSetRegistersGeneric_handleSpecialRanges<TRegisterBase>(registerStartIndex, registerEndIndex);
+	return hasRegChange;
+}
+
 LatteCMDPtr LatteCP_itIndexType(LatteCMDPtr cmd, uint32 nWords)
 {
 	cemu_assert_debug(nWords == 1);
@@ -1030,17 +1080,21 @@ void LatteCP_processCommandBuffer_continuousDrawPass(DrawPassContext& drawPassCt
 				{
 				case IT_SET_RESOURCE: // attribute buffers, uniform buffers or texture units
 				{
-					LatteCP_itSetRegistersGeneric<LATTE_REG_BASE_RESOURCE>(cmdData, nWords, [&drawPassCtx](uint32 registerStart, uint32 registerEnd)
-						{
-							if ((registerStart >= Latte::REGADDR::SQ_TEX_RESOURCE_WORD0_N_PS && registerStart < (Latte::REGADDR::SQ_TEX_RESOURCE_WORD0_N_PS + Latte::GPU_LIMITS::NUM_TEXTURES_PER_STAGE * 7)) ||
-								(registerStart >= Latte::REGADDR::SQ_TEX_RESOURCE_WORD0_N_VS && registerStart < (Latte::REGADDR::SQ_TEX_RESOURCE_WORD0_N_VS + Latte::GPU_LIMITS::NUM_TEXTURES_PER_STAGE * 7)) ||
-								(registerStart >= Latte::REGADDR::SQ_TEX_RESOURCE_WORD0_N_GS && registerStart < (Latte::REGADDR::SQ_TEX_RESOURCE_WORD0_N_GS + Latte::GPU_LIMITS::NUM_TEXTURES_PER_STAGE * 7)))
-								drawPassCtx.endDrawPass(); // texture updates end the current draw sequence
-							else if (registerStart >= mmSQ_VTX_ATTRIBUTE_BLOCK_START && registerEnd <= mmSQ_VTX_ATTRIBUTE_BLOCK_END)
-								drawPassCtx.notifyModifiedVertexBuffer();
-							else
-								drawPassCtx.notifyModifiedUniformBuffer();
-						});
+					// a write that leaves every register as it was changes nothing about the draw state, so the sequence goes
+					// on; this matters most for textures, which games re-bind between draws without changing them
+					uint32 registerStart, registerEnd;
+					const bool regValuesChanged = LatteCP_itSetRegistersGeneric2<LATTE_REG_BASE_RESOURCE>(cmdData, nWords, registerStart, registerEnd);
+					if (regValuesChanged)
+					{
+						if ((registerStart >= Latte::REGADDR::SQ_TEX_RESOURCE_WORD0_N_PS && registerStart < (Latte::REGADDR::SQ_TEX_RESOURCE_WORD0_N_PS + Latte::GPU_LIMITS::NUM_TEXTURES_PER_STAGE * 7)) ||
+							(registerStart >= Latte::REGADDR::SQ_TEX_RESOURCE_WORD0_N_VS && registerStart < (Latte::REGADDR::SQ_TEX_RESOURCE_WORD0_N_VS + Latte::GPU_LIMITS::NUM_TEXTURES_PER_STAGE * 7)) ||
+							(registerStart >= Latte::REGADDR::SQ_TEX_RESOURCE_WORD0_N_GS && registerStart < (Latte::REGADDR::SQ_TEX_RESOURCE_WORD0_N_GS + Latte::GPU_LIMITS::NUM_TEXTURES_PER_STAGE * 7)))
+							drawPassCtx.endDrawPass(); // texture updates end the current draw sequence
+						else if (registerStart >= mmSQ_VTX_ATTRIBUTE_BLOCK_START && registerEnd <= mmSQ_VTX_ATTRIBUTE_BLOCK_END)
+							drawPassCtx.notifyModifiedVertexBuffer();
+						else
+							drawPassCtx.notifyModifiedUniformBuffer();
+					}
 					if (!drawPassCtx.isWithinDrawPass())
 					{
 						drawPassCtx.PushCurrentCommandQueuePos(cmd, cmdStart, cmdEnd);
@@ -1079,10 +1133,29 @@ void LatteCP_processCommandBuffer_continuousDrawPass(DrawPassContext& drawPassCt
 					break;
 				}
 				case IT_SET_CONTEXT_REG:
+				case IT_SET_ALL_CONTEXTS:
 				{
-					drawPassCtx.endDrawPass();
-					drawPassCtx.PushCurrentCommandQueuePos(cmdBeforeCommand, cmdStart, cmdEnd);
-					return;
+					// the registers are written here either way; the sequence only ends when one of them actually changed,
+					// and then the generic parser carries on after this packet
+					uint32 registerStart, registerEnd;
+					if (LatteCP_itSetRegistersGeneric2<LATTE_REG_BASE_CONTEXT>(cmdData, nWords, registerStart, registerEnd))
+					{
+						drawPassCtx.endDrawPass();
+						drawPassCtx.PushCurrentCommandQueuePos(cmd, cmdStart, cmdEnd);
+						return;
+					}
+					break;
+				}
+				case IT_SET_SAMPLER:
+				{
+					uint32 registerStart, registerEnd;
+					if (LatteCP_itSetRegistersGeneric2<LATTE_REG_BASE_SAMPLER>(cmdData, nWords, registerStart, registerEnd))
+					{
+						drawPassCtx.endDrawPass();
+						drawPassCtx.PushCurrentCommandQueuePos(cmd, cmdStart, cmdEnd);
+						return;
+					}
+					break;
 				}
 				case IT_INDIRECT_BUFFER_PRIV:
 				{
@@ -1141,6 +1214,7 @@ void LatteCP_processCommandBuffer(DrawPassContext& drawPassCtx)
 				switch (itCode)
 				{
 				case IT_SET_CONTEXT_REG:
+				case IT_SET_ALL_CONTEXTS:
 				{
 					LatteCP_itSetRegistersGeneric<LATTE_REG_BASE_CONTEXT>(cmdData, nWords);
 				}
@@ -1425,6 +1499,7 @@ void LatteCP_ProcessRingbuffer()
 			}
 			break;
 			case IT_SET_CONTEXT_REG:
+			case IT_SET_ALL_CONTEXTS:
 			{
 				LatteCP_itSetRegistersGeneric<LATTE_REG_BASE_CONTEXT>(cmd, nWords);
 				timerRecheck += CP_TIMER_RECHECK / 512;
