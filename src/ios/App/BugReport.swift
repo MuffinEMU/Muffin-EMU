@@ -55,6 +55,7 @@ enum BugReport {
             "resolution: \(RenderScale.current.title)",
             "favour accuracy: \(accuracy ? "on" : "off"), favour performance: \(FavourPerformance.isEnabled ? "on" : "off")",
             "steady frame rate: \(FullSpeedRenders.isEnabled ? "on (\(FullSpeedRenders.shaderMode.title))" : "off")",
+            "texture filtering: \(TextureFiltering.stored.title)",
         ]
         if OneCoreMode.isEnabled { lines.append("one-core mode: on") }
         return lines.joined(separator: "\n")
