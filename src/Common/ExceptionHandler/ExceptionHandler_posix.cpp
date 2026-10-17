@@ -1,5 +1,7 @@
 #include <signal.h>
-#include <execinfo.h>
+#if !BOOST_PLAT_ANDROID
+#include <execinfo.h> // Bionic only has it from API 33; the Android build writes no backtrace
+#endif
 #include <dlfcn.h>
 #include <string.h>
 #include <string>
@@ -10,11 +12,11 @@
 #include "Cafe/HW/Espresso/Debugger/GDBStub.h"
 #include "Cafe/HW/Espresso/Debugger/GDBBreakpoints.h"
 
-#if BOOST_OS_LINUX
+#if BOOST_OS_LINUX && !BOOST_PLAT_ANDROID
 #include "ELFSymbolTable.h"
 #endif
 
-#if BOOST_OS_LINUX
+#if BOOST_OS_LINUX && !BOOST_PLAT_ANDROID
 void DemangleAndPrintBacktrace(char** backtrace, size_t size)
 {
 	ELFSymbolTable symTable;
@@ -93,7 +95,11 @@ void handlerDumpingSignal(int sig, siginfo_t *info, void *context)
 	size_t size;
 
 	// get void*'s for all entries on the stack
+#if BOOST_PLAT_ANDROID
+	size = 0; // no backtrace() on Bionic below API 33; the signal and registers are still logged
+#else
 	size = backtrace(backtraceArray, 128);
+#endif
     // replace the deepest entry with the actual crash address
 #if defined(ARCH_X86_64) && BOOST_OS_LINUX > 0
     ucontext_t *uc = (ucontext_t *)context;
@@ -143,7 +149,9 @@ void handlerDumpingSignal(int sig, siginfo_t *info, void *context)
 	}
 #endif
 
-#if BOOST_OS_LINUX
+#if BOOST_PLAT_ANDROID
+	CrashLog_WriteLine("(no backtrace on Android: see logcat for the native crash dump)");
+#elif BOOST_OS_LINUX
 	char** symbol_trace = backtrace_symbols(backtraceArray, size);
 
 	if (symbol_trace)

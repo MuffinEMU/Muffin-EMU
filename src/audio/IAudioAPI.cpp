@@ -136,7 +136,7 @@ AudioAPIPtr IAudioAPI::CreateDeviceFromConfig(AudioType type, sint32 rate, sint3
         if (it != devices.end())
             device_description = *it;
 
-#if BOOST_OS_IOS
+#if BOOST_OS_IOS || BOOST_PLAT_ANDROID
         if (!device_description && !devices.empty())
             device_description = devices.front();
 #endif

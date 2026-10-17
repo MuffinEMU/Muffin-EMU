@@ -7,7 +7,7 @@
 #include "Cafe/GameProfile/GameProfile.h"
 #include "util/EventService.h"
 
-#if BOOST_OS_IOS
+#if BOOST_OS_IOS || BOOST_PLAT_ANDROID
 #include "input/api/iOS/GCController.h"
 #include "input/api/iOS/GCControllerProvider.h"
 #include "input/emulated/VPADController.h"
@@ -18,7 +18,7 @@
 
 InputManager::InputManager()
 {
-#if BOOST_OS_IOS
+#if BOOST_OS_IOS || BOOST_PLAT_ANDROID
     create_provider<GCControllerProvider>();
 #else
 #if HAS_KEYBOARD
@@ -55,7 +55,7 @@ InputManager::~InputManager()
 
 void InputManager::load() noexcept
 {
-#if BOOST_OS_IOS
+#if BOOST_OS_IOS || BOOST_PLAT_ANDROID
     load_gc_controllers();
 #else
     for (size_t i = 0; i < kMaxController; ++i)
@@ -69,7 +69,7 @@ void InputManager::load() noexcept
 #endif
 }
 
-#if BOOST_OS_IOS
+#if BOOST_OS_IOS || BOOST_PLAT_ANDROID
 
 static constexpr int kGCBitA       = 0;
 static constexpr int kGCBitB       = 1;
@@ -305,7 +305,7 @@ void InputManager::load_gc_controllers()
 
 bool InputManager::load(size_t player_index, std::string_view filename)
 {
-#if BOOST_OS_IOS
+#if BOOST_OS_IOS || BOOST_PLAT_ANDROID
     (void)player_index; (void)filename;
     return false;
 #else
@@ -648,7 +648,7 @@ bool InputManager::migrate_config(const fs::path& file_path)
 
 void InputManager::save() noexcept
 {
-#if BOOST_OS_IOS
+#if BOOST_OS_IOS || BOOST_PLAT_ANDROID
     return; // iOS uses hardwired GCController mapping, nothing to persist
 #else
     for (size_t i = 0; i < kMaxController; ++i)
@@ -664,7 +664,7 @@ void InputManager::save() noexcept
 
 bool InputManager::save(size_t player_index, std::string_view filename)
 {
-#if BOOST_OS_IOS
+#if BOOST_OS_IOS || BOOST_PLAT_ANDROID
     (void)player_index; (void)filename;
     return true;
 #else
@@ -894,7 +894,7 @@ std::pair<size_t, size_t> InputManager::get_controller_count() const
 
 void InputManager::on_device_changed()
 {
-#if !BOOST_OS_IOS
+#if !(BOOST_OS_IOS || BOOST_PLAT_ANDROID)
     {
         std::shared_lock lock(m_mutex);
         for (auto& pad : m_vpad) { if (pad) pad->connect(); }
@@ -927,7 +927,7 @@ ControllerProviderPtr InputManager::get_api_provider(InputAPI::Type api, const C
 
 void InputManager::apply_game_profile()
 {
-#if BOOST_OS_IOS
+#if BOOST_OS_IOS || BOOST_PLAT_ANDROID
     return;
 #else
     const auto& profiles = g_current_game_profile->GetControllerProfile();
@@ -1016,7 +1016,7 @@ void InputManager::update_thread()
         for (auto& pad : m_wpad) { if (pad) pad->update(); }
         lock.unlock();
 
-#if BOOST_OS_IOS
+#if BOOST_OS_IOS || BOOST_PLAT_ANDROID
         // On iOS this thread only steps the GamePad's rumble pattern (VPADController::update), which
         // advances at most once per 1000/60 ms, and the GameController device itself has no update()
         // work: buttons, sticks and motion are read when the title polls. Waking 1000 times a second for

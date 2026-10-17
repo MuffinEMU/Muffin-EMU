@@ -286,18 +286,18 @@ int main(int argc, char* argv[])
 #else
 
 int BreathOfTheWildChildProcessMain();
-#if BOOST_OS_IOS
+#if BOOST_OS_IOS || BOOST_PLAT_ANDROID
 int main_cemu(int argc, char *argv[])
 #else
 int main(int argc, char *argv[])
 #endif
 {
-#if BOOST_OS_LINUX && defined(ENABLE_VULKAN)
+#if BOOST_OS_LINUX && defined(ENABLE_VULKAN) && !BOOST_PLAT_ANDROID
 	if (getenv("CEMU_DETECT_RADV") != nullptr)
 		return BreathOfTheWildChildProcessMain();
 #endif
 
-#if BOOST_OS_LINUX || BOOST_OS_BSD
+#if (BOOST_OS_LINUX || BOOST_OS_BSD) && !BOOST_PLAT_ANDROID
     XInitThreads();
 #endif
     if (!LaunchSettings::HandleCommandline(argc, argv))
@@ -360,9 +360,11 @@ void CemuInitialize(const char* execPath, const char* user_data_path, const char
     if (gInitialized)
         return;
 
+#ifdef HAS_SDL
+    // Android has no SDL: controllers reach the core through the app's bridge instead.
     SDL_SetMainReady();
     SDL_SetiOSEventPump(true);
-    
+
     SDL_SetHint(SDL_HINT_APP_NAME, "MuffinEMU");
     SDL_SetHint(SDL_HINT_JOYSTICK_ENHANCED_REPORTS, "1");
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
@@ -370,11 +372,12 @@ void CemuInitialize(const char* execPath, const char* user_data_path, const char
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_JOY_CONS, "1");
     SDL_SetHint(SDL_HINT_VIDEO_ALLOW_SCREENSAVER, "1");
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS, "0");
-    
+
     if (!SDL_Init(SDL_INIT_JOYSTICK | SDL_INIT_GAMEPAD | SDL_INIT_HAPTIC | SDL_INIT_EVENTS))
         throw std::runtime_error(fmt::format("couldn't initialize SDL: {}", SDL_GetError()));
-    
-    
+#endif
+
+
     AES128_init();
     
     PPCTimer_init();

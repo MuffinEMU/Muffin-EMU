@@ -105,7 +105,7 @@ private:
 	std::array<std::vector<ControllerProviderPtr>, InputAPI::MAX> m_api_available{ };
 
 	mutable std::shared_mutex m_mutex;
-#if BOOST_OS_IOS
+#if BOOST_OS_IOS || BOOST_PLAT_ANDROID
     std::mutex m_gc_configuration_mutex;
 #endif
 	std::array<EmulatedControllerPtr, kMaxVPADControllers> m_vpad;

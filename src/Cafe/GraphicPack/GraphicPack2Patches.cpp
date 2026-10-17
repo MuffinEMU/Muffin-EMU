@@ -63,7 +63,7 @@ void PatchErrorHandler::showStageErrorMessageBox()
 		}
 	}
 
-	#if BOOST_OS_IOS
+	#if BOOST_OS_IOS || BOOST_PLAT_ANDROID
 	errorMsg.append("\n \n").append(_tr("This graphic pack was skipped."));
 	WindowSystem::ShowErrorDialog(errorMsg, _tr("A graphic pack couldn't be applied"), WindowSystem::ErrorCategory::GRAPHIC_PACKS);
 	#else

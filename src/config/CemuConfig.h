@@ -501,6 +501,8 @@ struct CemuConfig
 	// audio
 #if BOOST_OS_IOS
 	sint32 audio_api = 4;
+#elif BOOST_PLAT_ANDROID
+	sint32 audio_api = 3; // cubeb (AAudio/OpenSL) is the only backend on Android
 #else
 	sint32 audio_api = 0;
 #endif

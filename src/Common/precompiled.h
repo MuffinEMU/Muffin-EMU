@@ -78,6 +78,12 @@
 #include <variant>
 
 #include <boost/predef.h>
+// Android is detected as Linux by Boost.Predef, with BOOST_PLAT_ANDROID telling it apart. Older predef
+// versions only set BOOST_OS_ANDROID; either way the platform macro is what the code tests.
+#if defined(__ANDROID__) && !BOOST_PLAT_ANDROID
+#undef BOOST_PLAT_ANDROID
+#define BOOST_PLAT_ANDROID 1
+#endif
 #include <boost/nowide/convert.hpp>
 #include <boost/algorithm/string.hpp>
 #include <glm/glm.hpp>

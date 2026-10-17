@@ -34,7 +34,7 @@ namespace snd_core
 			*tvAudioMode = 0;
 			break;
 		case kSurround:
-#if BOOST_OS_IOS
+#if BOOST_OS_IOS || BOOST_PLAT_ANDROID
 			// iOS output is stereo: the audio session never asks the route for more than two channels,
 			// so a six-channel mix (centre dialogue included) has no proper way down to the speakers.
 			// Let the game make its own stereo mix instead, as it does for a stereo TV.
@@ -470,7 +470,7 @@ namespace snd_core
 		// when the frames are staged (_AXOutStageFrame).
 		auto deviceChannels = [](AudioChannels setting) -> sint32 {
 			const sint32 channels = CemuConfig::AudioChannelsToNChannels(setting);
-#if BOOST_OS_IOS
+#if BOOST_OS_IOS || BOOST_PLAT_ANDROID
 			return std::min<sint32>(channels, 2);
 #else
 			return channels;

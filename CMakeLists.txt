@@ -20,6 +20,16 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 	set(VCPKG_TARGET_TRIPLET "arm64-ios" CACHE STRING "vcpkg target triplet" FORCE)
 endif()
 
+# MuffinEMU for Android: the same headless core as iOS (BUILD_HEADLESS_DYLIB), built with the NDK into
+# libCemu.so for the Kotlin app under src/android. Configured with the NDK's toolchain chain-loaded by
+# vcpkg (see ci/build-core-android.sh), which is what puts "Android" in CMAKE_SYSTEM_NAME here.
+if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+	list(PREPEND VCPKG_OVERLAY_TRIPLETS "${CMAKE_CURRENT_LIST_DIR}/triplets")
+	list(REMOVE_DUPLICATES VCPKG_OVERLAY_TRIPLETS)
+	set(VCPKG_OVERLAY_TRIPLETS "${VCPKG_OVERLAY_TRIPLETS}" CACHE STRING "Project vcpkg overlay triplets" FORCE)
+	set(VCPKG_TARGET_TRIPLET "arm64-android" CACHE STRING "vcpkg target triplet" FORCE)
+endif()
+
 execute_process(
 		COMMAND git log --format=%h -1
 		WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
@@ -47,7 +57,10 @@ if (ENABLE_VCPKG)
 		)
 	endif()
 
-	if(UNIX AND NOT APPLE)
+	if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+		# the Linux overlays patch desktop ports (GTK, wxWidgets); Android builds none of those
+		set(VCPKG_OVERLAY_PORTS "${CMAKE_CURRENT_LIST_DIR}/dependencies/vcpkg_overlay_ports")
+	elseif(UNIX AND NOT APPLE)
 		set(VCPKG_OVERLAY_PORTS "${CMAKE_CURRENT_LIST_DIR}/dependencies/vcpkg_overlay_ports_linux;${CMAKE_CURRENT_LIST_DIR}/dependencies/vcpkg_overlay_ports")
 	elseif(APPLE)
 		set(VCPKG_OVERLAY_PORTS "${CMAKE_CURRENT_LIST_DIR}/dependencies/vcpkg_overlay_ports_mac;${CMAKE_CURRENT_LIST_DIR}/dependencies/vcpkg_overlay_ports")
@@ -128,7 +141,7 @@ if (APPLE)
     endif()
 endif()
 
-if (UNIX AND NOT APPLE)
+if (UNIX AND NOT APPLE AND NOT ANDROID)
 	option(ENABLE_WAYLAND "Build with Wayland support" ON)
 	option(ENABLE_FERAL_GAMEMODE "Enables Feral Interactive GameMode Support" ON)
 	option(ENABLE_BLUEZ "Build with Bluez support" ON)
@@ -157,6 +170,18 @@ if (IOS)
 	set(ENABLE_LIBUSB OFF CACHE BOOL "libusb is not available on iOS" FORCE)
 endif()
 
+if (ANDROID)
+	# Vulkan only; controllers and the on-screen pad reach the core through the app's bridge, so no SDL.
+	set(ENABLE_OPENGL OFF CACHE BOOL "OpenGL is not used on Android" FORCE)
+	set(ENABLE_VULKAN ON CACHE BOOL "Vulkan is the Android renderer" FORCE)
+	set(ENABLE_METAL OFF CACHE BOOL "Metal does not exist on Android" FORCE)
+	set(ENABLE_DISCORD_RPC OFF CACHE BOOL "Discord RPC is not available on Android" FORCE)
+	set(ENABLE_HIDAPI OFF CACHE BOOL "HIDAPI is not available on Android" FORCE)
+	set(ENABLE_LIBUSB OFF CACHE BOOL "libusb is not available on Android" FORCE)
+	set(ENABLE_SDL OFF CACHE BOOL "SDL is not used on Android" FORCE)
+	set(BUILD_HEADLESS_DYLIB ON CACHE BOOL "Android builds the core as libCemu.so" FORCE)
+endif()
+
 if (ENABLE_METAL AND NOT APPLE)
     message(FATAL_ERROR "Metal backend is only supported on Apple platforms")
 endif()
@@ -183,6 +208,9 @@ if (WIN32)
 endif()
 if (IOS)
 	set(ENABLE_CUBEB_DEFAULT OFF)
+	set(ENABLE_WXWIDGETS_DEFAULT OFF)
+elseif (ANDROID)
+	set(ENABLE_CUBEB_DEFAULT ON) # cubeb's AAudio/OpenSL backends are the Android audio output
 	set(ENABLE_WXWIDGETS_DEFAULT OFF)
 else()
 	set(ENABLE_CUBEB_DEFAULT ON)
@@ -217,7 +245,7 @@ if (NOT TARGET glslang::SPIRV AND TARGET SPIRV)
 	add_library(glslang::SPIRV ALIAS SPIRV)
 endif()
 
-if (UNIX AND NOT APPLE)
+if (UNIX AND NOT APPLE AND NOT ANDROID)
 	find_package(X11 REQUIRED)
 	if (ENABLE_WAYLAND)
 		find_package(Wayland REQUIRED Client)

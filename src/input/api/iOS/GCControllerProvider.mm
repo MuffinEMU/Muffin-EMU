@@ -1,4 +1,4 @@
-#if BOOST_OS_IOS
+#if BOOST_OS_IOS || BOOST_PLAT_ANDROID
 
 #include "GCControllerProvider.h"
 #include "GCController.h"

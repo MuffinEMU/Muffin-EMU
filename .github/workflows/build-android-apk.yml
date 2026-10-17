@@ -1,0 +1,109 @@
+# MuffinEMU for Android: the core as libCemu.so (CMake + vcpkg with the NDK, ci/build-core-android.sh),
+# then the Kotlin app around it (Gradle, src/android). The APK is uploaded as a run artifact and
+# published nowhere: nothing here touches the iOS releases, the nightly tag or the install sources.
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ 'android/**' ]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'src/ios/App/**'
+      - 'src/ios/Packages/**'
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-archives,readwrite"
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build pkg-config autoconf automake libtool nasm
+
+      - name: NDK
+        run: |
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+          "$ANDROID_NDK_LATEST_HOME"/toolchains/llvm/prebuilt/linux-x86_64/bin/clang --version | head -n1
+
+      - name: vcpkg cache key
+        id: vcpkg
+        run: |
+          set -eo pipefail
+          REV=$(git rev-parse HEAD:dependencies/vcpkg)
+          INPUTS=$(git ls-files -s -- vcpkg.json triplets dependencies/vcpkg_overlay_ports | sha256sum | cut -c1-16)
+          echo "prefix=vcpkg-arm64-android-$REV-" >> "$GITHUB_OUTPUT"
+          echo "key=vcpkg-arm64-android-$REV-$INPUTS" >> "$GITHUB_OUTPUT"
+
+      - name: Restore vcpkg binary cache
+        id: vcpkgcache
+        uses: actions/cache/restore@v4
+        with:
+          path: .vcpkg-archives
+          key: ${{ steps.vcpkg.outputs.key }}
+          restore-keys: |
+            ${{ steps.vcpkg.outputs.prefix }}
+
+      - name: Build libCemu.so (core + bridge)
+        run: ./ci/build-core-android.sh
+
+      - name: Save vcpkg binary cache
+        if: always() && steps.vcpkgcache.outputs.cache-hit != 'true' && hashFiles('build-android/vcpkg-deps-complete') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: .vcpkg-archives
+          key: ${{ steps.vcpkg.outputs.key }}
+
+      - name: Stage the core and the data files into the app
+        run: |
+          set -eo pipefail
+          mkdir -p src/android/app/src/main/jniLibs/arm64-v8a
+          cp build-android/out/*.so src/android/app/src/main/jniLibs/arm64-v8a/
+          mkdir -p src/android/app/src/main/assets/CemuData
+          cp -R bin/resources bin/gameProfiles src/android/app/src/main/assets/CemuData/
+          du -sh src/android/app/src/main/jniLibs src/android/app/src/main/assets
+
+      - name: Build the APK
+        run: |
+          cd src/android
+          gradle --version | head -n 3
+          gradle --no-daemon --console=plain assembleRelease
+          ls -l app/build/outputs/apk/release/
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MuffinEMU-android-apk
+          path: src/android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload the build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build-logs
+          path: |
+            configure.log
+            build.log
+          if-no-files-found: ignore
+          retention-days: 7

@@ -31,6 +31,10 @@ elseif(UNIX)
 		else()
 			add_compile_definitions(_XOPEN_SOURCE)
 		endif()
+	elseif(ANDROID)
+		if (ENABLE_VULKAN)
+			add_compile_definitions(VK_USE_PLATFORM_ANDROID_KHR)
+		endif()
 	else()
 		if (ENABLE_VULKAN)
 			add_compile_definitions(
@@ -82,9 +86,13 @@ if(BUILD_HEADLESS_DYLIB)
     set_target_properties(CemuBin PROPERTIES
         CXX_VISIBILITY_PRESET default
         VISIBILITY_INLINES_HIDDEN OFF
-        MACOSX_FRAMEWORK_IDENTIFIER com.void.muffinemu.Cemu
-        FRAMEWORK TRUE
     )
+    if(APPLE)
+        set_target_properties(CemuBin PROPERTIES
+            MACOSX_FRAMEWORK_IDENTIFIER com.void.muffinemu.Cemu
+            FRAMEWORK TRUE
+        )
+    endif()
     if(IOS)
         set_target_properties(CemuBin PROPERTIES
             INSTALL_NAME_DIR "@rpath"
@@ -166,6 +174,27 @@ if(IOS)
 		"-framework AVFoundation"
 		"-framework CoreMedia"
 		"-framework CoreVideo"
+	)
+endif()
+
+if(ANDROID)
+	# MuffinEMU for Android: the JNI bridge the Kotlin app (src/android/app) calls, plus the parts of the iOS
+	# bridge that are plain core glue (title launch, the CafeSystem host implementation, pause) and compile
+	# unchanged on Android.
+	target_sources(CemuBin PRIVATE
+		android/Bridge/AndroidBridge.h
+		android/Bridge/AndroidBridge.cpp
+		ios/Bridge/Core/IOSSystemImplementation.cpp
+		ios/Bridge/Core/IOSTitleLaunch.cpp
+		ios/Bridge/Core/IOSTitlePause.cpp
+		ios/Bridge/Core/IOSDlcUpdateImport.cpp
+	)
+	target_include_directories(CemuBin PRIVATE android/Bridge ios/Bridge)
+	target_link_libraries(CemuBin PRIVATE
+		ZArchive::zarchive
+		zstd::zstd
+		log
+		android
 	)
 endif()
 
