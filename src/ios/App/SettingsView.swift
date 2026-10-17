@@ -117,7 +117,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .controls: return "The on-screen pad, motion aiming and figure portals."
         case .screenAndSound: return "Screen layout, a TV or second screen, audio, the FPS counter and alerts."
         case .library: return "Wii U keys, how the library looks, cover art and the Wii U Menu."
-        case .accountOnline: return "Your Mii and account, and online play."
+        case .accountOnline: return "Your Wii U accounts and online play."
         case .appearance: return "Theme, colours, the app icon and Premium."
         case .storage: return "Where files live, settings backups and moving everything to another device."
         case .support: return "When a game won't start, reporting a problem, diagnostics, credits and reset."
