@@ -13,17 +13,17 @@ MetalDepthStencilCache::~MetalDepthStencilCache()
     m_depthStencilCache.clear();
 }
 
-MTL::DepthStencilState* MetalDepthStencilCache::GetDepthStencilState(const LatteContextRegister& lcr, bool hasDepthStencilAttachment)
+MTL::DepthStencilState* MetalDepthStencilCache::GetDepthStencilState(const LatteContextRegister& lcr, bool hasDepthAttachment, bool hasStencilAttachment)
 {
-    uint64 stateHash = CalculateDepthStencilHash(lcr, hasDepthStencilAttachment);
+    uint64 stateHash = CalculateDepthStencilHash(lcr, hasDepthAttachment, hasStencilAttachment);
     auto& depthStencilState = m_depthStencilCache[stateHash];
     if (depthStencilState)
         return depthStencilState;
 
 	// Depth stencil state
-	bool depthEnable = hasDepthStencilAttachment && lcr.DB_DEPTH_CONTROL.get_Z_ENABLE();
+	bool depthEnable = hasDepthAttachment && lcr.DB_DEPTH_CONTROL.get_Z_ENABLE();
 	auto depthFunc = lcr.DB_DEPTH_CONTROL.get_Z_FUNC();
-	bool depthWriteEnable = hasDepthStencilAttachment && lcr.DB_DEPTH_CONTROL.get_Z_WRITE_ENABLE();
+	bool depthWriteEnable = hasDepthAttachment && lcr.DB_DEPTH_CONTROL.get_Z_WRITE_ENABLE();
 
 	NS_STACK_SCOPED MTL::DepthStencilDescriptor* desc = MTL::DepthStencilDescriptor::alloc()->init();
 	if (depthEnable)
@@ -32,8 +32,11 @@ MTL::DepthStencilState* MetalDepthStencilCache::GetDepthStencilState(const Latte
 	    desc->setDepthCompareFunction(GetMtlCompareFunc(depthFunc));
 	}
 
-	// Stencil state
-	bool stencilEnable = hasDepthStencilAttachment && lcr.DB_DEPTH_CONTROL.get_STENCIL_ENABLE();
+	// Stencil state. A pass whose depth texture has no stencil (D32_FLOAT, D16_UNORM) binds no stencil attachment, and
+	// a stencil test on such a pass is undefined on Metal: the tile has no stencil to test against, so fragments can be
+	// dropped at random. The guest often leaves the stencil test on from an earlier pass (a shadow-map pass after the
+	// main scene), so it is switched off here, which is what Vulkan does when the pass has no stencil attachment.
+	bool stencilEnable = hasStencilAttachment && lcr.DB_DEPTH_CONTROL.get_STENCIL_ENABLE();
 	if (stencilEnable)
 	{
 	    // get stencil control parameters
@@ -88,9 +91,9 @@ MTL::DepthStencilState* MetalDepthStencilCache::GetDepthStencilState(const Latte
 	return depthStencilState;
 }
 
-uint64 MetalDepthStencilCache::CalculateDepthStencilHash(const LatteContextRegister& lcr, bool hasDepthStencilAttachment)
+uint64 MetalDepthStencilCache::CalculateDepthStencilHash(const LatteContextRegister& lcr, bool hasDepthAttachment, bool hasStencilAttachment)
 {
-    if (!hasDepthStencilAttachment)
+    if (!hasDepthAttachment)
         return 0;
 
     uint32* ctxRegister = lcr.GetRawView();
@@ -103,7 +106,9 @@ uint64 MetalDepthStencilCache::CalculateDepthStencilHash(const LatteContextRegis
     uint32 depthControl = ctxRegister[Latte::REGADDR::DB_DEPTH_CONTROL];
     uint64 frontMasks = 0;
     uint64 backMasks = 0;
-    const bool stencilTestEnable = depthControl & 1;
+    // Bit 0 is STENCIL_ENABLE and bit 7 BACK_STENCIL_ENABLE; a stencil test without a stencil attachment is not
+    // applied (see GetDepthStencilState), so its key is the one of the same state with the test off
+    const bool stencilTestEnable = (depthControl & 1) && hasStencilAttachment;
     if (stencilTestEnable)
     {
         frontMasks = (ctxRegister[mmDB_STENCILREFMASK] >> 8) & 0xFFFF; // STENCILMASK_F, STENCILWRITEMASK_F
@@ -112,8 +117,8 @@ uint64 MetalDepthStencilCache::CalculateDepthStencilHash(const LatteContextRegis
     }
     else
     {
-        // zero out stencil related bits (8-31)
-        depthControl &= 0xFF;
+        // zero out the stencil related bits: the two enables and the ops and functions (8-31)
+        depthControl &= 0xFF & ~((1u << 0) | (1u << 7));
     }
 
     return (uint64)depthControl | (frontMasks << 32) | (backMasks << 48);

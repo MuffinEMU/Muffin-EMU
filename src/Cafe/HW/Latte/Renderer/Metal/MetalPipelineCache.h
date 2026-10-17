@@ -6,6 +6,7 @@
 #include <deque>
 #include <mutex>
 #include <thread>
+#include <unordered_map>
 
 #include "Cafe/HW/Latte/Renderer/Metal/MetalPipelineCompiler.h"
 #include "util/helpers/ConcurrentQueue.h"
@@ -54,7 +55,9 @@ public:
 private:
     class MetalRenderer* m_mtlr;
 
-    std::map<uint64, PipelineObject*> m_pipelineCache;
+    // Looked up once per draw with the pipeline hash: a hash table, not an ordered map whose lookup walked a dozen
+    // nodes of pointer-chasing per draw once a title had a few thousand pipelines
+    std::unordered_map<uint64, PipelineObject*> m_pipelineCache;
     FSpinlock m_pipelineCacheLock;
 
 	std::thread* m_pipelineCacheStoreThread{nullptr};
