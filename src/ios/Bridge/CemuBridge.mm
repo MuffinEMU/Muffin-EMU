@@ -4506,11 +4506,38 @@ bool cemu_bridge_is_title_running(void) {
     return g_titleRunning.load() && CafeSystem::IsTitleRunning() && !IOSSystemImplementation_TitleExited(nullptr);
 }
 
+// Set while cemu_bridge_shutdown_title() is waiting for a Wii U Menu title switch to finish (see there). The thread
+// waiting is the app's main thread, so a hop to the main queue from the switch would only wait out its timeout.
+static std::atomic<bool> g_shutdownWaitingForSwitch{false};
+
+// A stop that arrives in the middle of a Wii U Menu title switch (the Menu's title is shut down, the game's is being
+// prepared, the renderer is being rebuilt, then the game starts) has to let the switch finish first: with
+// CafeSystem::IsTitleRunning() false for that window, the stop would find nothing to shut down, reset g_renderer under
+// the launcher thread that is building it, and then the game would start anyway, with the app back in the library.
+// Bounded, so a switch that never ends cannot hang the stop; the log says which way it went.
+static void ios_wait_for_title_switch(const char* why) {
+    if (!CafeSystem::IsTitleSwitchInProgress())
+        return;
+    cemuLog_log(LogType::Force, "iOS: {} during a Wii U Menu title switch; waiting for the switch to finish first", why);
+    const auto start = std::chrono::steady_clock::now();
+    g_shutdownWaitingForSwitch.store(true);
+    while (CafeSystem::IsTitleSwitchInProgress() && std::chrono::steady_clock::now() - start < std::chrono::seconds(30))
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    g_shutdownWaitingForSwitch.store(false);
+    const auto waitedMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+    if (CafeSystem::IsTitleSwitchInProgress())
+        cemuLog_log(LogType::Force, "iOS: the title switch did not finish in {} ms; stopping what is there", waitedMs);
+    else
+        cemuLog_log(LogType::Force, "iOS: the title switch finished after {} ms; stopping the title it started", waitedMs);
+}
+
 // Called by the iOS SystemImplementation from the title-switch launcher thread. The
 // renderer has to be rebuilt (ShutdownTitle() destroyed it), and desktop Cemu does its
 // equivalent - recreating the canvas - on the UI thread, so this runs on the main thread
 // and blocks until it is done. If the main thread is not responding within 10 seconds it is
-// done on the calling thread instead rather than deadlocking the switch.
+// done on the calling thread instead rather than deadlocking the switch. While the main
+// thread is known to be waiting for this switch (a stop that arrived mid-switch), the hop
+// is skipped: it would only wait out that timeout.
 bool IOSBridge_RecreateRenderSurface() {
     struct State {
         std::atomic_bool claimed{false};
@@ -4537,7 +4564,7 @@ bool IOSBridge_RecreateRenderSurface() {
             cemu_bridge_log_checkpoint(message.c_str());
         }
     };
-    if ([NSThread isMainThread]) {
+    if ([NSThread isMainThread] || g_shutdownWaitingForSwitch.load()) {
         work();
         return state->ok.load();
     }
@@ -4657,6 +4684,8 @@ void cemu_bridge_shutdown_title(void) {
     // Suspended guest threads cannot be joined, so a paused title is resumed first.
     IOSTitlePause_Resume();
     IOSTitlePause_Forget();
+    // A Wii U Menu switch that is half way through is let finish, so the title it starts is the one stopped here.
+    ios_wait_for_title_switch("the title is being stopped");
     if (CafeSystem::IsTitleRunning())
         CafeSystem::ShutdownTitle();
     ios_check_clean_slate_after_stop();
