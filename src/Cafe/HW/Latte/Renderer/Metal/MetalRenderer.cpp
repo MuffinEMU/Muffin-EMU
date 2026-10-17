@@ -378,7 +378,7 @@ MetalRenderer::MetalRenderer()
         constexpr uint32 kDrawsPerCommandBuffer = 2 * 196;
         constexpr uint32 kCommandBuffersCovered = 12; // 10 in flight, the one being recorded, one being retired
         m_breadcrumbCapacity = std::max<uint32>(1024, kDrawsPerCommandBuffer * kCommandBuffersCovered);
-        m_breadcrumbs.assign(m_breadcrumbCapacity, MetalDrawBreadcrumb{});
+        // the ring (about 4.7 MB) is allocated by BeginDrawBreadcrumb() the first time a draw records into it
     }
     // Every LatteWait counter and latch, not only the fault state: the stall watchdog compares them against the
     // renderer it is watching, and the previous renderer's progress counters would make the new one look stalled
@@ -707,8 +707,6 @@ MetalRenderer::~MetalRenderer()
 
     if (m_xfbRingBuffer)
         m_xfbRingBuffer->release();
-    for (MTL::Buffer* retiredBuffer : m_retiredXfbRingBuffers)
-        retiredBuffer->release();
 
     m_occlusionQuery.m_resultBuffer->release();
     for (auto* completion : m_occlusionQuery.m_bufferCompletion)
@@ -2306,8 +2304,12 @@ MTL::Buffer* MetalRenderer::GetXfbRingBuffer(size_t minimumSize)
 #ifdef CEMU_DEBUG_ASSERT
     newBuffer->setLabel(GetLabel("Transform feedback buffer", newBuffer));
 #endif
+    // The old buffer may still be read or written by command buffers already recorded; they hold their own reference
+    // to it (command buffers retain what their encoders use), as do the cached argument buffers that name it, so this
+    // only drops ours. It used to be kept in a list until the renderer was destroyed, which held every size the
+    // ring ever had (up to the final size over again) for the rest of the session.
     if (m_xfbRingBuffer)
-        m_retiredXfbRingBuffers.emplace_back(m_xfbRingBuffer);
+        m_xfbRingBuffer->release();
     m_xfbRingBuffer = newBuffer;
     return m_xfbRingBuffer;
 }
@@ -3866,6 +3868,8 @@ void MetalRenderer::LabelEncoder(MTL::CommandEncoder* encoder, const char* kind)
 
 MetalDrawBreadcrumb* MetalRenderer::BeginDrawBreadcrumb()
 {
+    if (m_breadcrumbs.empty()) [[unlikely]]
+        m_breadcrumbs.assign(m_breadcrumbCapacity, MetalDrawBreadcrumb{});
     MetalDrawBreadcrumb& crumb = m_breadcrumbs[m_breadcrumbNext];
     m_breadcrumbNext = (m_breadcrumbNext + 1) % m_breadcrumbCapacity;
     ++m_breadcrumbsWritten;

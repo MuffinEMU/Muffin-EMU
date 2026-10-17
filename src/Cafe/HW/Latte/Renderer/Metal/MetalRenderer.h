@@ -705,7 +705,6 @@ private:
 
 	// Transform feedback
 	MTL::Buffer* m_xfbRingBuffer = nullptr;
-	std::vector<MTL::Buffer*> m_retiredXfbRingBuffers;
 
 	// Occlusion queries
 	struct
@@ -746,7 +745,8 @@ private:
 
     // Draw breadcrumbs (see MetalDrawBreadcrumb)
     // Ring capacity is set when the renderer is created, large enough to cover every draw in the command buffers
-    // that can be in flight at once. It is the same on every device (about 1 KB per entry).
+    // that can be in flight at once. It is the same on every device (about 1 KB per entry). The ring itself is
+    // allocated by the first draw that records into it, so a session with breadcrumbs off never pays for it.
     uint32 m_breadcrumbCapacity = 1024;
     std::vector<MetalDrawBreadcrumb> m_breadcrumbs;
     uint32 m_breadcrumbNext = 0;
