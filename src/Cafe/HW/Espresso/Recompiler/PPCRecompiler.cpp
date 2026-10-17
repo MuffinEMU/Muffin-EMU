@@ -609,7 +609,18 @@ void PPCRecompiler_visitAddressNoBlock(uint32 enterAddress)
         PPCRecompilerState.recompilerSpinlock.unlock();
         return;
     }
-    PPCRecompilerState.targetQueue.emplace(enterAddress);
+    try
+    {
+        PPCRecompilerState.targetQueue.emplace(enterAddress);
+    }
+    catch (const std::bad_alloc&)
+    {
+        // Out of memory on a PPC core thread, with the spinlock held: release it and leave the entry unvisited, so the
+        // interpreter keeps running the code and asks again later. Letting this escape would keep the lock taken
+        // forever (every compile worker and invalidation spins on it) and end the thread with an unhandled exception.
+        PPCRecompilerState.recompilerSpinlock.unlock();
+        return;
+    }
     ppcRecompilerInstanceData->ppcRecompilerDirectJumpTable[enterAddress / 4] = PPCRecompiler_leaveRecompilerCode_visited;
     PPCRecompilerState.recompilerSpinlock.unlock();
     s_threadPool.Notify();
@@ -1752,6 +1763,26 @@ void PPCRecompiler_Shutdown()
         PPCRecompilerState.targetQueue.pop();
     PPCRecompilerState.invalidationRanges.clear();
 
+    // Free the function objects before the store forgets them. The store only owns its range entries; the
+    // PPCRecFunction_t behind them (ranges, entry points) was never deleted, so every title run left all of its
+    // translated functions behind, a few MB per launch that the process kept for good. The compile workers are joined
+    // and the PPC cores are stopped, so nothing can still be reaching them. A function is stored once per range,
+    // hence the sort and unique.
+    try
+    {
+        std::vector<PPCRecFunction_t*> functions;
+        rangeStore_ppcRanges.findRanges(0, PPC_REC_CODE_AREA_SIZE, [&functions](uint32, uint32, PPCRecFunction_t* func) {
+            functions.push_back(func);
+        });
+        std::sort(functions.begin(), functions.end());
+        functions.erase(std::unique(functions.begin(), functions.end()), functions.end());
+        for (PPCRecFunction_t* func : functions)
+            delete func;
+    }
+    catch (const std::bad_alloc&)
+    {
+        // no room for the list: the objects stay behind as they did before, and the shutdown goes on
+    }
     rangeStore_ppcRanges.clear();
 
     uint32 numBlocks = PPCRecompiler_GetNumAddressSpaceBlocks();
