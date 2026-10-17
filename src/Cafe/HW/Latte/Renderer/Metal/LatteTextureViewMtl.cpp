@@ -197,8 +197,13 @@ MTL::Texture* LatteTextureViewMtl::CreateSwizzledView(uint32 gpuSamplerSwizzle)
     levelCount = std::min(levelCount, m_baseTexture->maxPossibleMipLevels - baseLevel);
     levelCount = std::max(levelCount, (uint32)1);
 
-    auto pixelFormat = GetMtlPixelFormat(format, m_baseTexture->isDepth);
-    MTL::Texture* texture = m_baseTexture->GetTexture()->newTextureView(pixelFormat, textureType, NS::Range::Make(baseLevel, levelCount), NS::Range::Make(baseLayer, layerCount), swizzle);
+    // A depth texture keeps its own pixel format in every view. Metal cannot reinterpret a depth texture as another
+    // format (a colour alias of the depth bits, or a different depth format), and only the depth is ever sampled from
+    // one (the Vulkan backend views the depth aspect alone for the same reason). Looking the view's Latte format up
+    // in the depth table gave such a view the fallback depth format, which the base texture cannot be viewed as.
+    MTL::Texture* baseMtl = m_baseTexture->GetTexture();
+    auto pixelFormat = m_baseTexture->isDepth ? baseMtl->pixelFormat() : GetMtlPixelFormat(format, false);
+    MTL::Texture* texture = baseMtl->newTextureView(pixelFormat, textureType, NS::Range::Make(baseLevel, levelCount), NS::Range::Make(baseLayer, layerCount), swizzle);
 
     return texture;
 }
