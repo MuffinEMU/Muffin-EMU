@@ -1146,6 +1146,13 @@ void LatteDecompiler_DecompileGeometryShader(uint64 shaderBaseHash, uint32* cont
 	else
 	{
 		shaderContext.parsedGSCopyShader = LatteGSCopyShaderParser_parse(gsCopyProgramData, gsCopyProgramSize);
+		// the parser gives up (nullptr) on copy shaders it can't read; the analyzer and both emitters dereference it
+		// unconditionally, so fail this shader instead of crashing the GPU thread
+		if (shaderContext.parsedGSCopyShader == nullptr)
+		{
+			cemuLog_log(LogType::Force, "Geometry shader {:016x}: copy shader could not be parsed, shader skipped", shaderBaseHash);
+			shader->hasError = true;
+		}
 	}
 	for (sint32 i = 0; i < LATTE_NUM_MAX_TEX_UNITS; i++)
 	{
@@ -1154,6 +1161,9 @@ void LatteDecompiler_DecompileGeometryShader(uint64 shaderBaseHash, uint32* cont
 	}
 	// parse & compile
 	_LatteDecompiler_Process(&shaderContext, programData, programSize);
+	// the parsed copy shader is only read while decompiling; it was leaked once per geometry shader before
+	delete shaderContext.parsedGSCopyShader;
+	shaderContext.parsedGSCopyShader = nullptr;
 	performanceMonitor.gpuTime_shaderCreate.endMeasuring();
 }
 

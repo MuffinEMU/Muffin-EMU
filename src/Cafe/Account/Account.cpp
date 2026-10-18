@@ -175,9 +175,12 @@ std::error_code Account::Load()
 std::error_code Account::Save()
 {
 	fs::path path = ActiveSettings::GetMlcPath(fmt::format(L"usr/save/system/act/{:08x}", m_persistent_id));
-	if (!fs::exists(path))
+	// error_code overloads here and below: the throwing ones are not caught by the callers (RefreshAccounts(), the
+	// account screens), so a folder that cannot be checked ended the app instead of failing the save
+	std::error_code ec;
+	if (!fs::exists(path, ec))
 	{
-		std::error_code ec;
+		ec.clear();
 		fs::create_directories(path, ec);
 		if (ec)
 			return ec;
@@ -302,11 +305,17 @@ const std::vector<Account>& Account::RefreshAccounts()
 {
 	std::vector<Account> result;
 	const fs::path path = ActiveSettings::GetMlcPath("usr/save/system/act");
-	if (fs::exists(path))
+	// error_code overloads: the throwing ones ended the app at every launch when the account folder could not be
+	// listed (an MLC folder whose access was lost, an I/O error). If the listing fails, the accounts on disk are
+	// left untouched: the fallback account below is not saved over them and persisid.dat is not rewritten
+	std::error_code ec;
+	std::error_code iterEc;
+	if (fs::exists(path, ec))
 	{
-		for (const auto& it : fs::directory_iterator(path))
+		for (fs::directory_iterator itr(path, iterEc); !iterEc && itr != fs::directory_iterator(); itr.increment(iterEc))
 		{
-			if (!fs::is_directory(it))
+			const fs::directory_entry& it = *itr;
+			if (!it.is_directory(ec))
 				continue;
 
 			const auto file_name = it.path().filename().string();
@@ -323,16 +332,23 @@ const std::vector<Account>& Account::RefreshAccounts()
 				result.emplace_back(account);
 		}
 	}
+	else if (ec)
+		iterEc = ec; // the folder's existence itself could not be checked
 	
+	if (iterEc)
+		cemuLog_log(LogType::Force, "Accounts: cannot list {}: {}", _pathToUtf8(path), iterEc.message());
+
 	// we always force at least one account
 	if (result.empty())
 	{
 		result.emplace_back(kMinPersistendId, L"default");
-		result.begin()->Save();
+		if (!iterEc)
+			result.begin()->Save();
 	}
 
 	s_account_list = result;
-	UpdatePersisidDat();
+	if (!iterEc)
+		UpdatePersisidDat();
 	return s_account_list;
 }
 
@@ -384,7 +400,8 @@ uint32 Account::GetNextPersistentId()
 {
 	uint32 result = kMinPersistendId;
 	const auto file = ActiveSettings::GetMlcPath("usr/save/system/act/persisid.dat");
-	if(fs::exists(file))
+	std::error_code ec;
+	if(fs::exists(file, ec))
 	{
 		std::ifstream f(fs::resolvePathCI(file));
 		if(f.is_open())
@@ -422,19 +439,22 @@ fs::path Account::GetFileName(uint32 persistent_id)
 OnlineValidator Account::ValidateOnlineFiles() const
 {
 	OnlineValidator result{};
-	
+
+	// error_code overloads: file_size() throws for a folder with the file's name and exists() for a path that cannot
+	// be checked, and the account screens call this without catching
+	std::error_code ec;
 	const auto otp = ActiveSettings::GetUserDataPath("otp.bin");
-	if (!fs::exists(otp))
+	if (!fs::exists(otp, ec))
 		result.otp = OnlineValidator::FileState::Missing;
-	else if (fs::file_size(otp) != 1024)
+	else if (fs::file_size(otp, ec) != 1024)
 		result.otp = OnlineValidator::FileState::Corrupted;
 	else
 		result.otp = OnlineValidator::FileState::Ok;
-	
+
 	const auto seeprom = ActiveSettings::GetUserDataPath("seeprom.bin");
-	if (!fs::exists(seeprom))
+	if (!fs::exists(seeprom, ec))
 		result.seeprom = OnlineValidator::FileState::Missing;
-	else if (fs::file_size(seeprom) != 512)
+	else if (fs::file_size(seeprom, ec) != 512)
 		result.seeprom = OnlineValidator::FileState::Corrupted;
 	else
 		result.seeprom = OnlineValidator::FileState::Ok;
@@ -442,14 +462,14 @@ OnlineValidator Account::ValidateOnlineFiles() const
 	for(const auto& v : iosuCrypt_getCertificateKeys())
 	{
 		const auto p = ActiveSettings::GetMlcPath(L"sys/title/0005001b/10054000/content/{}", v);
-		if (!fs::exists(p) || !fs::is_regular_file(p))
+		if (!fs::is_regular_file(p, ec))
 			result.missing_files.emplace_back(p.generic_wstring());
 	}
 
 	for (const auto& v : iosuCrypt_getCertificateNames())
 	{
 		const auto p = ActiveSettings::GetMlcPath(L"sys/title/0005001b/10054000/content/{}", v);
-		if (!fs::exists(p) || !fs::is_regular_file(p))
+		if (!fs::is_regular_file(p, ec))
 			result.missing_files.emplace_back(p.generic_wstring());
 	}
 

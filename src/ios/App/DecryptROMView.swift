@@ -71,6 +71,9 @@ struct DecryptROMView: View {
             }
         }
         .navigationViewStyle(.stack)
+        // Leaving the sheet cancels the decrypt (below). While one is running, a stray swipe down
+        // must not throw away the work: Cancel stops it on purpose, and Done appears when it ends.
+        .interactiveDismissDisabled(format != nil && !progress.completed)
         .onDisappear {
             if format != nil && !progress.completed { cemu_bridge_cancel_decrypt() }
             stopPolling()

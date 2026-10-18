@@ -611,8 +611,10 @@ namespace snd_user
 				channel->tv_volume[0][1].volume_target = __MIXTranslateVolume(fader + chan4 + chan1);
 				channel->tv_volume[0][2].volume_target = __MIXTranslateVolume(fader + chan5);
 				channel->tv_volume[0][3].volume_target = __MIXTranslateVolume(fader + chan3 + chan5);
+				// centre and LFE carry nothing in DPL2. This zeroed [0][0] (the front left just set above), which
+				// silenced the left channel of every DPL2 title
 				channel->tv_volume[0][4].volume_target = 0;
-				channel->tv_volume[0][0].volume_target = 0;
+				channel->tv_volume[0][5].volume_target = 0;
 
 				for (int i = 0; i < 2; ++i)
 				{
@@ -622,8 +624,8 @@ namespace snd_user
 					channel->tv_volume[1 + i][1].volume_target = __MIXTranslateVolume(base + chan4 + chan1);
 					channel->tv_volume[1 + i][2].volume_target = __MIXTranslateVolume(base + chan5 + chan2);
 					channel->tv_volume[1 + i][3].volume_target = __MIXTranslateVolume(base + chan5 + chan3);
-					channel->tv_volume[1 + i][0].volume_target = 0;
 					channel->tv_volume[1 + i][4].volume_target = 0;
+					channel->tv_volume[1 + i][5].volume_target = 0;
 				}
 
 				channel->tv_mode &= ~AX_UPDATE_MODE_40000000_VOLUME;
@@ -656,7 +658,8 @@ namespace snd_user
 					channel->tv_volume[1 + i][2].volume_target = __MIXTranslateVolume(base + chan2);
 					channel->tv_volume[1 + i][3].volume_target = __MIXTranslateVolume(base + chan3);
 
-					channel->tv_volume[0][5].volume_target = __MIXTranslateVolume(base + lfe);
+					// the aux bus's own LFE slot; writing [0][5] here left the aux LFE at zero and replaced the main LFE
+					channel->tv_volume[1 + i][5].volume_target = __MIXTranslateVolume(base + lfe);
 				}
 
 				channel->tv_mode &= ~AX_UPDATE_MODE_40000000_VOLUME;

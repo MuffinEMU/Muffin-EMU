@@ -520,13 +520,18 @@ static_assert(sizeof(DiscPartitionHeader) == 0x40+0x20);
 
 bool FSTVolume::FindDiscKey(const fs::path& path, NCrypto::AesKey& discTitleKey)
 {
-	std::unique_ptr<FSTDataSourceWUD> dataSource(FSTDataSourceWUD::Open(path));
-	if (!dataSource)
+	// A plain handle on the image. This reads 48 bytes, so the block cache that FSTDataSourceWUD sets up (three opens
+	// of the image and a read-ahead thread) is not worth starting for it: the library scan and the cover lookup come
+	// through here for every disc image, several times per launch
+	wud_t* wud = wud_open(path);
+	if (!wud)
 		return false;
 
 	// read section of header which should only contain zero bytes if decrypted
 	uint8 header[16*3];
-	if (dataSource->readData(0, 0, 0x18000 + 0x100, header, sizeof(header)) != sizeof(header))
+	const bool headerRead = wud_readData(wud, header, sizeof(header), 0x18000 + 0x100) == sizeof(header);
+	wud_close(wud);
+	if (!headerRead)
 		return false;
 
 	// try all the keys in the key cache
@@ -1042,7 +1047,9 @@ bool FSTVolume::ProcessFST(FSTHeader_FileEntry* fileTable, uint32 numFileEntries
 			pFileOut->SetType(FSTEntry::TYPE::DIRECTORY);
 			uint32 endIndex = pFileIn->GetDirectoryEndIndex();
 			uint32 parentIndex = pFileIn->GetDirectoryParent();
-			if (endIndex < currentIndex || endIndex > currentDirEnd.back().endIndex)
+			// a directory ends after itself (an empty one at currentIndex + 1). An end index equal to its own index made
+			// OpenFile() and directory lookups loop forever on that entry
+			if (endIndex <= currentIndex || endIndex > currentDirEnd.back().endIndex)
 			{
 				cemuLog_log(LogType::Force, "FST: Directory range out of bounds");
 				return false; // dir index out of range
@@ -1265,54 +1272,71 @@ struct FSTCachedRawBlock
 {
 	FSTRawBlock blockData;
 	NCrypto::AesIv ivForNextBlock;
-	uint64 lastAccess;
+	std::list<FSTCacheLruEntry>::iterator lruIt; // its place in FSTVolume::m_cacheLru while it is cached
 };
 
-struct FSTCachedHashedBlock 
+struct FSTCachedHashedBlock
 {
 	FSTHashedBlock blockData;
-	uint64 lastAccess;
+	std::list<FSTCacheLruEntry>::iterator lruIt;
 };
+
+// What a hashed block counts towards the cache budget. The block is counted twice, as it always was: changing this would
+// double what the cache holds on a device whose budget was chosen for its memory
+static constexpr size_t FST_HASHED_BLOCK_CACHE_COST = sizeof(FSTCachedHashedBlock) + sizeof(FSTHashedBlock);
 
 // Checks cache fill state and if necessary drops least recently accessed block from the cache. Optionally allows to recycle the released cache entry to cut down cost of memory allocation and clearing
 void FSTVolume::TrimCacheIfRequired(FSTCachedRawBlock** droppedRawBlock, FSTCachedHashedBlock** droppedHashedBlock)
 {
-	// calculate size used by cache
-	size_t cacheSize = 0;
-	for (auto& itr : m_cacheDecryptedRawBlocks)
-		cacheSize += itr.second->blockData.rawData.size();
-	for (auto& itr : m_cacheDecryptedHashedBlocks)
-		cacheSize += sizeof(FSTCachedHashedBlock) + sizeof(FSTHashedBlock);
+	// This runs on every cache miss. It used to sum the size of every cached block and then scan both maps for the
+	// least recently used one, over up to a few thousand entries each time, while a game streams from its disc image
+	// or encrypted folder. The size is kept as blocks come and go and the blocks are kept in use order, so the oldest
+	// is the front of the list
 	// keep enough decrypted FST data for large sequential asset loads -stossy11
-	if (cacheSize < FSTReadCacheBudgetBytes())
+	if (m_cacheBytes < FSTReadCacheBudgetBytes() || m_cacheLru.empty())
 		return;
-	// scan both cache lists to find least recently accessed block to drop
-	auto dropRawItr = std::min_element(m_cacheDecryptedRawBlocks.begin(), m_cacheDecryptedRawBlocks.end(), [](const auto& a, const auto& b) -> bool
-										{ return a.second->lastAccess < b.second->lastAccess; });
-	auto dropHashedItr = std::min_element(m_cacheDecryptedHashedBlocks.begin(), m_cacheDecryptedHashedBlocks.end(), [](const auto& a, const auto& b) -> bool
-										{ return a.second->lastAccess < b.second->lastAccess; });
-	uint64 lastAccess = std::numeric_limits<uint64>::max();
-	if(dropRawItr != m_cacheDecryptedRawBlocks.end())
-		lastAccess = dropRawItr->second->lastAccess;
-	if(dropHashedItr != m_cacheDecryptedHashedBlocks.end())
-		lastAccess = std::min<uint64>(lastAccess, dropHashedItr->second->lastAccess);
-	if(dropRawItr != m_cacheDecryptedRawBlocks.end() && dropRawItr->second->lastAccess == lastAccess)
+	const FSTCacheLruEntry oldest = m_cacheLru.front();
+	m_cacheLru.pop_front();
+	if (!oldest.isHashed)
 	{
-		if (droppedRawBlock)
-			*droppedRawBlock = dropRawItr->second;
-		else
-			delete dropRawItr->second;
+		auto dropRawItr = m_cacheDecryptedRawBlocks.find(oldest.blockId);
+		cemu_assert_debug(dropRawItr != m_cacheDecryptedRawBlocks.end());
+		if (dropRawItr == m_cacheDecryptedRawBlocks.end())
+			return;
+		FSTCachedRawBlock* block = dropRawItr->second;
+		m_cacheBytes -= std::min(m_cacheBytes, block->blockData.rawData.size());
 		m_cacheDecryptedRawBlocks.erase(dropRawItr);
-		return;
-	}
-	else if(dropHashedItr != m_cacheDecryptedHashedBlocks.end() && dropHashedItr->second->lastAccess == lastAccess)
-	{
-		if (droppedHashedBlock)
-			*droppedHashedBlock = dropHashedItr->second;
+		if (droppedRawBlock)
+			*droppedRawBlock = block;
 		else
-			delete dropHashedItr->second;
-		m_cacheDecryptedHashedBlocks.erase(dropHashedItr);
+			delete block;
 	}
+	else
+	{
+		auto dropHashedItr = m_cacheDecryptedHashedBlocks.find(oldest.blockId);
+		cemu_assert_debug(dropHashedItr != m_cacheDecryptedHashedBlocks.end());
+		if (dropHashedItr == m_cacheDecryptedHashedBlocks.end())
+			return;
+		FSTCachedHashedBlock* block = dropHashedItr->second;
+		m_cacheBytes -= std::min(m_cacheBytes, FST_HASHED_BLOCK_CACHE_COST);
+		m_cacheDecryptedHashedBlocks.erase(dropHashedItr);
+		if (droppedHashedBlock)
+			*droppedHashedBlock = block;
+		else
+			delete block;
+	}
+}
+
+void FSTVolume::CacheClear()
+{
+	for (auto& itr : m_cacheDecryptedRawBlocks)
+		delete itr.second;
+	m_cacheDecryptedRawBlocks.clear();
+	for (auto& itr : m_cacheDecryptedHashedBlocks)
+		delete itr.second;
+	m_cacheDecryptedHashedBlocks.clear();
+	m_cacheLru.clear();
+	m_cacheBytes = 0;
 }
 
 void FSTVolume::DetermineUnhashedBlockIV(uint32 clusterIndex, uint32 blockIndex, NCrypto::AesIv& ivOut)
@@ -1362,7 +1386,7 @@ FSTCachedRawBlock* FSTVolume::GetDecryptedRawBlock(uint32 clusterIndex, uint32 b
 	if (itr != m_cacheDecryptedRawBlocks.end())
 	{
 		block = itr->second;
-		block->lastAccess = ++m_cacheAccessCounter;
+		CacheTouch(block->lruIt);
 		return block;
 	}
 	// if cache already full, drop least recently accessed block and recycle FSTCachedRawBlock object if possible
@@ -1371,7 +1395,6 @@ FSTCachedRawBlock* FSTVolume::GetDecryptedRawBlock(uint32 clusterIndex, uint32 b
 		block = new FSTCachedRawBlock();
 	block->blockData.rawData.resize(m_sectorSize);
 	// block not cached, read new
-	block->lastAccess = ++m_cacheAccessCounter;
 	if (m_dataSource->readData(clusterIndex, clusterOffset, blockIndex * m_sectorSize, block->blockData.rawData.data(), m_sectorSize) != m_sectorSize)
 	{
 		cemuLog_log(LogType::Force, "Failed to read raw FST block");
@@ -1389,11 +1412,14 @@ FSTCachedRawBlock* FSTVolume::GetDecryptedRawBlock(uint32 clusterIndex, uint32 b
 	{
 		if(cluster.singleHashNumBlocksHashed == blockIndex)
 		{
-			cemu_assert_debug(!(cluster.contentSize % m_sectorSize)); // size should be multiple of sector size? Regardless, the hashing code below can handle non-aligned sizes
-			bool isLastBlock = blockIndex == (std::max<uint32>(cluster.contentSize / m_sectorSize, 1) - 1);
+			// The content does not have to end on a sector boundary. The last block is the one holding its final byte
+			// (rounded up), and at most one sector of it is hashed: rounding down here hashed past the end of the block
+			// buffer, by up to a sector, when the size was not a multiple of the sector size
+			const uint64 numBlocks = std::max<uint64>((cluster.contentSize + m_sectorSize - 1) / m_sectorSize, 1);
+			bool isLastBlock = blockIndex == (numBlocks - 1);
 			uint32 hashSize = m_sectorSize;
 			if(isLastBlock)
-				hashSize = cluster.contentSize - (uint64)blockIndex*m_sectorSize;
+				hashSize = (uint32)std::min<uint64>(cluster.contentSize - (uint64)blockIndex*m_sectorSize, m_sectorSize);
 			EVP_DigestUpdate(cluster.singleHashCtx.get(), block->blockData.rawData.data(), hashSize);
 			cluster.singleHashNumBlocksHashed++;
 			if(isLastBlock)
@@ -1412,6 +1438,8 @@ FSTCachedRawBlock* FSTVolume::GetDecryptedRawBlock(uint32 clusterIndex, uint32 b
 	}
 	// register in cache
 	m_cacheDecryptedRawBlocks.emplace(cacheBlockId, block);
+	block->lruIt = m_cacheLru.insert(m_cacheLru.end(), FSTCacheLruEntry{cacheBlockId, false});
+	m_cacheBytes += block->blockData.rawData.size();
 	return block;
 }
 
@@ -1427,7 +1455,7 @@ FSTCachedHashedBlock* FSTVolume::GetDecryptedHashedBlock(uint32 clusterIndex, ui
 	if (itr != m_cacheDecryptedHashedBlocks.end())
 	{
 		block = itr->second;
-		block->lastAccess = ++m_cacheAccessCounter;
+		CacheTouch(block->lruIt);
 		return block;
 	}
 	// if cache already full, drop least recently accessed block and recycle FSTCachedHashedBlock object if possible
@@ -1435,7 +1463,6 @@ FSTCachedHashedBlock* FSTVolume::GetDecryptedHashedBlock(uint32 clusterIndex, ui
 	if (!block)
 		block = new FSTCachedHashedBlock();
 	// block not cached, read new
-	block->lastAccess = ++m_cacheAccessCounter;
 	if (m_dataSource->readData(clusterIndex, clusterOffset, blockIndex * BLOCK_SIZE, block->blockData.rawData, BLOCK_SIZE) != BLOCK_SIZE)
 	{
 		cemuLog_log(LogType::Force, "Failed to read hashed FST block");
@@ -1461,6 +1488,8 @@ FSTCachedHashedBlock* FSTVolume::GetDecryptedHashedBlock(uint32 clusterIndex, ui
 	}
 	// register in cache
 	m_cacheDecryptedHashedBlocks.emplace(cacheBlockId, block);
+	block->lruIt = m_cacheLru.insert(m_cacheLru.end(), FSTCacheLruEntry{cacheBlockId, true});
+	m_cacheBytes += FST_HASHED_BLOCK_CACHE_COST;
 	return block;
 }
 
@@ -1565,12 +1594,7 @@ uint32 FSTVolume::ReadFile(FSTFileHandle& fileHandle, uint32 offset, uint32 size
 	catch (const std::bad_alloc&)
 	{
 		cemuLog_log(LogType::Force, "FST: out of memory while reading a file; releasing the read cache and retrying");
-		for (auto& itr : m_cacheDecryptedRawBlocks)
-			delete itr.second;
-		m_cacheDecryptedRawBlocks.clear();
-		for (auto& itr : m_cacheDecryptedHashedBlocks)
-			delete itr.second;
-		m_cacheDecryptedHashedBlocks.clear();
+		CacheClear();
 	}
 	try
 	{
@@ -1616,10 +1640,7 @@ bool FSTVolume::Next(FSTDirectoryIterator& directoryIterator, FSTFileHandle& fil
 
 FSTVolume::~FSTVolume()
 {
-	for (auto& itr : m_cacheDecryptedRawBlocks)
-		delete itr.second;
-	for (auto& itr : m_cacheDecryptedHashedBlocks)
-		delete itr.second;
+	CacheClear();
 	if (m_sourceIsOwned)
 		delete m_dataSource;
 }
@@ -1641,7 +1662,11 @@ bool FSTVerifier::VerifyContentFile(FileStream* fileContent, const NCrypto::AesK
 	uint64 remainingBytes = contentSize;
 	uint8 calculatedHash[SHA256_DIGEST_LENGTH];
 
-	EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+	// freed on every return, including a short read
+	std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> ctxHolder(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
+	EVP_MD_CTX* ctx = ctxHolder.get();
+	if (!ctx)
+		return false;
 	EVP_DigestInit(ctx, isSHA1 ? EVP_sha1() : EVP_sha256());
 
 	while (remainingBytes > 0)
@@ -1657,7 +1682,6 @@ bool FSTVerifier::VerifyContentFile(FileStream* fileContent, const NCrypto::AesK
 	}
 	unsigned int md_len;
 	EVP_DigestFinal_ex(ctx, calculatedHash, &md_len);
-	EVP_MD_CTX_free(ctx);
 	return memcmp(calculatedHash, tmdContentHash, md_len) == 0;
 }
 

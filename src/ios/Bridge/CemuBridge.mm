@@ -55,6 +55,8 @@
 #include <dlfcn.h>
 #include <pthread.h>
 #include <sys/ucontext.h>
+#include <pthread/qos.h>
+#include <malloc/malloc.h>
 
 #include "Cafe/CafeSystem.h"
 #include "Cafe/OS/libs/nn_ac/nn_ac_reachability.h"
@@ -592,6 +594,18 @@ extern "C" void cemu_ios_assert_hit(void) {
         backtrace_symbols_fd(frames, count, g_crashLogFd);
 }
 
+// The bridge's own housekeeping threads (samplers, watchdogs, the log tail, the clock ladder). Named, so the crash
+// report's thread list and an Instruments trace say which one is which instead of "(unnamed)"; and at utility QoS
+// unless asked otherwise, so they stay off the performance cores the emulated CPU and the GPU thread need. A
+// std::thread takes the QoS of the thread that created it, and these are created from the launch task, which runs
+// at user-initiated. They only sleep, read counters and write log lines, so nothing they do is time-critical.
+static void ios_bridge_thread_begin(const char* name, bool utilityQoS = true)
+{
+    pthread_setname_np(name);
+    if (utilityQoS)
+        pthread_set_qos_class_self_np(QOS_CLASS_UTILITY, 0);
+}
+
 // ---------------------------------------------------------------------------
 // Memory trail
 //
@@ -734,6 +748,7 @@ extern "C" const char* cemu_bridge_device_report(void)
 // not otherwise pull in, and this is one symbol.
 size_t PPCRecompiler_getJitArenaSize();
 size_t PPCRecompiler_getJitArenaUsed();
+void PPCRecompiler_setRuntimeGQRCompiled(bool enabled);
 
 const char* cemu_bridge_memory_headroom_summary(void) {
     static thread_local std::string summary;
@@ -794,11 +809,29 @@ void cemu_bridge_start_memory_watchdog(void) {
                     unsigned long long avail = 0, foot = 0;
                     cemu_bridge_memory_status(&avail, &foot);
                     cemu_mem_write_line("WARNING - iOS is asking for memory back", avail, foot);
+                    // Give some back instead of only logging the warning. The Metal GPU thread watches free memory
+                    // itself, but only acts below its own marks, and iOS can warn earlier than that. One eviction pass
+                    // drops textures that are cheap to bring back (unused, and restorable from guest memory); textures
+                    // the GPU drew are only touched when memory is already critical, exactly as in its own passes. It
+                    // is the same request a guest thread makes when it cannot get a stack. The Vulkan renderer does
+                    // not read the flag, so there it is a no-op.
+                    if (CafeSystem::IsTitleRunning())
+                        LatteWait::Get().evictionRequested.store(true);
+                    // And hand back the free pages the allocator is still holding. Off the main thread: it walks
+                    // every malloc zone.
+                    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+                        const size_t released = malloc_zone_pressure_relief(nullptr, 0);
+                        char line[96];
+                        snprintf(line, sizeof(line), "MEM: allocator returned %llu MB of free pages to iOS",
+                                 (unsigned long long)(released >> 20));
+                        cemu_bridge_log_checkpoint(line);
+                    });
                 }];
 
     cemu_bridge_memory_note("baseline at startup");
 
     std::thread([] {
+        ios_bridge_thread_begin("Muffin MEM watch");
         // Bucketed so a steady footprint writes nothing; once a minute otherwise, to show
         // the sampler is alive without burying the log.
         uint64_t lastFootBucket = 0;
@@ -835,6 +868,13 @@ void cemu_bridge_start_memory_watchdog(void) {
             {
                 criticalAnnounced = true;
                 cemu_mem_write_line("CRITICAL - a kill by iOS is likely imminent", avail, foot);
+            }
+            // Re-armed once memory has clearly recovered (a stopped game, an eviction pass), so a second close call
+            // later in the session, or in the next game, is logged too. The gap stops a footprint hovering at the
+            // line from writing it over and over.
+            else if (criticalAnnounced && avail > (384ull << 20))
+            {
+                criticalAnnounced = false;
             }
         }
     }).detach();
@@ -1352,6 +1392,7 @@ namespace {
             return;
         const std::string path = _pathToUtf8(ActiveSettings::GetUserDataPath("log.txt"));
         std::thread([path] {
+            ios_bridge_thread_begin("Muffin log tail");
             long offset = 0;
             std::string partial;
             char chunk[4096];
@@ -1407,6 +1448,7 @@ namespace {
         if (g_statsRunning.exchange(true))
             return;
         std::thread([] {
+            ios_bridge_thread_begin("Muffin FPS sampler");
             uint32 lastFrames = 0;
             auto lastTime = std::chrono::steady_clock::now();
             bool haveBaseline = false;
@@ -1732,6 +1774,7 @@ namespace {
         if (g_perfRunning.exchange(true))
             return;
         std::thread([] {
+            ios_bridge_thread_begin("Muffin perf line");
             constexpr double kWindowSeconds = 5.0;
             PerfSnapshot baseline;
             bool haveBaseline = false;
@@ -1993,6 +2036,7 @@ namespace {
             usingBlock:^(NSNotification*) { PerfTelemetry::AppInBackground().store(false); }];
 
         std::thread([] {
+            ios_bridge_thread_begin("Muffin stall watch");
             StallDetect::Detector detector;
             uint32_t seenResetGen = g_stallResetGen.load();
             int64_t lastStillLogMs = 0;
@@ -2137,6 +2181,21 @@ namespace {
         }
     }
 
+    // A physical controller's thumbstick gets the scaled radial deadzone the core used to apply to every
+    // stick (0.25, rescaled so the edge of the deadzone is 0). GCControllerDevice sets the core's own stick
+    // deadzone to 0 because the on-screen sticks have already been through the player's deadzone, curve and
+    // fine-tuning. A controller's stick has no such setting, and a worn one can rest well off centre, so it
+    // keeps exactly the deadzone it had.
+    GCBridgeVec2 ios_physical_stick_deadzone(GCBridgeVec2 v)
+    {
+        constexpr float kDeadzone = 0.25f;
+        const float len = std::sqrt(v.x * v.x + v.y * v.y);
+        if (!(len > kDeadzone))
+            return GCBridgeVec2{};
+        const float scale = std::min((len - kDeadzone) / (1.0f - kDeadzone), 1.0f) / len;
+        return GCBridgeVec2{v.x * scale, v.y * scale};
+    }
+
     GCBridgeControllerState ios_poll_state(void* context)
     {
         (void)context;
@@ -2180,7 +2239,8 @@ namespace {
         for (int i = 0; i < 2; i++)
         {
             const GCBridgeVec2& touch = g_touchSticks[i];
-            const GCBridgeVec2 chosen = (touch.x != 0.0f || touch.y != 0.0f) ? touch : g_physicalSticks[i];
+            const GCBridgeVec2 chosen = (touch.x != 0.0f || touch.y != 0.0f)
+                ? touch : ios_physical_stick_deadzone(g_physicalSticks[i]);
             (i == 0 ? s.leftStick : s.rightStick) = chosen;
         }
         s.leftTrigger = std::max(g_physicalTriggers[0], (g_touchButtons & (1u << kBitZL)) ? 1.0f : 0.0f);
@@ -2710,6 +2770,14 @@ bool cemu_bridge_emulate_missing_effects(void) {
     return GetConfig().emulate_missing_effects.GetValue();
 }
 
+void cemu_bridge_set_anisotropic_filtering(int32_t level) {
+    g_latteAnisotropyOverride.store(level < 0 ? -1 : std::min<int32_t>(level, 4), std::memory_order_relaxed);
+}
+
+int32_t cemu_bridge_anisotropic_filtering(void) {
+    return g_latteAnisotropyOverride.load(std::memory_order_relaxed);
+}
+
 // ---------------------------------------------------------------------------
 // Screen orientation, gamma and the on-screen performance overlay. See the doc comments
 // on the declarations in CemuBridge.h for what each one does and why the gamma range is
@@ -3128,6 +3196,9 @@ bool cemu_bridge_recompiler_enabled(void) {
 
 void cemu_bridge_set_favour_accuracy(bool enabled) {
     g_favourAccuracy.store(enabled);
+    // Paired-single loads and stores whose GQR is only known at run time go back to the interpreter, the
+    // known-good path, while accuracy is favoured (PPCRecompilerImlGenFPU.cpp).
+    PPCRecompiler_setRuntimeGQRCompiled(!enabled);
     if (g_initialized.load())
         ios_apply_cpu_mode();
 }
@@ -3864,6 +3935,8 @@ static bool StartDecryptJob(const std::function<int(const std::function<void(uin
     g_decryptFilesWritten.store(0);
 
     g_decryptThread = std::thread([job]() {
+        // Named only: the player is waiting on this one, so it keeps the QoS of the request that started it.
+        ios_bridge_thread_begin("Muffin decrypt", false);
         auto progress = [](uint64_t bytesWritten, uint32_t filesWritten) {
             g_decryptBytesWritten.store(bytesWritten);
             g_decryptFilesWritten.store(filesWritten);
@@ -4287,7 +4360,27 @@ static void ios_timebase_ladder_entry() {
     // "the value that worked", and leave it there for the rest of the session - so a
     // title that took 36 seconds to reach GX2Init then ran at an eighth speed forever.
     const int startShift = cemu_bridge_get_timebase_shift();
+    ios_bridge_thread_begin("Muffin clock ladder");
     auto lastStep = start;
+    auto lastPoll = start;
+    // The shift this ladder last set, or -1 while it has not stepped.
+    int ladderShift = -1;
+    // The same rule on the ways out that are not "advancing" or "at the floor" (both restore below): the title
+    // stopping, a Wii U Menu switch replacing it, or the ladder being stopped for the next launch. Those used to
+    // leave the stepped clock in place, and it outlived the title: cemu_bridge_initialize() only sets real time
+    // once per process, and TimebaseScale applies nothing when no value was chosen by hand, so the next game
+    // started at a fraction of real speed. Only a value this ladder set is undone; one picked by hand (which
+    // also turns the ladder off) stands.
+    auto restoreIfStepped = [&](const char* why) {
+        if (ladderShift < 0 || !g_timebaseAutoEnabled.load())
+            return;
+        const int shift = cemu_bridge_get_timebase_shift();
+        if (shift != ladderShift || shift == startShift)
+            return;
+        cemuLog_log(LogType::Force, "Emulated timebase: {} while the ladder was searching; restoring the clock from shift {} to shift {} ({:.4g}x real time).",
+            why, shift, startShift, 8.0 / (double)(1u << startShift));
+        cemu_bridge_set_timebase_shift(startShift);
+    };
     // Baselines from the first poll, not zero: a title that drew one frame and stopped
     // must not read as advancing.
     bool baselineTaken = false;
@@ -4295,10 +4388,20 @@ static void ios_timebase_ladder_entry() {
     unsigned int baseGuestFlipRequests = 0;
     while (g_timebaseLadderRunning.load()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        if (!g_timebaseLadderRunning.load() || !g_timebaseAutoEnabled.load() || !CafeSystem::IsTitleRunning())
+        if (!g_timebaseLadderRunning.load() || !g_timebaseAutoEnabled.load() || !CafeSystem::IsTitleRunning()) {
+            restoreIfStepped(CafeSystem::IsTitleRunning() ? "the ladder was stopped" : "the title stopped");
             return;
-        if (IOSTitlePause_IsPaused())
+        }
+        const auto polledAt = std::chrono::steady_clock::now();
+        if (IOSTitlePause_IsPaused()) {
+            // The guest does not run while paused (HOME menu, app in the background), so paused time does not count
+            // towards the next step. Without this, coming back from a pause longer than one step slowed the clock
+            // on the very next poll.
+            lastStep += polledAt - lastPoll;
+            lastPoll = polledAt;
             continue;
+        }
+        lastPoll = polledAt;
 
         CemuBridgeProgress progress{};
         cemu_bridge_get_progress(&progress);
@@ -4365,7 +4468,9 @@ static void ios_timebase_ladder_entry() {
             "({:.4g}x real time). This is the ladder searching, not a value anyone chose.",
             elapsed, shift + 1, 8.0 / (double)(1u << (shift + 1)));
         cemu_bridge_set_timebase_shift(shift + 1);
+        ladderShift = shift + 1;
     }
+    restoreIfStepped("the ladder was stopped");
 }
 
 static void ios_timebase_ladder_stop() {
@@ -4405,11 +4510,38 @@ bool cemu_bridge_is_title_running(void) {
     return g_titleRunning.load() && CafeSystem::IsTitleRunning() && !IOSSystemImplementation_TitleExited(nullptr);
 }
 
+// Set while cemu_bridge_shutdown_title() is waiting for a Wii U Menu title switch to finish (see there). The thread
+// waiting is the app's main thread, so a hop to the main queue from the switch would only wait out its timeout.
+static std::atomic<bool> g_shutdownWaitingForSwitch{false};
+
+// A stop that arrives in the middle of a Wii U Menu title switch (the Menu's title is shut down, the game's is being
+// prepared, the renderer is being rebuilt, then the game starts) has to let the switch finish first: with
+// CafeSystem::IsTitleRunning() false for that window, the stop would find nothing to shut down, reset g_renderer under
+// the launcher thread that is building it, and then the game would start anyway, with the app back in the library.
+// Bounded, so a switch that never ends cannot hang the stop; the log says which way it went.
+static void ios_wait_for_title_switch(const char* why) {
+    if (!CafeSystem::IsTitleSwitchInProgress())
+        return;
+    cemuLog_log(LogType::Force, "iOS: {} during a Wii U Menu title switch; waiting for the switch to finish first", why);
+    const auto start = std::chrono::steady_clock::now();
+    g_shutdownWaitingForSwitch.store(true);
+    while (CafeSystem::IsTitleSwitchInProgress() && std::chrono::steady_clock::now() - start < std::chrono::seconds(30))
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    g_shutdownWaitingForSwitch.store(false);
+    const auto waitedMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+    if (CafeSystem::IsTitleSwitchInProgress())
+        cemuLog_log(LogType::Force, "iOS: the title switch did not finish in {} ms; stopping what is there", waitedMs);
+    else
+        cemuLog_log(LogType::Force, "iOS: the title switch finished after {} ms; stopping the title it started", waitedMs);
+}
+
 // Called by the iOS SystemImplementation from the title-switch launcher thread. The
 // renderer has to be rebuilt (ShutdownTitle() destroyed it), and desktop Cemu does its
 // equivalent - recreating the canvas - on the UI thread, so this runs on the main thread
 // and blocks until it is done. If the main thread is not responding within 10 seconds it is
-// done on the calling thread instead rather than deadlocking the switch.
+// done on the calling thread instead rather than deadlocking the switch. While the main
+// thread is known to be waiting for this switch (a stop that arrived mid-switch), the hop
+// is skipped: it would only wait out that timeout.
 bool IOSBridge_RecreateRenderSurface() {
     struct State {
         std::atomic_bool claimed{false};
@@ -4436,7 +4568,7 @@ bool IOSBridge_RecreateRenderSurface() {
             cemu_bridge_log_checkpoint(message.c_str());
         }
     };
-    if ([NSThread isMainThread]) {
+    if ([NSThread isMainThread] || g_shutdownWaitingForSwitch.load()) {
         work();
         return state->ok.load();
     }
@@ -4556,6 +4688,8 @@ void cemu_bridge_shutdown_title(void) {
     // Suspended guest threads cannot be joined, so a paused title is resumed first.
     IOSTitlePause_Resume();
     IOSTitlePause_Forget();
+    // A Wii U Menu switch that is half way through is let finish, so the title it starts is the one stopped here.
+    ios_wait_for_title_switch("the title is being stopped");
     if (CafeSystem::IsTitleRunning())
         CafeSystem::ShutdownTitle();
     ios_check_clean_slate_after_stop();
@@ -4804,6 +4938,7 @@ static std::thread g_twoCoreWatchThread;
 static std::mutex g_twoCoreWatchMutex;
 
 static void ios_two_core_watch_entry(uint64_t titleId) {
+    ios_bridge_thread_begin("Muffin two-core watch");
     int waitedHalfSeconds = 0;
     while (g_twoCoreWatchRunning.load()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(500));

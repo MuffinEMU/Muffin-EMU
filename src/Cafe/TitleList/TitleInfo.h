@@ -260,13 +260,26 @@ public:
 private:
 	void Copy(const TitleInfo& other)
 	{
+		// Also used by operator= on a TitleInfo that already holds parsed data (GameInfo2::SetBase, the foreground title
+		// of the previous launch). That data is released first, and every owned pointer is reset: the cos.xml and the
+		// cached info used to be kept when the source had none, so the next title could start with the previous
+		// title's argstr (its .rpx name).
+		delete m_parsedMetaXml;
+		delete m_parsedAppXml;
+		delete m_parsedCosXml;
+		delete m_cachedInfo;
+		m_parsedMetaXml = nullptr;
+		m_parsedAppXml = nullptr;
+		m_parsedCosXml = nullptr;
+		m_cachedInfo = nullptr;
+
 		m_isValid = other.m_isValid;
 		m_titleFormat = other.m_titleFormat;
 		m_fullPath = other.m_fullPath;
 		m_subPath = other.m_subPath;
+		m_uid = other.m_uid; // IsEqualByLocation() and GetUID() on a copy compared 0 with 0
+		m_invalidReason = other.m_invalidReason;
 		m_hasParsedXmlFiles = other.m_hasParsedXmlFiles;
-		m_parsedMetaXml = nullptr;
-		m_parsedAppXml = nullptr;
 
 		if (other.m_parsedMetaXml)
 			m_parsedMetaXml = new ParsedMetaXml(*other.m_parsedMetaXml);
@@ -278,8 +291,11 @@ private:
 		if (other.m_cachedInfo)
 			m_cachedInfo = new CachedInfo(*other.m_cachedInfo);
 
+		// a copy is never mounted; it opens its own devices when it is
 		m_mountpoints.clear();
 		m_wudVolume = nullptr;
+		m_zarchive = nullptr;
+		m_wuhbreader = nullptr;
 	}
 
 	bool DetectFormat(const fs::path& path, fs::path& pathOut, TitleDataFormat& formatOut);

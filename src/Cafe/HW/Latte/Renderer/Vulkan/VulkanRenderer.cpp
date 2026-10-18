@@ -1128,10 +1128,34 @@ VulkanRenderer::~VulkanRenderer()
 		// don't exist. Release just what the constructor created.
 		m_padSwapchainInfo = nullptr;
 		m_mainSwapchainInfo = nullptr;
-		memoryManager.reset();
+		// The shader and pipeline compile threads were started by the constructor too. They are idle, but left alone they
+		// stay for the rest of the process while the title runs on Metal, and a later Vulkan launch starts a second set.
+		RendererShaderVk::Shutdown();
+		PipelineCompiler::CompileThreadPool_Stop();
 		if (m_logicalDevice)
 		{
 			vkDeviceWaitIdle(m_logicalDevice);
+			// The constructor's device memory (uniform ring, readback buffer, stream-out ring, query results) and its
+			// descriptor pool are not freed by vkDestroyDevice. On a fallback launch they were kept for as long as the app
+			// ran on Metal: with the pool's preallocated descriptors that is well over 50 MB a device with a tight memory
+			// limit then went without.
+			memoryManager->DeleteBuffer(m_uniformVarBuffer, m_uniformVarBufferMemory);
+			memoryManager->DeleteBuffer(m_textureReadbackBuffer, m_textureReadbackBufferMemory);
+			memoryManager->DeleteBuffer(m_xfbRingBuffer, m_xfbRingBufferMemory);
+			memoryManager->DeleteBuffer(m_occlusionQueries.bufferQueryResults, m_occlusionQueries.memoryQueryResults);
+			m_uniformVarBufferPtr = nullptr;
+			m_textureReadbackBufferPtr = nullptr;
+			m_occlusionQueries.ptrQueryResults = nullptr;
+		}
+		memoryManager.reset();
+		if (m_logicalDevice)
+		{
+			if (m_descriptorPool != VK_NULL_HANDLE)
+				vkDestroyDescriptorPool(m_logicalDevice, m_descriptorPool, nullptr);
+			m_descriptorPool = VK_NULL_HANDLE;
+			if (m_swapchainDescriptorSetLayout != VK_NULL_HANDLE)
+				vkDestroyDescriptorSetLayout(m_logicalDevice, m_swapchainDescriptorSetLayout, nullptr);
+			m_swapchainDescriptorSetLayout = VK_NULL_HANDLE;
 			for (auto& it : m_cmd_buffer_fences)
 				if (it != VK_NULL_HANDLE)
 					vkDestroyFence(m_logicalDevice, it, nullptr);
@@ -1157,6 +1181,15 @@ VulkanRenderer::~VulkanRenderer()
 	SubmitCommandBuffer();
 	WaitDeviceIdle();
 	WaitCommandBufferFinished(GetCurrentCommandBufferId());
+
+	// The GPU is idle, so the delayed-free frame count no longer protects anything. Release everything that is waiting
+	// now, while the descriptor pool, the sampler cache and the memory manager still exist. With the frame delay on, the
+	// objects released in the last few frames before the stop (descriptor sets, and the samplers they hold) used to be
+	// left queued until the very end: by then vkFreeDescriptorSets ran on the destroyed pool and DestroyCache() had
+	// already deleted samplers those descriptor sets still referenced, so quitting a game could crash.
+	m_drainDestructionQueue = true;
+	DrainDestructionQueue();
+
 	// shut down pipeline save thread
 	m_destructionRequested = true;
 	m_pipeline_cache_semaphore.notify();
@@ -1164,17 +1197,8 @@ VulkanRenderer::~VulkanRenderer()
 
 	vkDestroyPipelineCache(m_logicalDevice, m_pipeline_cache, nullptr);
 
-	if(!m_backbufferBlitDescriptorSetCache.empty())
-	{
-		std::vector<VkDescriptorSet> freeVector;
-		freeVector.reserve(m_backbufferBlitDescriptorSetCache.size());
-		std::transform(m_backbufferBlitDescriptorSetCache.begin(), m_backbufferBlitDescriptorSetCache.end(), std::back_inserter(freeVector), [](auto& i) {
-		  return i.second;
-		});
-		vkFreeDescriptorSets(m_logicalDevice, m_descriptorPool, freeVector.size(), freeVector.data());
-	}
-
 	vkDestroyDescriptorPool(m_logicalDevice, m_descriptorPool, nullptr);
+	m_descriptorPool = VK_NULL_HANDLE; // destroying the pool freed every set in it; objects released later must not free theirs again
 
 	for(auto& i : m_backbufferBlitPipelineCache)
 	{
@@ -1244,9 +1268,11 @@ VulkanRenderer::~VulkanRenderer()
 		vkDestroyDebugUtilsMessengerEXT(m_instance, m_debugCallback, nullptr);
 	}
 
-	m_drainDestructionQueue = true; // shutdown: the frame delay no longer applies
-	while(!m_destructionQueue.empty())
-		ProcessDestructionQueue();
+	// Whatever was released during the teardown above. An object that is still referenced can never be freed, and
+	// waiting for it would hang the quit forever, so it is reported and left.
+	DrainDestructionQueue();
+	if (!m_destructionQueue.empty())
+		cemuLog_log(LogType::Force, "Vulkan: {} object(s) still referenced at shutdown, not freed", m_destructionQueue.size());
 
 	// destroy memory manager
 	memoryManager.reset();
@@ -1592,9 +1618,11 @@ void VulkanRenderer::HandleScreenshotRequest(LatteTextureView* texView, bool pad
 		}
 		break;
 	case VK_FORMAT_R8G8B8_UNORM:
-		std::copy((uint8*)bufferPtr, (uint8*)bufferPtr + size, rgb_data.begin());
+		// reserve() above leaves the size at zero, so writing through begin() stored nothing; give the vector its size first
+		rgb_data.assign((uint8*)bufferPtr, (uint8*)bufferPtr + size);
 		break;
 	case VK_FORMAT_R8G8B8_SRGB:
+		rgb_data.resize(size);
 		std::transform((uint8*)bufferPtr, (uint8*)bufferPtr + size, rgb_data.begin(), SRGBComponentToRGB);
 		break;
 	default:
@@ -4148,6 +4176,10 @@ void VulkanRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutpu
 	vkCmdSetScissor(m_state.currentCommandBuffer, 0, 1, &scissor);
 
 	auto descriptSet = backbufferBlit_createDescriptorSet(m_swapchainDescriptorSetLayout, texViewVk, useLinearTexFilter);
+	// The image view, its sampler and the descriptor set above are sampled by this command buffer. Nothing else marked
+	// them, so a scan buffer deleted right after this (resolution change, texture eviction under memory pressure) could
+	// be destroyed while the GPU was still drawing it to the screen.
+	texViewVk->GetViewRGBA()->flagForCurrentCommandBuffer();
 
 	vkCmdBeginRenderPass(m_state.currentCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -4207,13 +4239,13 @@ void VulkanRenderer::CreateDescriptorPool()
 
 VkDescriptorSet VulkanRenderer::backbufferBlit_createDescriptorSet(VkDescriptorSetLayout descriptor_set_layout, LatteTextureViewVk* texViewVk, bool useLinearTexFilter)
 {
-	uint64 hash = 0;
-	hash += (uint64)texViewVk->GetViewRGBA();
-	hash += (uint64)texViewVk->GetDefaultTextureSampler(useLinearTexFilter);
-
-	const auto it = m_backbufferBlitDescriptorSetCache.find(hash);
-	if (it != m_backbufferBlitDescriptorSetCache.cend())
-		return it->second;
+	// Kept on the view object instead of in a renderer-wide map keyed on the sum of the view and sampler pointers: entries
+	// there were never removed, so each scan buffer that was ever replaced left a descriptor set behind, and a new view
+	// allocated at a freed one's address could be handed the old set, which still pointed at the destroyed image view.
+	VKRObjectTextureView* viewObj = texViewVk->GetViewRGBA();
+	VkDescriptorSet& cachedSet = viewObj->m_backbufferBlitDescriptorSet[useLinearTexFilter ? 1 : 0];
+	if (cachedSet != VK_NULL_HANDLE)
+		return cachedSet;
 
 	VkDescriptorSetAllocateInfo allocInfo = {};
 	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -4259,7 +4291,7 @@ VkDescriptorSet VulkanRenderer::backbufferBlit_createDescriptorSet(VkDescriptorS
 	vkUpdateDescriptorSets(m_logicalDevice, std::size(descriptorWrites), descriptorWrites, 0, nullptr);
 	performanceMonitor.vk.numDescriptorSamplerTextures.increment();
 
-	m_backbufferBlitDescriptorSetCache[hash] = result;
+	cachedSet = result;
 	return result;
 }
 
@@ -4392,6 +4424,21 @@ void VulkanRenderer::OnFramePresented()
 	const uint64 frames = m_framesPresented.load(std::memory_order_relaxed) + 1;
 	m_frameEndCmdBufferId[frames % 16].store(GetCurrentCommandBufferId(), std::memory_order_release);
 	m_framesPresented.store(frames, std::memory_order_release);
+}
+
+// Teardown only: run the queue until a pass frees nothing more. One pass isn't enough, because deleting an object
+// (a framebuffer) can drop the last reference to one that sits earlier in the queue (its texture view).
+void VulkanRenderer::DrainDestructionQueue()
+{
+	size_t remaining = m_destructionQueue.size();
+	while (remaining > 0)
+	{
+		ProcessDestructionQueue();
+		const size_t now = m_destructionQueue.size();
+		if (now >= remaining)
+			break;
+		remaining = now;
+	}
 }
 
 void VulkanRenderer::ProcessDestructionQueue()
@@ -5086,6 +5133,17 @@ VKRObjectTextureView::VKRObjectTextureView(VKRObjectTexture* tex, VkImageView vi
 VKRObjectTextureView::~VKRObjectTextureView()
 {
 	auto logicalDevice = VulkanRenderer::GetInstance()->GetLogicalDevice();
+	const VkDescriptorPool descriptorPool = VulkanRenderer::GetInstance()->GetDescriptorPool();
+	for (auto& ds : m_backbufferBlitDescriptorSet)
+	{
+		if (ds != VK_NULL_HANDLE && descriptorPool != VK_NULL_HANDLE)
+		{
+			vkFreeDescriptorSets(logicalDevice, descriptorPool, 1, &ds);
+			performanceMonitor.vk.numDescriptorSets.decrement();
+			performanceMonitor.vk.numDescriptorSamplerTextures.decrement();
+		}
+		ds = VK_NULL_HANDLE;
+	}
 	if (m_textureDefaultSampler[0] != VK_NULL_HANDLE)
 		vkDestroySampler(logicalDevice, m_textureDefaultSampler[0], nullptr);
 	if (m_textureDefaultSampler[1] != VK_NULL_HANDLE)
@@ -5430,6 +5488,7 @@ VKRObjectDescriptorSet::VKRObjectDescriptorSet()
 VKRObjectDescriptorSet::~VKRObjectDescriptorSet()
 {
 	auto vkr = VulkanRenderer::GetInstance();
-	vkFreeDescriptorSets(vkr->GetLogicalDevice(), vkr->GetDescriptorPool(), 1, &descriptorSet);
+	if (descriptorSet != VK_NULL_HANDLE && vkr->GetDescriptorPool() != VK_NULL_HANDLE) // a destroyed pool already freed it
+		vkFreeDescriptorSets(vkr->GetLogicalDevice(), vkr->GetDescriptorPool(), 1, &descriptorSet);
 	performanceMonitor.vk.numDescriptorSets.decrement();
 }

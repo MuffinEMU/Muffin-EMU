@@ -70,12 +70,25 @@
 
 // error codes
 #define WU_SO_SUCCESS		0x0000
+#define WU_SO_ENOBUFS		0x0001
+#define WU_SO_ETIMEDOUT		0x0002
+#define WU_SO_EISCONN		0x0003
+#define WU_SO_ECONNABORTED	0x0005
 #define WU_SO_EWOULDBLOCK	0x0006
+#define WU_SO_ECONNREFUSED	0x0007
 #define WU_SO_ECONNRESET	0x0008
 #define WU_SO_ENOTCONN		0x0009
+#define WU_SO_EALREADY		0x000A
 #define WU_SO_EINVAL		0x000B
+#define WU_SO_EMSGSIZE		0x000C
+#define WU_SO_EPIPE			0x000D
+#define WU_SO_EADDRNOTAVAIL	0x0013
+#define WU_SO_EADDRINUSE	0x0014
 #define WU_SO_EINPROGRESS	0x0016
+#define WU_SO_ENETUNREACH	0x001E
 #define WU_SO_EAFNOSUPPORT  0x0021
+#define WU_SO_EBADFD		0x0031
+#define WU_SO_EMFILE		0x0033
 
 #define WU_SO_ESHUTDOWN		0x000F
 
@@ -154,10 +167,8 @@ sint32 _translateError(sint32 returnCode, sint32 wsaError, sint32 mode = _ERROR_
 		_setSockError(WU_SO_EINPROGRESS);
 		break;
 	case WSAECONNABORTED:
-		debug_printf("WSAECONNABORTED\n");
-#ifdef CEMU_DEBUG_ASSERT
-		assert_dbg();
-#endif
+		// this used to leave the previous error code in place, so a failed call could report success
+		_setSockError(WU_SO_ECONNABORTED);
 		break;
 	case WSAESHUTDOWN:
 		_setSockError(WU_SO_ESHUTDOWN);
@@ -165,6 +176,47 @@ sint32 _translateError(sint32 returnCode, sint32 wsaError, sint32 mode = _ERROR_
 	case WSAENOTCONN:
 		_setSockError(WU_SO_ENOTCONN);
 		break;
+#if BOOST_OS_UNIX
+	// common connection failures. Without these a game sees an unknown error code instead of
+	// "connection refused" or "connection reset" and may treat a recoverable case as fatal
+	case ECONNREFUSED:
+		_setSockError(WU_SO_ECONNREFUSED);
+		break;
+	case ECONNRESET:
+		_setSockError(WU_SO_ECONNRESET);
+		break;
+	case ETIMEDOUT:
+		_setSockError(WU_SO_ETIMEDOUT);
+		break;
+	case EPIPE:
+		_setSockError(WU_SO_EPIPE);
+		break;
+	case EISCONN:
+		_setSockError(WU_SO_EISCONN);
+		break;
+	case EALREADY:
+		_setSockError(WU_SO_EALREADY);
+		break;
+	case EMSGSIZE:
+		_setSockError(WU_SO_EMSGSIZE);
+		break;
+	case ENOBUFS:
+		_setSockError(WU_SO_ENOBUFS);
+		break;
+	case EADDRINUSE:
+		_setSockError(WU_SO_EADDRINUSE);
+		break;
+	case EADDRNOTAVAIL:
+		_setSockError(WU_SO_EADDRNOTAVAIL);
+		break;
+	case ENETUNREACH:
+	case EHOSTUNREACH:
+		_setSockError(WU_SO_ENETUNREACH);
+		break;
+	case EINVAL:
+		_setSockError(WU_SO_EINVAL);
+		break;
+#endif
 	default:
 		cemuLog_logDebug(LogType::Force, "Unhandled wsaError {}", wsaError);
 		_setSockError(99999); // unhandled error
@@ -189,6 +241,7 @@ typedef struct
 	sint32 protocol;
 	// host side info
 	SOCKET s;
+	bool isSharedHostSocket; // the host socket belongs to libcurl (nlibcurl), which closes it itself
 	// socket options
 	bool isNonBlocking;
 }virtualSocket_t;
@@ -246,23 +299,45 @@ sint32 _getFreeSocketHandle()
 #define SIO_UDP_CONNRESET _WSAIOW(IOC_VENDOR,12)
 #endif // BOOST_OS_WINDOWS
 
+// Writing to a socket the peer has closed raises SIGPIPE on Apple platforms and Linux, and the
+// default action ends the whole process. A console game just gets an error back from send(),
+// so ask for that behaviour on every host socket the guest can write to.
+static void _socket_disableSigPipe(SOCKET s)
+{
+#ifdef SO_NOSIGPIPE
+	int one = 1;
+	setsockopt(s, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
+#endif
+}
+
 WUSOCKET nsysnet_createVirtualSocket(sint32 family, sint32 type, sint32 protocol)
 {
 	sint32 s = _getFreeSocketHandle();
 	if (s == 0)
 	{
-		cemuLog_logDebug(LogType::Force, "Ran out of socket handles");
-		cemu_assert(false);
+		// all 32 guest handles are taken. Fail like the console does instead of writing the
+		// new socket to virtualSocketTable[-1]
+		cemuLog_log(LogType::Socket, "socket(): Ran out of socket handles");
+		_setSockError(WU_SO_EMFILE);
+		return -1;
 	}
+	// init host socket
+	SOCKET hostSocket = socket(family, type, protocol);
+	if (hostSocket == INVALID_SOCKET)
+	{
+		cemuLog_log(LogType::Socket, "socket(): Host socket creation failed");
+		_translateError(-1, GETLASTERR);
+		return -1;
+	}
+	_socket_disableSigPipe(hostSocket);
 	virtualSocket_t* vs = (virtualSocket_t*)malloc(sizeof(virtualSocket_t));
 	memset(vs, 0, sizeof(virtualSocket_t));
 	vs->family = family;
 	vs->type = type;
 	vs->protocol = protocol;
 	vs->handle = s;
+	vs->s = hostSocket;
 	virtualSocketTable[s - 1] = vs;
-	// init host socket
-	vs->s = socket(family, type, protocol);
 	#if BOOST_OS_WINDOWS
 	// disable reporting of PORT_UNREACHABLE for UDP sockets
 	if (protocol == IPPROTO_UDP)
@@ -283,9 +358,12 @@ WUSOCKET nsysnet_createVirtualSocketFromExistingSocket(SOCKET existingSocket)
 	sint32 s = _getFreeSocketHandle();
 	if (s == 0)
 	{
-		cemuLog_logDebug(LogType::Force, "Ran out of socket handles");
-		cemu_assert(false);
+		// callers treat a negative handle as failure
+		cemuLog_log(LogType::Socket, "Ran out of socket handles");
+		_setSockError(WU_SO_EMFILE);
+		return -1;
 	}
+	_socket_disableSigPipe(existingSocket);
 	virtualSocket_t* vs = (virtualSocket_t*)malloc(sizeof(virtualSocket_t));
 	memset(vs, 0, sizeof(virtualSocket_t));
 #if BOOST_OS_WINDOWS
@@ -301,25 +379,44 @@ WUSOCKET nsysnet_createVirtualSocketFromExistingSocket(SOCKET existingSocket)
 	vs->type = protocolInfo.iSocketType;
 	vs->protocol = protocolInfo.iSocketType;
 #else
+	// query the socket we were given. vs->s isn't assigned yet, so this used to ask fd 0, and the
+	// length arguments were uninitialized
 	{
-		int type;
-		socklen_t optlen;
-		getsockopt(vs->s, SOL_SOCKET, SO_TYPE, &type, &optlen);
+		int type = 0;
+		socklen_t optlen = sizeof(type);
+		getsockopt(existingSocket, SOL_SOCKET, SO_TYPE, &type, &optlen);
 		vs->type = type;
 		vs->protocol = type;
 	}
 	{
-		sockaddr saddr;
-		socklen_t len;
-		getsockname(vs->s, &saddr, &len);
+		sockaddr saddr{};
+		socklen_t len = sizeof(saddr);
+		getsockname(existingSocket, &saddr, &len);
 		vs->family = saddr.sa_family;
 	}
 #endif
 
 	vs->handle = s;
+	vs->isSharedHostSocket = true;
 	virtualSocketTable[s - 1] = vs;
 	vs->s = existingSocket;
 	return vs->handle;
+}
+
+// Sockets the title left open are closed with it. Each one is a host file descriptor and, for TCP, a live connection
+// to a game server; left in the table they also used up the 32 guest handles, so the next title's socket() calls failed
+static void nsysnet_closeAllSockets()
+{
+	for (sint32 i = 0; i < WU_SOCKET_LIMIT; i++)
+	{
+		virtualSocket_t* vs = virtualSocketTable[i];
+		if (!vs)
+			continue;
+		if (!vs->isSharedHostSocket)
+			closesocket(vs->s);
+		free(vs);
+		virtualSocketTable[i] = nullptr;
+	}
 }
 
 void nsysnet_notifyCloseSharedSocket(SOCKET existingSocket)
@@ -343,6 +440,15 @@ virtualSocket_t* nsysnet_getVirtualSocketObject(WUSOCKET s)
 	if (s < 0 || s >= WU_SOCKET_LIMIT)
 		return NULL;
 	return virtualSocketTable[s];
+}
+
+// For a handle that isn't an open socket. Several exports used to return without setting r3, so
+// the guest got its own socket handle back as the result (send/recv then reported that many bytes)
+static void _returnInvalidSocket(PPCInterpreter_t* hCPU, sint32 s)
+{
+	cemuLog_log(LogType::Socket, "Invalid socket handle {}", s);
+	_setSockError(WU_SO_EBADFD);
+	osLib_returnFromFunction(hCPU, -1);
 }
 
 sint32 nsysnet_getVirtualSocketHandleFromHostHandle(SOCKET s)
@@ -416,7 +522,8 @@ void nsysnetExport_shutdown(PPCInterpreter_t* hCPU)
 	virtualSocket_t* vs = nsysnet_getVirtualSocketObject(s);
 	if (vs == NULL)
 	{
-		assert_dbg();
+		_returnInvalidSocket(hCPU, s);
+		return;
 	}
 	else
 	{
@@ -483,7 +590,8 @@ void nsysnetExport_setsockopt(PPCInterpreter_t* hCPU)
 	virtualSocket_t* vs = nsysnet_getVirtualSocketObject(s);
 	if (!vs)
 	{
-		cemu_assert_suspicious();
+		_returnInvalidSocket(hCPU, s);
+		return;
 	}
 	else
 	{
@@ -614,7 +722,7 @@ void nsysnetExport_getsockopt(PPCInterpreter_t* hCPU)
 	virtualSocket_t* vs = nsysnet_getVirtualSocketObject(s);
 	if (vs == NULL)
 	{
-		cemu_assert_debug(false); // todo
+		_returnInvalidSocket(hCPU, s);
 		return;
 	}
 
@@ -850,7 +958,8 @@ void nsysnetExport_bind(PPCInterpreter_t* hCPU)
 	sint32 r = 0;
 	if (vs == NULL)
 	{
-		assert_dbg();
+		_returnInvalidSocket(hCPU, s);
+		return;
 	}
 	else
 	{
@@ -880,7 +989,8 @@ void nsysnetExport_listen(PPCInterpreter_t* hCPU)
 	sint32 r = 0;
 	if (vs == NULL)
 	{
-		assert_dbg();
+		_returnInvalidSocket(hCPU, s);
+		return;
 	}
 	else
 	{
@@ -904,34 +1014,44 @@ void nsysnetExport_accept(PPCInterpreter_t* hCPU)
 	virtualSocket_t* vs = nsysnet_getVirtualSocketObject(s);
 	if (vs == NULL)
 	{
-		assert_dbg();
-		// todo
+		_returnInvalidSocket(hCPU, s);
 		return;
 	}
 
-	if (memory_readU32(lenMPTR) != 16)
+	// the address is optional, like for the real accept(). Reading the length through a null pointer read guest address 0
+	const bool wantsAddress = addr != nullptr && lenMPTR != MPTR_NULL;
+	if (wantsAddress && memory_readU32(lenMPTR) != 16)
 	{
 		cemuLog_log(LogType::Force, "invalid sockaddr len in accept()");
 		cemu_assert_debug(false);
-		osLib_returnFromFunction(hCPU, 0);
+		_setSockError(WU_SO_EINVAL);
+		osLib_returnFromFunction(hCPU, -1);
 		return;
 	}
 
 	if (vs->isNonBlocking)
 	{
-		sockaddr hostAddr;
+		sockaddr hostAddr{};
 		socklen_t hostLen = sizeof(sockaddr);
 		SOCKET hr = accept(vs->s, &hostAddr, &hostLen);
 		if (hr != SOCKET_ERROR)
 		{
 			r = nsysnet_createVirtualSocketFromExistingSocket(hr);
-			_setSockError(WU_SO_SUCCESS);
+			if (r < 0)
+				closesocket(hr); // no free guest handle, the error is already set
+			else
+			{
+				// the accepted socket is the guest's own, so it is closed with socketclose() and at title end
+				nsysnet_getVirtualSocketObject(r)->isSharedHostSocket = false;
+				_setSockError(WU_SO_SUCCESS);
+				if (wantsAddress)
+					sockaddr_host2guest(&hostAddr, addr); // only filled in on success; it used to copy an uninitialized address on EWOULDBLOCK
+			}
 		}
 		else
 		{
 			r = _translateError((sint32)hr, (sint32)GETLASTERR, _ERROR_MODE_ACCEPT);
 		}
-		sockaddr_host2guest(&hostAddr, addr);
 	}
 	else
 	{
@@ -954,7 +1074,7 @@ void nsysnetExport_connect(PPCInterpreter_t* hCPU)
 	sint32 r = 0;
 	if (vs == NULL)
 	{
-		assert_dbg();
+		_returnInvalidSocket(hCPU, s);
 		return;
 	}
 
@@ -989,7 +1109,7 @@ void nsysnetExport_send(PPCInterpreter_t* hCPU)
 	sint32 r = 0;
 	if (vs == NULL)
 	{
-		assert_dbg();
+		_returnInvalidSocket(hCPU, s);
 		return;
 	}
 	int hostFlags = 0;
@@ -1021,7 +1141,7 @@ void nsysnetExport_recv(PPCInterpreter_t* hCPU)
 	sint32 r = 0;
 	if (vs == NULL)
 	{
-		assert_dbg();
+		_returnInvalidSocket(hCPU, s);
 		return;
 	}
 	int hostFlags = 0;
@@ -1092,7 +1212,8 @@ void _translateFDSet(fd_set* hostSet, struct wu_fd_set* fdset, sint32 nfds, int 
 #endif
 
 	uint32 mask = fdset->mask;
-	for (sint32 i = 0; i < nfds; i++)
+	// the mask has 32 bits, and a shift by 32 or more is undefined
+	for (sint32 i = 0; i < nfds && i < 32; i++)
 	{
 		if( ((mask>>i)&1) == 0 )
 			continue;
@@ -1131,8 +1252,8 @@ void _translateFDSetRev(struct wu_fd_set* fdset, fd_set* hostSet, sint32 nfds)
 #else
 	for (sint32 i = 0; i < WU_SOCKET_LIMIT; i++)
 	{
-		if (virtualSocketTable[i] && virtualSocketTable[i]->s && FD_ISSET(virtualSocketTable[i]->s, hostSet))
-			mask |= (1 << virtualSocketTable[i]->handle);
+		if (virtualSocketTable[i] && virtualSocketTable[i]->s && virtualSocketTable[i]->handle < 32 && FD_ISSET(virtualSocketTable[i]->s, hostSet))
+			mask |= (1u << virtualSocketTable[i]->handle);
 	}
 #endif
 	fdset->mask = mask;
@@ -1175,10 +1296,12 @@ void nsysnetExport_select(PPCInterpreter_t* hCPU)
 			// when fd sets are empty but timeout is set, then just wait and do nothing?
 			// Lost Reavers seems to expect this case to return 0 (it hardcodes empty fd sets and timeout comes from curl_multi_timeout)
 
-			timeval tv;
-			tv.tv_sec = timeOut->tv_sec;
-			tv.tv_usec = timeOut->tv_usec;
-			select(0, nullptr, nullptr, nullptr, &tv);
+			// The guest timeval is big-endian. Passing it to the host select() unswapped turned a 1 second
+			// timeout into about 194 days (and short ones into EINVAL), and a host select() also blocked the
+			// emulated core so no other guest thread could run. Sleep the guest thread instead
+			uint64 waitUs = (uint64)_swapEndianU32(timeOut->tv_sec) * 1000000ull + (uint64)_swapEndianU32(timeOut->tv_usec);
+			waitUs = std::min<uint64>(waitUs, 3600ull * 1000000ull); // keeps the tick conversion from overflowing
+			coreinit::OSSleepTicks(coreinit::EspressoTime::ConvertNsToTimerTicks(waitUs * 1000ull));
 			cemuLog_log(LogType::Socket, "select returned 0 because of empty fdsets with timeout");
 			osLib_returnFromFunction(hCPU, 0);
 			
@@ -1198,7 +1321,7 @@ void nsysnetExport_select(PPCInterpreter_t* hCPU)
 		return;
 	}
 
-	uint64 msTimeout = (_swapEndianU32(timeOut->tv_usec) / 1000) + (_swapEndianU32(timeOut->tv_sec) * 1000);
+	uint64 msTimeout = (uint64)(_swapEndianU32(timeOut->tv_usec) / 1000) + ((uint64)_swapEndianU32(timeOut->tv_sec) * 1000ull); // 64-bit so a long timeout doesn't wrap
 	uint32 startTime = GetTickCount();
 	while (true)
 	{
@@ -1274,7 +1397,8 @@ void nsysnetExport_getsockname(PPCInterpreter_t* hCPU)
 	virtualSocket_t* vs = nsysnet_getVirtualSocketObject(s);
 	if (vs == NULL)
 	{
-		assert_dbg();
+		_returnInvalidSocket(hCPU, s);
+		return;
 	}
 	else
 	{
@@ -1322,9 +1446,13 @@ void nsysnetExport_getpeername(PPCInterpreter_t* hCPU)
 	sint32 r = getpeername(vs->s, &saddr, &saddrLen);
 	r = _translateError(r, GETLASTERR);
 
-	name->sa_family = _swapEndianU16(saddr.sa_family);
-	memcpy(name->sa_data, saddr.sa_data, 14);
-	*nameLen = 16;
+	// a socket that isn't connected fails with ENOTCONN. The guest address was still overwritten with garbage
+	if (r == 0)
+	{
+		name->sa_family = _swapEndianU16(saddr.sa_family);
+		memcpy(name->sa_data, saddr.sa_data, 14);
+		*nameLen = 16;
+	}
 
 	osLib_returnFromFunction(hCPU, r);
 }
@@ -1478,7 +1606,12 @@ void nsysnetExport_getaddrinfo(PPCInterpreter_t* hCPU)
 		hint.ai_flags = 0;
 		hint.ai_protocol = 0;
 	}
-	struct addrinfo* result;
+	// guest sockets are IPv4 only (socket() rejects anything else), and IPv6 entries are dropped
+	// below. Ask for IPv4 when the game doesn't care, so a host that resolves to IPv6 first
+	// can't leave us with an empty list
+	if (hint.ai_family == 0)
+		hint.ai_family = AF_INET;
+	struct addrinfo* result = nullptr;
 	sint32 hr = getaddrinfo(nodeName, serviceName, &hint, &result);
 	if (hr != 0)
 	{
@@ -1556,9 +1689,17 @@ void nsysnetExport_getaddrinfo(PPCInterpreter_t* hCPU)
 			currentAddrInfo = currentAddrInfo->ai_next;
 		}
 		if (entryIndex == 0)
-			assert_dbg();
-		// set results
-		memory_writeU32(results, addrInfoMPTR);
+		{
+			// nothing usable (no IPv4 address). Handing back the list would give the game uninitialized entries
+			cemuLog_log(LogType::Socket, "getaddrinfo returned no IPv4 addresses");
+			r = WU_SO_ECONNRESET; // same code as the host-not-found case above
+		}
+		else
+		{
+			// set results
+			memory_writeU32(results, addrInfoMPTR);
+		}
+		freeaddrinfo(result); // the host list was leaked on every lookup
 	}
 
 	osLib_returnFromFunction(hCPU, r);
@@ -1579,7 +1720,7 @@ void nsysnetExport_recvfrom(PPCInterpreter_t* hCPU)
 	sint32 r = 0;
 	if (vs == NULL)
 	{
-		assert_dbg();
+		_returnInvalidSocket(hCPU, s);
 		return;
 	}
 
@@ -1723,7 +1864,7 @@ void nsysnetExport_recvfrom_ex(PPCInterpreter_t* hCPU)
 	sint32 r = 0;
 	if (vs == NULL)
 	{
-		cemu_assert_debug(false);
+		_returnInvalidSocket(hCPU, s);
 		return;
 	}
 
@@ -1750,8 +1891,9 @@ void nsysnetExport_recvfrom_ex(PPCInterpreter_t* hCPU)
 	if (vs->isNonBlocking)
 		requestIsNonBlocking = vs->isNonBlocking;
 
-	socklen_t fromLenHost = *fromLen;
-	sockaddr fromAddrHost;
+	// fromAddr and fromLen are optional, like for recvfrom()
+	sockaddr fromAddrHost{};
+	socklen_t fromLenHost = sizeof(fromAddrHost);
 	sint32 wsaError = 0;
 
 	while (true)
@@ -1794,9 +1936,12 @@ void nsysnetExport_recvfrom_ex(PPCInterpreter_t* hCPU)
 				{
 					cemu_assert_debug(false);
 				}
-				*fromLen = fromLenHost;
-				fromAddr->sa_family = _swapEndianU16(fromAddrHost.sa_family);
-				memcpy(fromAddr->sa_data, fromAddrHost.sa_data, 14);
+				if (fromAddr && fromLen)
+				{
+					*fromLen = fromLenHost;
+					fromAddr->sa_family = _swapEndianU16(fromAddrHost.sa_family);
+					memcpy(fromAddr->sa_data, fromAddrHost.sa_data, 14);
+				}
 
 				_setSockError(0);
 				osLib_returnFromFunction(hCPU, r);
@@ -1843,7 +1988,7 @@ void nsysnetExport_sendto(PPCInterpreter_t* hCPU)
 	sint32 r = 0;
 	if (vs == NULL)
 	{
-		assert_dbg();
+		_returnInvalidSocket(hCPU, s);
 		return;
 	}
 
@@ -1917,7 +2062,7 @@ void nsysnetExport_sendto_multi(PPCInterpreter_t* hCPU)
 	virtualSocket_t* vs = nsysnet_getVirtualSocketObject(s);
 	if (vs == NULL)
 	{
-		assert_dbg();
+		_returnInvalidSocket(hCPU, s);
 		return;
 	}
 
@@ -1959,7 +2104,7 @@ void nsysnetExport_sendto_multi_ex(PPCInterpreter_t* hCPU)
 	virtualSocket_t* vs = nsysnet_getVirtualSocketObject(s);
 	if (vs == NULL)
 	{
-		assert_dbg();
+		_returnInvalidSocket(hCPU, s);
 		return;
 	}
 
@@ -1991,7 +2136,7 @@ void nsysnetExport_sendto_multi_ex(PPCInterpreter_t* hCPU)
 		else
 			multiBuf->resultArray[i] = r;
 		data += sendLen;
-		sendLenSum += sendLenSum;
+		sendLenSum += (sint32)sendLen; // was adding sendLenSum to itself, so the result was always 0
 	}
 	osLib_returnFromFunction(hCPU, sendLenSum); // return value correct?
 }
@@ -2195,7 +2340,10 @@ namespace nsysnet
 
 	void wuSetFD(struct wu_fd_set* fdset, sint32 fd)
 	{
-		fdset->mask |= (1 << fd);
+		// handles go up to WU_SOCKET_LIMIT (32), which doesn't fit the 32-bit mask (1 << 32 is undefined)
+		if (fd < 0 || fd >= 32)
+			return;
+		fdset->mask |= (1u << fd);
 	}
 
 }
@@ -2270,6 +2418,16 @@ namespace nsysnet
 			osLib_addFunction("nsysnet", "NSSLExportInternalServerCertificate", nsysnet::export_NSSLExportInternalServerCertificate);
 			osLib_addFunction("nsysnet", "NSSLExportInternalClientCertificate", nsysnet::export_NSSLExportInternalClientCertificate);
 		};
+
+		void RPLUnmapped() override
+		{
+			nsysnet_closeAllSockets();
+			g_nsslInternalStates.clear();
+			sockLibReady = false;
+			// the inet_ntoa buffer was allocated in the stopped title's system heap. Kept, the next title's inet_ntoa()
+			// would write into whatever that title put at the same address
+			_ntoa_tempString = nullptr;
+		}
 	}s_COSnsysnetModule;
 
 	COSModule* GetModule()

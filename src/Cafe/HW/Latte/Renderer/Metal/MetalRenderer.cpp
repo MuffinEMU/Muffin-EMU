@@ -378,7 +378,7 @@ MetalRenderer::MetalRenderer()
         constexpr uint32 kDrawsPerCommandBuffer = 2 * 196;
         constexpr uint32 kCommandBuffersCovered = 12; // 10 in flight, the one being recorded, one being retired
         m_breadcrumbCapacity = std::max<uint32>(1024, kDrawsPerCommandBuffer * kCommandBuffersCovered);
-        m_breadcrumbs.assign(m_breadcrumbCapacity, MetalDrawBreadcrumb{});
+        // the ring (about 4.7 MB) is allocated by BeginDrawBreadcrumb() the first time a draw records into it
     }
     // Every LatteWait counter and latch, not only the fault state: the stall watchdog compares them against the
     // renderer it is watching, and the previous renderer's progress counters would make the new one look stalled
@@ -707,8 +707,6 @@ MetalRenderer::~MetalRenderer()
 
     if (m_xfbRingBuffer)
         m_xfbRingBuffer->release();
-    for (MTL::Buffer* retiredBuffer : m_retiredXfbRingBuffers)
-        retiredBuffer->release();
 
     m_occlusionQuery.m_resultBuffer->release();
     for (auto* completion : m_occlusionQuery.m_bufferCompletion)
@@ -1592,6 +1590,33 @@ void MetalRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, s
     //}
 }
 
+// Points a render pass attachment at one level and slice of a texture. A 3D texture has no array slices: the core's
+// slice index is a depth plane there, which Metal takes through depthPlane with the slice left at 0. Returns false
+// when that level or slice does not exist in the texture, since a render pass that reaches outside its attachment is
+// undefined on the GPU (and on a tile-based GPU usually a fault).
+static bool SetAttachmentLevelAndSlice(MTL::RenderPassAttachmentDescriptor* attachment, MTL::Texture* texture, sint32 sliceIndex, sint32 mipIndex)
+{
+    if (!texture || sliceIndex < 0 || mipIndex < 0 || (NS::UInteger)mipIndex >= texture->mipmapLevelCount())
+        return false;
+    attachment->setLevel(mipIndex);
+    if (texture->textureType() == MTL::TextureType3D)
+    {
+        const NS::UInteger planes = std::max<NS::UInteger>(1, texture->depth() >> mipIndex);
+        if ((NS::UInteger)sliceIndex >= planes)
+            return false;
+        attachment->setSlice(0);
+        attachment->setDepthPlane(sliceIndex);
+        return true;
+    }
+    NS::UInteger slices = std::max<NS::UInteger>(1, texture->arrayLength());
+    if (texture->textureType() == MTL::TextureTypeCube || texture->textureType() == MTL::TextureTypeCubeArray)
+        slices *= 6;
+    if ((NS::UInteger)sliceIndex >= slices)
+        return false;
+    attachment->setSlice(sliceIndex);
+    return true;
+}
+
 void MetalRenderer::texture_clearColorSlice(LatteTexture* hostTexture, sint32 sliceIndex, sint32 mipIndex, float r, float g, float b, float a)
 {
     if (!FormatIsRenderable(hostTexture->format))
@@ -1599,6 +1624,10 @@ void MetalRenderer::texture_clearColorSlice(LatteTexture* hostTexture, sint32 sl
         cemuLog_logOnce(LogType::Force, "cannot clear color texture with format {}, because it's not renderable", hostTexture->format);
         return;
     }
+    // A texture with no GPU memory stands on the shared 1x1 null texture; clearing that would only change what the
+    // null texture holds for everything else that uses it
+    if (static_cast<LatteTextureMtl*>(hostTexture)->IsNullSubstitute())
+        return;
 
     auto mtlTexture = static_cast<LatteTextureMtl*>(hostTexture)->GetTexture();
 
@@ -1614,6 +1643,10 @@ void MetalRenderer::texture_clearDepthSlice(LatteTexture* hostTexture, uint32 sl
         return;
     }
 
+    // The 1x1 null texture a texture with no GPU memory stands on is a colour texture, not a depth attachment
+    if (static_cast<LatteTextureMtl*>(hostTexture)->IsNullSubstitute())
+        return;
+
     auto mtlTexture = static_cast<LatteTextureMtl*>(hostTexture)->GetTexture();
 
     NS_STACK_SCOPED MTL::RenderPassDescriptor* renderPassDescriptor = MTL::RenderPassDescriptor::alloc()->init();
@@ -1624,8 +1657,11 @@ void MetalRenderer::texture_clearDepthSlice(LatteTexture* hostTexture, uint32 sl
         depthAttachment->setClearDepth(depthValue);
         depthAttachment->setLoadAction(MTL::LoadActionClear);
         depthAttachment->setStoreAction(MTL::StoreActionStore);
-        depthAttachment->setSlice(sliceIndex);
-        depthAttachment->setLevel(mipIndex);
+        if (!SetAttachmentLevelAndSlice(depthAttachment, mtlTexture, (sint32)sliceIndex, mipIndex))
+        {
+            cemuLog_logOnce(LogType::Force, "Metal: skipped a depth clear of slice {} mip {}, which the texture does not have", sliceIndex, mipIndex);
+            return;
+        }
     }
     if (clearStencil)
     {
@@ -1634,8 +1670,11 @@ void MetalRenderer::texture_clearDepthSlice(LatteTexture* hostTexture, uint32 sl
         stencilAttachment->setClearStencil(stencilValue);
         stencilAttachment->setLoadAction(MTL::LoadActionClear);
         stencilAttachment->setStoreAction(MTL::StoreActionStore);
-        stencilAttachment->setSlice(sliceIndex);
-        stencilAttachment->setLevel(mipIndex);
+        if (!SetAttachmentLevelAndSlice(stencilAttachment, mtlTexture, (sint32)sliceIndex, mipIndex))
+        {
+            cemuLog_logOnce(LogType::Force, "Metal: skipped a stencil clear of slice {} mip {}, which the texture does not have", sliceIndex, mipIndex);
+            return;
+        }
     }
 
     GetTemporaryRenderCommandEncoder(renderPassDescriptor);
@@ -2046,8 +2085,17 @@ LatteTextureReadbackInfo* MetalRenderer::texture_createReadback(LatteTextureView
     }
 
     MTL::Texture* mtlTexture = static_cast<LatteTextureMtl*>(textureView->baseTexture)->GetTexture();
-    if (!mtlTexture)
+    if (!mtlTexture || baseTexture->IsNullSubstitute())
         return nullptr;
+    // The transfer copies the guest-sized first level of one slice (LatteTextureReadbackInfoMtl::StartTransfer). A
+    // texture that stands on the 1x1 null texture, or one a graphic pack made smaller than the guest surface, does not
+    // have that region, and a blit outside a texture is a GPU fault; the reservation below would also be too small.
+    if ((uint64)baseTexture->width > mtlTexture->width() || (uint64)baseTexture->height > mtlTexture->height() ||
+        (uint64)std::max(textureView->firstSlice, 0) >= std::max<NS::UInteger>(1, mtlTexture->arrayLength()) * (mtlTexture->textureType() == MTL::TextureTypeCubeArray || mtlTexture->textureType() == MTL::TextureTypeCube ? 6 : 1))
+    {
+        cemuLog_logOnce(LogType::Force, "Metal: skipped a texture readback whose region lies outside the host texture");
+        return nullptr;
+    }
 
     size_t uploadSize = mtlTexture->allocatedSize();
     if (uploadSize > TextureReadbackSize())
@@ -2090,7 +2138,14 @@ void MetalRenderer::surfaceCopy_copySurfaceWithFormatConversion(LatteTexture* so
         return;
     }
     
+    // Either side may stand on the shared 1x1 null texture after a failed allocation: nothing to copy from or into
+    if (static_cast<LatteTextureMtl*>(sourceTexture)->IsNullSubstitute() || static_cast<LatteTextureMtl*>(destinationTexture)->IsNullSubstitute())
+        return;
+
     auto sourceView = static_cast<LatteTextureViewMtl*>(sourceTexture->GetOrCreateView(Latte::E_DIM::DIM_2D, sourceTexture->format, srcMip, 1, srcSlice, 1));
+    MTL::Texture* sourceMtl = sourceView ? sourceView->GetRGBAView() : nullptr;
+    if (!sourceMtl)
+        return;
     auto destinationTextureMtl = static_cast<LatteTextureMtl*>(destinationTexture);
     MTL::Texture* destinationMtl = destinationTextureMtl->GetTexture();
     
@@ -2101,8 +2156,8 @@ void MetalRenderer::surfaceCopy_copySurfaceWithFormatConversion(LatteTexture* so
         const auto& formatInfo = GetMtlPixelFormatInfo(destinationTexture->format, true);
         auto depthAttachment = renderPassDescriptor->depthAttachment();
         depthAttachment->setTexture(destinationMtl);
-        depthAttachment->setLevel(dstMip);
-        depthAttachment->setSlice(dstSlice);
+        if (!SetAttachmentLevelAndSlice(depthAttachment, destinationMtl, dstSlice, dstMip))
+            return;
         depthAttachment->setLoadAction(MTL::LoadActionLoad);
         depthAttachment->setStoreAction(MTL::StoreActionStore);
         
@@ -2110,8 +2165,7 @@ void MetalRenderer::surfaceCopy_copySurfaceWithFormatConversion(LatteTexture* so
         {
             auto stencilAttachment = renderPassDescriptor->stencilAttachment();
             stencilAttachment->setTexture(destinationMtl);
-            stencilAttachment->setLevel(dstMip);
-            stencilAttachment->setSlice(dstSlice);
+            SetAttachmentLevelAndSlice(stencilAttachment, destinationMtl, dstSlice, dstMip); // same texture, already checked
             stencilAttachment->setLoadAction(MTL::LoadActionLoad);
             stencilAttachment->setStoreAction(MTL::StoreActionStore);
         }
@@ -2133,8 +2187,8 @@ void MetalRenderer::surfaceCopy_copySurfaceWithFormatConversion(LatteTexture* so
         const MTL::PixelFormat pixelFormat = destinationMtl->pixelFormat();
         auto colorAttachment = renderPassDescriptor->colorAttachments()->object(0);
         colorAttachment->setTexture(destinationMtl);
-        colorAttachment->setLevel(dstMip);
-        colorAttachment->setSlice(dstSlice);
+        if (!SetAttachmentLevelAndSlice(colorAttachment, destinationMtl, dstSlice, dstMip))
+            return;
         colorAttachment->setLoadAction(MTL::LoadActionLoad);
         colorAttachment->setStoreAction(MTL::StoreActionStore);
         
@@ -2171,7 +2225,7 @@ void MetalRenderer::surfaceCopy_copySurfaceWithFormatConversion(LatteTexture* so
         }
         renderCommandEncoder->setScissorRect(MTL::ScissorRect{0, 0, (NS::UInteger)scissorWidth, (NS::UInteger)scissorHeight});
     }
-    SetTexture(renderCommandEncoder, METAL_SHADER_TYPE_FRAGMENT, sourceView->GetRGBAView(), GET_HELPER_TEXTURE_BINDING(0));
+    SetTexture(renderCommandEncoder, METAL_SHADER_TYPE_FRAGMENT, sourceMtl, GET_HELPER_TEXTURE_BINDING(0));
     renderCommandEncoder->drawPrimitives(MTL::PrimitiveTypeTriangle, NS::UInteger(0), NS::UInteger(3));
     EndEncoding();
 }
@@ -2250,8 +2304,12 @@ MTL::Buffer* MetalRenderer::GetXfbRingBuffer(size_t minimumSize)
 #ifdef CEMU_DEBUG_ASSERT
     newBuffer->setLabel(GetLabel("Transform feedback buffer", newBuffer));
 #endif
+    // The old buffer may still be read or written by command buffers already recorded; they hold their own reference
+    // to it (command buffers retain what their encoders use), as do the cached argument buffers that name it, so this
+    // only drops ours. It used to be kept in a list until the renderer was destroyed, which held every size the
+    // ring ever had (up to the final size over again) for the rest of the session.
     if (m_xfbRingBuffer)
-        m_retiredXfbRingBuffers.emplace_back(m_xfbRingBuffer);
+        m_xfbRingBuffer->release();
     m_xfbRingBuffer = newBuffer;
     return m_xfbRingBuffer;
 }
@@ -2378,7 +2436,10 @@ void MetalRenderer::streamout_rendererFinishDrawcall()
 
 void MetalRenderer::draw_beginSequence()
 {
-    PerfTelemetry::ScopedTimer beginTimer(PerfTelemetry::Get().gpuBeginNs);
+    // The per-draw timers in draw_beginSequence, draw_execute and draw_endSequence are sampled (one frame in
+    // kSampleEvery, scaled back up) like the finer ones inside them: always on, their twenty clock reads per draw
+    // were a measurable share of the GPU thread's frame on draw-heavy games.
+    PerfTelemetry::SampledTimer beginTimer(PerfTelemetry::Get().gpuBeginNs);
     m_state.m_skipDrawSequence = false;
 
     // After a GPU error iOS ignores this app's GPU work; recording more only grows memory.
@@ -2419,7 +2480,7 @@ void MetalRenderer::draw_beginSequence()
             return; // no render target
         }
         {
-            PerfTelemetry::ScopedTimer texTimer(PerfTelemetry::Get().gpuTexUpdateNs);
+            PerfTelemetry::SampledTimer texTimer(PerfTelemetry::Get().gpuTexUpdateNs);
             LatteTexture_updateTextures();
         }
         if (!LatteGPUState.repeatTextureInitialization)
@@ -2439,7 +2500,7 @@ void MetalRenderer::draw_beginSequence()
 
 void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 instanceCount, uint32 count, MPTR indexDataMPTR, Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE indexType, bool isFirst)
 {
-    PerfTelemetry::ScopedTimer execTimer(PerfTelemetry::Get().gpuExecNs);
+    PerfTelemetry::SampledTimer execTimer(PerfTelemetry::Get().gpuExecNs);
     PerfTelemetry::Get().gpuDraws.fetch_add(1, std::memory_order_relaxed);
     if (m_state.m_skipDrawSequence)
     {
@@ -2511,7 +2572,7 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     uint32 indexMax = 0;
     Renderer::IndexAllocation indexAllocation;
     {
-        PerfTelemetry::ScopedTimer indexTimer(PerfTelemetry::Get().gpuIndexNs);
+        PerfTelemetry::SampledTimer indexTimer(PerfTelemetry::Get().gpuIndexNs);
         LatteIndices_decode(memory_getPointerFromVirtualOffset(indexDataMPTR), indexType, count, primitiveMode, indexMin, indexMax, hostIndexType, hostIndexCount, indexAllocation);
     }
     auto indexAllocationMtl = static_cast<MetalSynchronizedHeapAllocator::AllocatorReservation*>(indexAllocation.rendererInternal);
@@ -2551,12 +2612,12 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     }
 
     // Buffer cache
-    const uint64 bufferStart = PerfTelemetry::NowNs();
+    const uint64 bufferStart = PerfTelemetry::SampleStart();
     if (m_memoryManager->UseHostMemoryForCache())
     {
         // direct memory access (Wii U memory space imported as a buffer), update buffer bindings
         {
-            PerfTelemetry::ScopedTimer flushTimer(PerfTelemetry::Get().gpuFlushNs);
+            PerfTelemetry::SampledTimer flushTimer(PerfTelemetry::Get().gpuFlushNs);
             LatteBufferCache_processDCFlushQueue();
             LatteBufferCache_processDeallocations();
         }
@@ -2579,7 +2640,7 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     if (usesGeometryShader)
         PrepareUniformBufferSizes(geometryShader);
     PrepareUniformBufferSizes(pixelShader);
-    PerfTelemetry::Get().gpuBufferNs.fetch_add(PerfTelemetry::NowNs() - bufferStart, std::memory_order_relaxed);
+    PerfTelemetry::SampleEnd(PerfTelemetry::Get().gpuBufferNs, bufferStart);
 
     // Emulated geometry-shader and RECTS draws run their vertex and geometry stages as compute passes before the render pass for the
     // draw is opened. The pipeline is looked up first because RECTS keeps its expansion kernel on it; the render pass that follows the
@@ -2619,14 +2680,14 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     }
 
     // Render pass
-    const uint64 passStart = PerfTelemetry::NowNs();
+    const uint64 passStart = PerfTelemetry::SampleStart();
     auto renderCommandEncoder = GetRenderCommandEncoder();
-    PerfTelemetry::Get().gpuPassNs.fetch_add(PerfTelemetry::NowNs() - passStart, std::memory_order_relaxed);
+    PerfTelemetry::SampleEnd(PerfTelemetry::Get().gpuPassNs, passStart);
 
     // Render pipeline state
-    const uint64 pipelineStart = PerfTelemetry::NowNs();
+    const uint64 pipelineStart = PerfTelemetry::SampleStart();
     PipelineObject* pipelineObj = emulateGeometryShader ? emulatedPipelineObj : m_pipelineCache->GetRenderPipelineState(fetchShader, vertexShader, geometryShader, pixelShader, m_state.m_lastUsedFBO.m_attachmentsInfo, m_state.m_activeFBO.m_attachmentsInfo, m_state.m_activeFBO.m_fbo->m_size, count, LatteGPUState.contextNew);
-    PerfTelemetry::Get().gpuPipelineNs.fetch_add(PerfTelemetry::NowNs() - pipelineStart, std::memory_order_relaxed);
+    PerfTelemetry::SampleEnd(PerfTelemetry::Get().gpuPipelineNs, pipelineStart);
     if (!pipelineObj->m_pipeline)
         return;
 
@@ -2638,8 +2699,12 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
 
     // Depth stencil state
 
-    const bool hasDepthStencilAttachment = m_state.m_activeFBO.m_fbo->depthBuffer.texture != nullptr;
-    MTL::DepthStencilState* depthStencilState = m_depthStencilCache->GetDepthStencilState(LatteGPUState.contextNew, hasDepthStencilAttachment);
+    // What the pass really has bound, not what the guest asked for: a depth texture whose view could not be made is not
+    // attached (CachedFBOMtl), and a depth texture without stencil brings no stencil attachment. A depth or stencil test
+    // against an attachment the pass does not have is undefined on Metal and is left off, as it is on Vulkan.
+    const bool hasDepthAttachment = m_state.m_activeFBO.m_attachmentsInfo.depthFormat != Latte::E_GX2SURFFMT::INVALID_FORMAT;
+    const bool hasStencilAttachment = hasDepthAttachment && m_state.m_activeFBO.m_attachmentsInfo.hasStencil;
+    MTL::DepthStencilState* depthStencilState = m_depthStencilCache->GetDepthStencilState(LatteGPUState.contextNew, hasDepthAttachment, hasStencilAttachment);
     if (depthStencilState != encoderState.m_depthStencilState)
     {
         renderCommandEncoder->setDepthStencilState(depthStencilState);
@@ -2647,7 +2712,7 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     }
 
     // Stencil reference
-    bool stencilEnable = hasDepthStencilAttachment && LatteGPUState.contextNew.DB_DEPTH_CONTROL.get_STENCIL_ENABLE();
+    bool stencilEnable = hasStencilAttachment && LatteGPUState.contextNew.DB_DEPTH_CONTROL.get_STENCIL_ENABLE();
     if (stencilEnable)
     {
         bool backStencilEnable = LatteGPUState.contextNew.DB_DEPTH_CONTROL.get_BACK_STENCIL_ENABLE();
@@ -2731,13 +2796,21 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
         encoderState.m_depthClipEnable = zClipEnable;
     }
 
-    // Visibility result mode
+    // Visibility result mode. Only sent when it changes: with no query running (most draws) it stays at the
+    // disabled mode a new encoder starts with, which used to be set again on every draw.
+    MTL::VisibilityResultMode visibilityMode = MTL::VisibilityResultModeDisabled;
+    NS::UInteger visibilityOffset = 0;
     if (m_occlusionQuery.m_active)
     {
-        renderCommandEncoder->setVisibilityResultMode(MTL::VisibilityResultModeCounting, (m_occlusionQuery.m_currentBuffer * OCCLUSION_QUERY_POOL_SIZE + m_occlusionQuery.m_currentIndex) * sizeof(uint64));
+        visibilityMode = MTL::VisibilityResultModeCounting;
+        visibilityOffset = (m_occlusionQuery.m_currentBuffer * OCCLUSION_QUERY_POOL_SIZE + m_occlusionQuery.m_currentIndex) * sizeof(uint64);
     }
-    else
-        renderCommandEncoder->setVisibilityResultMode(MTL::VisibilityResultModeDisabled, 0);
+    if (visibilityMode != encoderState.m_visibilityMode || visibilityOffset != encoderState.m_visibilityOffset)
+    {
+        renderCommandEncoder->setVisibilityResultMode(visibilityMode, visibilityOffset);
+        encoderState.m_visibilityMode = visibilityMode;
+        encoderState.m_visibilityOffset = visibilityOffset;
+    }
 
     // todo - how does culling behave with rects?
     // right now we just assume that their winding is always CW
@@ -2960,7 +3033,7 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     }
 
     // Uniform buffers, textures and samplers
-    const uint64 bindStart = PerfTelemetry::NowNs();
+    const uint64 bindStart = PerfTelemetry::SampleStart();
     bool stageResourcesBound;
     if (emulateGeometryShader)
     {
@@ -2976,7 +3049,7 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
             (!(usesGeometryShader && geometryShader) || BindStageResources(renderCommandEncoder, geometryShader, usesGeometryShader)) &&
             BindStageResources(renderCommandEncoder, pixelShader, usesGeometryShader);
     }
-    PerfTelemetry::Get().gpuBindNs.fetch_add(PerfTelemetry::NowNs() - bindStart, std::memory_order_relaxed);
+    PerfTelemetry::SampleEnd(PerfTelemetry::Get().gpuBindNs, bindStart);
     if (!stageResourcesBound)
     {
         streamout_rendererFinishDrawcall();
@@ -3082,7 +3155,7 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
 
 void MetalRenderer::draw_endSequence()
 {
-    PerfTelemetry::ScopedTimer endTimer(PerfTelemetry::Get().gpuEndNs);
+    PerfTelemetry::SampledTimer endTimer(PerfTelemetry::Get().gpuEndNs);
     LatteDecompilerShader* pixelShader = LatteSHRC_GetActivePixelShader();
     // post-drawcall logic
     if (pixelShader)
@@ -3795,6 +3868,8 @@ void MetalRenderer::LabelEncoder(MTL::CommandEncoder* encoder, const char* kind)
 
 MetalDrawBreadcrumb* MetalRenderer::BeginDrawBreadcrumb()
 {
+    if (m_breadcrumbs.empty()) [[unlikely]]
+        m_breadcrumbs.assign(m_breadcrumbCapacity, MetalDrawBreadcrumb{});
     MetalDrawBreadcrumb& crumb = m_breadcrumbs[m_breadcrumbNext];
     m_breadcrumbNext = (m_breadcrumbNext + 1) % m_breadcrumbCapacity;
     ++m_breadcrumbsWritten;
@@ -3810,35 +3885,38 @@ MetalDrawBreadcrumb* MetalRenderer::BeginDrawBreadcrumb()
     return m_crumb;
 }
 
-void MetalRenderer::RecordBreadcrumbTexture(LatteConst::ShaderType shaderType, uint32 unit, uint32 dim, MTL::Texture* texture, bool fallback)
+void MetalRenderer::RecordBreadcrumbTexture(LatteConst::ShaderType shaderType, uint32 unit, uint32 dim, const LatteTextureView* view, bool fallback)
 {
     if (!m_crumb)
         return;
     if (fallback)
         m_crumb->suspect |= MetalDrawBreadcrumb::SUSPECT_TEXTURE;
-    if (!texture || m_crumb->numTextures >= MetalDrawBreadcrumb::MAX_TEXTURES)
+    if (!view || m_crumb->numTextures >= MetalDrawBreadcrumb::MAX_TEXTURES)
         return;
+    // Plain reads of the Latte view and its texture; see the note on MetalDrawBreadcrumb::textures. The Metal texture
+    // has min(mipLevels, maxPossibleMipLevels) levels (LatteTextureMtl) and the view is cut to what is left from its
+    // first level (LatteTextureViewMtl::CreateSwizzledView), so the same numbers are recorded here.
+    const LatteTexture* texture = view->baseTexture;
+    const sint32 textureMips = std::max<sint32>(1, std::min(texture->mipLevels, texture->maxPossibleMipLevels));
     auto& entry = m_crumb->textures[m_crumb->numTextures++];
     entry.stage = static_cast<uint8>(shaderType);
     entry.unit = static_cast<uint8>(unit);
     entry.type = static_cast<uint8>(dim);
     entry.fallback = fallback ? 1 : 0;
-    entry.width = (uint32)texture->width();
-    entry.height = (uint32)texture->height();
-    entry.depth = (uint32)std::max<NS::UInteger>(texture->depth(), texture->arrayLength());
-    entry.mips = (uint16)texture->mipmapLevelCount();
-    entry.pixelFormat = (uint16)texture->pixelFormat();
-    if (auto* parent = texture->parentTexture())
-    {
-        entry.parentLevel = (uint16)texture->parentRelativeLevel();
-        entry.parentSlice = (uint16)texture->parentRelativeSlice();
-        entry.parentMips = (uint16)parent->mipmapLevelCount();
-        entry.parentLayers = (uint16)parent->arrayLength();
-        // a view has to lie inside the texture it was made from
-        if ((NS::UInteger)entry.parentLevel + texture->mipmapLevelCount() > parent->mipmapLevelCount() ||
-            (NS::UInteger)entry.parentSlice + texture->arrayLength() > std::max<NS::UInteger>(1, parent->arrayLength()) * (parent->textureType() == MTL::TextureTypeCubeArray ? 6 : 1))
-            m_crumb->suspect |= MetalDrawBreadcrumb::SUSPECT_TEXTURE;
-    }
+    entry.isDepth = texture->isDepth ? 1 : 0;
+    entry.width = (uint32)std::max<sint32>(0, texture->width);
+    entry.height = (uint32)std::max<sint32>(0, texture->height);
+    entry.depth = (uint32)std::max<sint32>(0, texture->depth);
+    entry.mips = (uint16)std::max<sint32>(1, std::min(view->numMip, textureMips - view->firstMip));
+    entry.slices = (uint16)std::max<sint32>(0, view->numSlice);
+    entry.format = (uint16)view->format;
+    entry.parentLevel = (uint16)std::max<sint32>(0, view->firstMip);
+    entry.parentSlice = (uint16)std::max<sint32>(0, view->firstSlice);
+    entry.parentMips = (uint16)textureMips;
+    entry.parentLayers = (uint16)std::max<sint32>(0, texture->depth);
+    // a view has to lie inside the texture it was made from
+    if (view->firstMip < 0 || view->firstSlice < 0 || view->firstMip + view->numMip > textureMips || view->firstSlice + view->numSlice > texture->depth)
+        m_crumb->suspect |= MetalDrawBreadcrumb::SUSPECT_TEXTURE;
 }
 
 // Logs what the last draws bound, so a GPU fault can be tied to a buffer, a texture or an index range from the
@@ -3885,7 +3963,7 @@ void MetalRenderer::DumpDrawBreadcrumbs(uint32 firstDraw, uint32 lastDraw, bool 
         for (uint32 i = 0; i < d.numTextures; ++i)
         {
             const auto& t = d.textures[i];
-            textures += fmt::format(" tex{}.{}[{}x{}x{} mips {} fmt {} dim {}{} view of level {} slice {} in {} mips {} layers]", (uint32)t.stage, (uint32)t.unit, t.width, t.height, t.depth, (uint32)t.mips, (uint32)t.pixelFormat, (uint32)t.type, t.fallback ? " FALLBACK" : "", (uint32)t.parentLevel, (uint32)t.parentSlice, (uint32)t.parentMips, (uint32)t.parentLayers);
+            textures += fmt::format(" tex{}.{}[guest {}x{}x{} fmt {:04x}{} dim {}{} view of {} mips {} slices at level {} slice {} in {} mips {} slices]", (uint32)t.stage, (uint32)t.unit, t.width, t.height, t.depth, (uint32)t.format, t.isDepth ? " depth" : "", (uint32)t.type, t.fallback ? " FALLBACK" : "", (uint32)t.mips, (uint32)t.slices, (uint32)t.parentLevel, (uint32)t.parentSlice, (uint32)t.parentMips, (uint32)t.parentLayers);
         }
         cemuLog_log(LogType::Force, "Metal:   textures{}", textures);
     };
@@ -4791,16 +4869,24 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
         sint32 samplerBinding = shader->resourceMapping.textureUnitToSamplerBindingPoint[relative_textureUnit];
         
         auto textureView = m_state.m_textures[hostTextureUnit];
+        // The shader samples this unit with sample_compare (a depth texture type); otherwise a compare is emulated or absent
+        const bool depthTexture = shader->textureUsesDepthCompare[relative_textureUnit] && IsValidDepthTextureType(textureDim);
         MTL::SamplerState* sampler = m_nearestSampler;
         uint32 stageSamplerIndex = shader->textureUnitSamplerAssignment[relative_textureUnit];
         if (samplerBinding >= 0 && stageSamplerIndex != LATTE_DECOMPILER_SAMPLER_NONE)
         {
             uint32 samplerIndex = stageSamplerIndex + LatteDecompiler_getTextureSamplerBaseIndex(shader->shaderType);
-            _LatteRegisterSetSampler* samplerWords = LatteGPUState.contextNew.SQ_TEX_SAMPLER + samplerIndex;
+            // A copy of the register: a graphic pack's anisotropy and the Texture filtering setting belong to this texture.
+            // Written into the live register, as before, they carried over to whatever texture the game bound to the same
+            // sampler next (the Vulkan backend keeps it local too).
+            _LatteRegisterSetSampler samplerWords = LatteGPUState.contextNew.SQ_TEX_SAMPLER[samplerIndex];
+            sint32 maxAniso = (sint32)samplerWords.WORD0.get_MAX_ANISO_RATIO();
             if (textureView && textureView->baseTexture->overwriteInfo.anisotropicLevel >= 0)
-                samplerWords->WORD0.set_MAX_ANISO_RATIO(textureView->baseTexture->overwriteInfo.anisotropicLevel);
+                maxAniso = textureView->baseTexture->overwriteInfo.anisotropicLevel;
+            maxAniso = LatteTexture_applyAnisotropySetting(maxAniso, samplerWords);
+            samplerWords.WORD0.set_MAX_ANISO_RATIO((uint32)maxAniso);
             const uint64 samplerStart = PerfTelemetry::SampleStart();
-            sampler = m_samplerCache->GetSamplerState(LatteGPUState.contextNew, shader->shaderType, stageSamplerIndex, samplerWords);
+            sampler = m_samplerCache->GetSamplerState(LatteGPUState.contextNew, shader->shaderType, stageSamplerIndex, &samplerWords, depthTexture);
             PerfTelemetry::SampleEnd(telemetry.gpuSamplerLookupNs, samplerStart);
             PerfTelemetry::SampleCount(telemetry.gpuSamplerLookups);
         }
@@ -4820,26 +4906,26 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
         
         MTL::Texture* mtlTexture = nullptr;
         bool textureViewFailed = false;
-        const bool integerTexture = shader->textureIsIntegerFormat[relative_textureUnit];
-        const bool depthTexture = shader->textureUsesDepthCompare[relative_textureUnit] && IsValidDepthTextureType(textureDim);
-        MTL::Texture* nullTexture = GetNullSampledTexture(textureDim, integerTexture, depthTexture);
+        const LatteTextureView* recordedView = nullptr; // the view the breadcrumb describes: the one bound, or the one that failed
+        // The typed null texture is only looked up (a map lookup) when a unit really needs it; most units have their texture
+        const auto nullTexture = [&]() { return GetNullSampledTexture(textureDim, shader->textureIsIntegerFormat[relative_textureUnit], depthTexture); };
         if (!textureView)
         {
-            mtlTexture = nullTexture;
+            mtlTexture = nullTexture();
         }
         else if (textureDim == Latte::E_DIM::DIM_1D && (textureView->dim != Latte::E_DIM::DIM_1D))
         {
-            mtlTexture = nullTexture;
+            mtlTexture = nullTexture();
         }
         else if (textureDim == Latte::E_DIM::DIM_2D && (textureView->dim != Latte::E_DIM::DIM_2D && textureView->dim != Latte::E_DIM::DIM_2D_MSAA))
         {
-            mtlTexture = nullTexture;
+            mtlTexture = nullTexture();
         }
         else if (textureDim != Latte::E_DIM::DIM_1D &&
                  textureDim != Latte::E_DIM::DIM_2D &&
                  textureView->dim != textureDim)
         {
-            mtlTexture = nullTexture;
+            mtlTexture = nullTexture();
         }
         else
         {
@@ -4849,16 +4935,25 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
             mtlTexture = textureView->GetSwizzledView(word4);
             PerfTelemetry::SampleEnd(telemetry.gpuTexViewLookupNs, viewStart);
             PerfTelemetry::SampleCount(telemetry.gpuTexViewLookups);
+            recordedView = textureView;
             if (!mtlTexture)
             {
                 // The view could not be created (its base texture was replaced by the null texture after an
                 // allocation failure). A null texture in an argument buffer is a GPU read of address zero.
-                mtlTexture = nullTexture;
+                mtlTexture = nullTexture();
                 textureViewFailed = true;
             }
+            else if (depthTexture && !textureView->baseTexture->isDepth)
+            {
+                // The shader compares against this unit (a depth2d in MSL), but what the game bound is a colour texture
+                // (depth it rendered into a colour target, say). Vulkan samples that with a compare sampler as if it
+                // were depth; what a Metal sampler makes of a colour texture in a depth slot is undefined. Logged so a
+                // device log can tie a wrong shadow to it.
+                cemuLog_logOnce(LogType::Force, "Metal shader {:016x} compares against texture unit {} (format {:04x}), which is a colour texture, not a depth texture; the result of that compare is undefined on Metal", shader->baseHash, relative_textureUnit, (uint32)textureView->format);
+            }
         }
-        
-        RecordBreadcrumbTexture(shader->shaderType, relative_textureUnit, (uint32)textureDim, mtlTexture, textureViewFailed);
+
+        RecordBreadcrumbTexture(shader->shaderType, relative_textureUnit, (uint32)textureDim, recordedView, textureViewFailed);
         
         if (argumentEncoder)
         {
@@ -4910,6 +5005,38 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
                 float* xyScale = LatteTexture_getEffectiveTextureScale(shader->shaderType, entry.texUnit);
                 memcpy(entry.currentValue, xyScale, sizeof(float) * 2);
                 memcpy(GET_UNIFORM_DATA_PTR(entry.uniformLocation), xyScale, sizeof(float) * 2);
+            }
+        }
+        if (shader->uniform.list_ufTexLodBias.empty() == false)
+        {
+            // What the Vulkan backend puts in the sampler's mipLodBias (VulkanRendererCore.cpp): the sampler register's bias,
+            // then a graphic pack's relative or absolute one. A Metal sampler has no LOD bias, so the shader reads it from here.
+            sint32 hostTextureUnitBase = LATTE_CEMU_PS_TEX_UNIT_BASE;
+            if (shader->shaderType == LatteConst::ShaderType::Vertex)
+                hostTextureUnitBase = LATTE_CEMU_VS_TEX_UNIT_BASE;
+            else if (shader->shaderType == LatteConst::ShaderType::Geometry)
+                hostTextureUnitBase = LATTE_CEMU_GS_TEX_UNIT_BASE;
+            const uint32 samplerBaseIndex = LatteDecompiler_getTextureSamplerBaseIndex(shader->shaderType);
+            for (auto& entry : shader->uniform.list_ufTexLodBias)
+            {
+                float lodBias = 0.0f;
+                const uint32 stageSamplerIndex = shader->textureUnitSamplerAssignment[entry.texUnit];
+                if (stageSamplerIndex != LATTE_DECOMPILER_SAMPLER_NONE)
+                {
+                    const _LatteRegisterSetSampler* samplerWords = LatteGPUState.contextNew.SQ_TEX_SAMPLER + stageSamplerIndex + samplerBaseIndex;
+                    sint32 iLodBias = samplerWords->WORD1.get_LOD_BIAS();
+                    const LatteTextureView* boundView = m_state.m_textures[hostTextureUnitBase + entry.texUnit];
+                    if (boundView)
+                    {
+                        const auto& overwrite = boundView->baseTexture->overwriteInfo;
+                        if (overwrite.hasRelativeLodBias)
+                            iLodBias += overwrite.relativeLodBias;
+                        if (overwrite.hasLodBias)
+                            iLodBias = overwrite.lodBias;
+                    }
+                    lodBias = (float)iLodBias / 64.0f;
+                }
+                *GET_UNIFORM_DATA_PTR(entry.uniformLocation) = lodBias;
             }
         }
         if (shader->uniform.loc_alphaTestRef >= 0)
@@ -5164,8 +5291,11 @@ void MetalRenderer::ClearColorTextureInternal(MTL::Texture* mtlTexture, sint32 s
     colorAttachment->setClearColor(MTL::ClearColor(r, g, b, a));
     colorAttachment->setLoadAction(MTL::LoadActionClear);
     colorAttachment->setStoreAction(MTL::StoreActionStore);
-    colorAttachment->setSlice(sliceIndex);
-    colorAttachment->setLevel(mipIndex);
+    if (!SetAttachmentLevelAndSlice(colorAttachment, mtlTexture, sliceIndex, mipIndex))
+    {
+        cemuLog_logOnce(LogType::Force, "Metal: skipped a colour clear of slice {} mip {}, which the texture does not have", sliceIndex, mipIndex);
+        return;
+    }
 
     GetTemporaryRenderCommandEncoder(renderPassDescriptor);
     EndEncoding();

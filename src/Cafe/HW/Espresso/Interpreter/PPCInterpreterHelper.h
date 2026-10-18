@@ -112,17 +112,20 @@ static uint32 quantize(float data, sint32 type, uint8 scale)
 		if (data > 65535) data = 65535;
 		val = (uint16)(uint32)data; 
 		break;
+	// The signed types convert through sint32, never through uint32: a negative float cast to an unsigned integer is
+	// undefined, and on arm64 the compiler lowers it to a saturating fcvtzu that turns every negative value into 0. The
+	// value is already clamped to the type's range, so the signed conversion is exact and only the low bits are stored.
 	case 6: // s8
 		data *= ST_SCALE[scale];
 		if (data < -128) data = -128;
 		if (data > 127) data = 127;
-		val = (sint8)(uint8)(sint32)(uint32)data;
+		val = (uint32)(sint32)data;
 		break;
 	case 7: // s16
 		data *= ST_SCALE[scale];
 		if (data < -32768) data = -32768;
 		if (data > 32767) data = 32767;
-		val = (sint16)(uint16)(sint32)(uint32)data;
+		val = (uint32)(sint32)data;
 		break;
 	case 0: // float
 	default: 

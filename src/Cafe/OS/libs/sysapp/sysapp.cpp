@@ -92,7 +92,9 @@ void appendDataToBuffer(uint32 currentCopyDataSize, char* str, sint32 size)
 
 sint32 _serializeArgsToBuffer(uint32 currentCopyDataSize, const char* argName, char* str, sint32 size, void (*appendFunc)(uint32 currentCopyDataSize, char* str, sint32 size))
 {
-	if (strnlen(argName, 0x41) == 0x40)
+	// names of 64 characters or more are rejected. This only caught exactly 64, so a longer name
+	// overflowed tempStr below
+	if (strnlen(argName, 0x41) >= 0x40)
 		return -0x2710;
 	if (size > 0x200000)
 		return -0x7530;

@@ -695,6 +695,17 @@ void LatteTextureLoader_UpdateTextureSliceData(LatteTexture* tex, uint32 sliceIn
 		g_renderer->texture_uploadBufferUnavailable(tex);
 		return;
 	}
+	// update texture data offsets and hashes
+	// This is taken before the data is read for decoding, so it describes the memory the decode started from. A CPU write
+	// that lands while the decode is running then shows up as a changed hash on the next once-a-frame check and the texture
+	// is loaded again. Taken after the decode (as it used to be) the hash already matched the new data, and the torn or
+	// stale texture stayed on screen until the game wrote that memory once more.
+	if (mipIndex == 0 || (tex->texDataPtrLow == 0 && tex->texDataPtrHigh == 0))
+	{
+		tex->texDataPtrLow = physImagePtr + textureLoader.minOffsetOutdated; // always zero
+		tex->texDataPtrHigh = physImagePtr + textureLoader.maxOffsetOutdated; // currently set to surface size
+		LatteTC_ResetTextureChangeTracker(tex, true);
+	}
 	// decode texture (if data is required)
 #ifdef BENCHMARK_TEXTURE_DECODING
 	LARGE_INTEGER benchmark_begin;
@@ -749,14 +760,6 @@ void LatteTextureLoader_UpdateTextureSliceData(LatteTexture* tex, uint32 sliceIn
 		}
 	}
 
-	// update texture data offsets and hashes
-	// this has to be done before the texture data is decoded & uploaded to prevent a race condition where updates during upload are missed
-	if (mipIndex == 0 || (tex->texDataPtrLow == 0 && tex->texDataPtrHigh == 0))
-	{
-		tex->texDataPtrLow = physImagePtr + textureLoader.minOffsetOutdated; // always zero
-		tex->texDataPtrHigh = physImagePtr + textureLoader.maxOffsetOutdated; // currently set to surface size
-		LatteTC_ResetTextureChangeTracker(tex, true);
-	}
 	// load slice
 	//debug_printf("[Load Slice] Addr: %08x MIP: %02d Slice: %02d Res %04x/%04x Texel Res %04x/%04x Fmt %04x Tm %d\n", textureLoader.physAddress, mipIndex, sliceIndex, textureLoader.width, textureLoader.height, textureLoader.texelCountX, textureLoader.texelCountY, (int)format, tileMode);
 

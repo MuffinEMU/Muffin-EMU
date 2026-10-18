@@ -1,6 +1,14 @@
 #pragma once
 #include "Cemu/ncrypto/ncrypto.h"
 #include <OpenSSL/evp.h>
+#include <list>
+
+// one position in an FSTVolume's least-recently-used list of decrypted blocks (see FSTVolume::TrimCacheIfRequired)
+struct FSTCacheLruEntry
+{
+	uint64 blockId;
+	bool isHashed; // which of the two block caches holds it
+};
 
 struct FSTFileHandle
 {
@@ -195,7 +203,17 @@ private:
 	/* Cache for decrypted raw and hashed blocks */
 	std::unordered_map<uint64, struct FSTCachedRawBlock*> m_cacheDecryptedRawBlocks;
 	std::unordered_map<uint64, struct FSTCachedHashedBlock*> m_cacheDecryptedHashedBlocks;
-	uint64 m_cacheAccessCounter{};
+	// Every cached block in least-recently-used order, oldest first. A block keeps its position (lruIt) so a hit moves
+	// it to the back and a trim takes the front, each in constant time. m_cacheBytes is the size the blocks count
+	// towards the budget, kept up to date as they come and go
+	std::list<FSTCacheLruEntry> m_cacheLru;
+	size_t m_cacheBytes{};
+
+	void CacheTouch(std::list<FSTCacheLruEntry>::iterator lruIt)
+	{
+		m_cacheLru.splice(m_cacheLru.end(), m_cacheLru, lruIt);
+	}
+	void CacheClear();
 
 	void DetermineUnhashedBlockIV(uint32 clusterIndex, uint32 blockIndex, NCrypto::AesIv& ivOut);
 

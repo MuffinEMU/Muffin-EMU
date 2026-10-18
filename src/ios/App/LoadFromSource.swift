@@ -100,9 +100,9 @@ final class LoadCoordinator: ObservableObject {
         lines.append(contentsOf: plan.verdict.reasons)
         lines.append(contentsOf: plan.verdict.notes)
         if plan.verdict.level != .good, plan.canCopy {
-            lines.append("Copying it into MuffinEMU is the dependable option. The original is never changed.")
+            lines.append("Copying it into MuffinEMU is the dependable option. The original isn't changed.")
         } else {
-            lines.append("The original is never changed.")
+            lines.append("The original isn't changed.")
         }
         return lines.joined(separator: "\n\n")
     }

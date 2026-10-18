@@ -226,10 +226,18 @@ private struct IconOptionCard: View {
         if let cached = previewCache[assetName] {
             return cached
         }
-        let image = UIImage(named: "\(assetName)-preview")
+        // The preview assets are the full 1024-pixel icons. Kept whole, the thirty-odd decoded
+        // bitmaps come to well over a hundred megabytes that stay resident for the rest of the
+        // session, including inside a game. The card draws them at 64 points, so a small thumbnail
+        // is decoded once here and the full-size image is let go.
+        let full = UIImage(named: "\(assetName)-preview")
+        let image = full?.preparingThumbnail(of: CGSize(width: Self.previewPixels, height: Self.previewPixels)) ?? full
         previewCache[assetName] = image
         return image
     }
+
+    /// 64 points at a 3x screen, with room to spare.
+    private static let previewPixels: CGFloat = 256
 
     /// UIImage(named:) already caches internally, but this view redraws its whole grid
     /// (thirty-plus cards) on every selection change, and the dictionary lookup avoids

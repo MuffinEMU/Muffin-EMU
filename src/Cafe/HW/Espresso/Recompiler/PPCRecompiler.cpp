@@ -50,17 +50,15 @@
 #endif
 #include "util/highresolutiontimer/HighResolutionTimer.h"
 
-#ifndef PPCREC_FORCE_SYNCHRONOUS_COMPILATION
-#if defined(__aarch64__)
-#define PPCREC_FORCE_SYNCHRONOUS_COMPILATION    1
-#else
-#define PPCREC_FORCE_SYNCHRONOUS_COMPILATION    0
-#endif
-#endif
+// PPCREC_FORCE_SYNCHRONOUS_COMPILATION comes from PPCRecompilerThreadPool.h (included above): 0 on AArch64, where
+// a pool of workers compiles, 1 elsewhere. A second default here used to say the opposite and was never used.
 #define PPCREC_LOG_RECOMPILATION_RESULTS        0
 
 static bool s_dualMapJITEnabled = false;
 static PPCRecompilerThreadPool s_threadPool;
+// Set once the TXM debugger has been told to detach (once per process). From then on nothing can prepare JIT pages
+// again, so the arena's pages are no longer handed back to the kernel (see DualMapArena::reset).
+static std::atomic<bool> s_jitDebuggerDetached{false};
 
 bool PPCRecompiler_isDualMapJITEnabled()
 {
@@ -102,12 +100,6 @@ __attribute__((noinline,optnone,naked))
 void JIT26Detach(void) {
     asm("mov x16, #0 \n"
         "brk #0xf00d \n"
-        "ret");
-}
-
-__attribute__((noinline,optnone,naked))
-void* BreakMarkJITMapping(size_t bytes) {
-    asm("brk #0x69 \n"
         "ret");
 }
 
@@ -194,8 +186,10 @@ bool PPCRecompiler_readTXMEnvVar()
 static void PPCRecompiler_finishJitMappingSession()
 {
     // Detaching the TXM debugger is once-per-process (both call sites end a mapping session), so latch it.
-    static std::atomic<bool> s_txmDetached{false};
-    if (PPCRecompiler_readTXMEnvVar() && !s_txmDetached.exchange(true))
+    // Checked first: after the detach no debugger is attached any more, and asking again would only log that.
+    if (s_jitDebuggerDetached.load())
+        return;
+    if (PPCRecompiler_readTXMEnvVar() && !s_jitDebuggerDetached.exchange(true))
     {
         cemuLog_log(LogType::Force, "Recompiler: detaching TXM debugger after JIT mapping");
         JIT26Detach();
@@ -245,10 +239,6 @@ DualMapRegion PPCRecompiler_allocateDualMap(size_t size)
 
     r.rxAlias = rxPtr;
     r.rwAlias = (void*)rwAddr;
-
-   // int result2 = func();
-    // cemuLog_log(LogType::Force, "Executed JIT-ed function, result: {}\n", result2);
-
     return r;
 }
 
@@ -402,7 +392,12 @@ struct DualMapArena
         // generated code branches within it by address. Only called with no live code (init on a fresh
         // mapping, and shutdown after the PPC core threads have been joined). MADV_FREE lets the kernel zero
         // pages at any time, so it must never run while a thread can still execute arena code.
-        if (releasePages && region.rwAlias && region.size)
+        // Not once the TXM debugger has detached (shutdown of the first and every later title on such a device): the
+        // debugger made each page executable by writing to it (StikDebug's prepare step), it can't do that again, and
+        // the arena is reused by the next title. A page the kernel takes back and zero-fills is not known to stay
+        // executable, so the pages keep the state they had while the title ran. Before the detach (init) and on every
+        // other device this is unchanged.
+        if (releasePages && region.rwAlias && region.size && !s_jitDebuggerDetached.load())
             madvise(region.rwAlias, region.size, MADV_FREE);
 #else
         (void)releasePages;
@@ -454,15 +449,117 @@ struct PPCInvalidationRange
 {
     MPTR startAddress;
     uint32 size;
-    PPCInvalidationRange(MPTR _startAddress, uint32 _size) : startAddress(_startAddress), size(_size) {}
+    uint64 sequence; // PPCRecompilerState.invalidationSequence right after this range was added
+    PPCInvalidationRange(MPTR _startAddress, uint32 _size, uint64 _sequence) : startAddress(_startAddress), size(_size), sequence(_sequence) {}
 };
+
+// Upper bound on translations running at the same time (compile workers, plus the synchronous path). Far above the
+// worker count; a translation that finds no free slot is still handled correctly, only more cautiously.
+constexpr size_t PPCREC_MAX_TRACKED_COMPILES = 16;
 
 struct
 {
     FSpinlock             recompilerSpinlock;
     std::queue<MPTR>      targetQueue;
+    // Code ranges invalidated while a translation was running. Upstream has one compile thread and clears this list
+    // after every translation; with several workers that would let one worker's finished translation erase a range
+    // another worker still has to check, and the other worker would then publish code built from the old bytes.
+    // So every translation records the sequence number it started at, checks only ranges added after that, and a
+    // range is dropped once no translation that started before it is still running.
     std::vector<PPCInvalidationRange> invalidationRanges;
+    uint64                invalidationSequence = 0;
+    uint64                compileStartSequence[PPCREC_MAX_TRACKED_COMPILES] = {}; // start sequence + 1, 0 = free slot
+    uint32                compilesInFlight = 0; // including untracked ones
+    uint64                lostRangeSequence = 0; // sequence of the last range that could not be stored (out of memory)
 } PPCRecompilerState;
+
+static bool PPCRecompiler_rangesOverlap(MPTR startA, MPTR endA, MPTR startB, MPTR endB)
+{
+    return startA < endB && endA > startB;
+}
+
+// One translation, from before the guest code is first read until it has been published or dropped.
+class PPCRecompilerCompileTracker
+{
+public:
+    PPCRecompilerCompileTracker()
+    {
+        PPCRecompilerState.recompilerSpinlock.lock();
+        m_startSequence = PPCRecompilerState.invalidationSequence;
+        for (size_t i = 0; i < PPCREC_MAX_TRACKED_COMPILES; i++)
+        {
+            if (PPCRecompilerState.compileStartSequence[i] == 0)
+            {
+                PPCRecompilerState.compileStartSequence[i] = m_startSequence + 1;
+                m_slot = (sint32)i;
+                break;
+            }
+        }
+        PPCRecompilerState.compilesInFlight++;
+        PPCRecompilerState.recompilerSpinlock.unlock();
+    }
+
+    ~PPCRecompilerCompileTracker()
+    {
+        PPCRecompilerState.recompilerSpinlock.lock();
+        if (m_slot >= 0)
+            PPCRecompilerState.compileStartSequence[m_slot] = 0;
+        PPCRecompilerState.compilesInFlight--;
+        // drop every range that no running translation still has to check
+        auto& ranges = PPCRecompilerState.invalidationRanges;
+        if (PPCRecompilerState.compilesInFlight == 0)
+        {
+            ranges.clear();
+        }
+        else
+        {
+            uint64 oldestStart = std::numeric_limits<uint64>::max();
+            for (uint64 v : PPCRecompilerState.compileStartSequence)
+                if (v != 0)
+                    oldestStart = std::min(oldestStart, v - 1);
+            // an untracked translation (no free slot) keeps everything until the last one ends
+            if (oldestStart != std::numeric_limits<uint64>::max() && PPCRecompilerState.compilesInFlight == trackedCount())
+                std::erase_if(ranges, [oldestStart](const PPCInvalidationRange& r) { return r.sequence <= oldestStart; });
+        }
+        PPCRecompilerState.recompilerSpinlock.unlock();
+    }
+
+    PPCRecompilerCompileTracker(const PPCRecompilerCompileTracker&) = delete;
+    PPCRecompilerCompileTracker& operator=(const PPCRecompilerCompileTracker&) = delete;
+
+    // Call with the spinlock held. True if code inside the translated ranges was invalidated after this translation began.
+    bool rangesWereInvalidated(const PPCRecFunction_t* func) const
+    {
+        cemu_assert_debug(PPCRecompilerState.recompilerSpinlock.is_locked());
+        if (PPCRecompilerState.lostRangeSequence > m_startSequence)
+            return true; // a range invalidated since this translation began could not be recorded
+        for (const auto& invRange : PPCRecompilerState.invalidationRanges)
+        {
+            if (invRange.sequence <= m_startSequence)
+                continue; // invalidated before this translation read the code
+            const MPTR rStartAddr = invRange.startAddress;
+            const MPTR rEndAddr = rStartAddr + invRange.size;
+            for (const auto& recFuncRange : func->list_ranges)
+            {
+                if (PPCRecompiler_rangesOverlap(recFuncRange.ppcAddress, recFuncRange.ppcAddress + recFuncRange.ppcSize, rStartAddr, rEndAddr))
+                    return true;
+            }
+        }
+        return false;
+    }
+
+private:
+    static uint32 trackedCount()
+    {
+        uint32 n = 0;
+        for (uint64 v : PPCRecompilerState.compileStartSequence)
+            n += v != 0 ? 1 : 0;
+        return n;
+    }
+
+    uint64 m_startSequence = 0;
+    sint32 m_slot = -1;
+};
 
 
 RangeStore<PPCRecFunction_t*, uint32, 7703, 0x2000> rangeStore_ppcRanges;
@@ -512,7 +609,18 @@ void PPCRecompiler_visitAddressNoBlock(uint32 enterAddress)
         PPCRecompilerState.recompilerSpinlock.unlock();
         return;
     }
-    PPCRecompilerState.targetQueue.emplace(enterAddress);
+    try
+    {
+        PPCRecompilerState.targetQueue.emplace(enterAddress);
+    }
+    catch (const std::bad_alloc&)
+    {
+        // Out of memory on a PPC core thread, with the spinlock held: release it and leave the entry unvisited, so the
+        // interpreter keeps running the code and asks again later. Letting this escape would keep the lock taken
+        // forever (every compile worker and invalidation spins on it) and end the thread with an unhandled exception.
+        PPCRecompilerState.recompilerSpinlock.unlock();
+        return;
+    }
     ppcRecompilerInstanceData->ppcRecompilerDirectJumpTable[enterAddress / 4] = PPCRecompiler_leaveRecompilerCode_visited;
     PPCRecompilerState.recompilerSpinlock.unlock();
     s_threadPool.Notify();
@@ -674,33 +782,6 @@ void PPCRecompiler_reprotectAsExecutable(void* codePtr, size_t codeSize)
         cemuLog_log(LogType::Force, "Recompiler: mprotect RX failed for {:p} ({} bytes)", codePtr, codeSize);
 
     PPCRecompiler_flushInstructionCache(codePtr, codeSize);
-}
-
-void PPCRecompiler_reprotectAsWriteable(void* codePtr, size_t codeSize)
-{
-    if (codePtr == nullptr || codeSize == 0)
-        return;
-
-    if (s_dualMapJITEnabled)
-        return;
-
-    static const uintptr_t pageSize = (uintptr_t)sysconf(_SC_PAGESIZE);
-    uintptr_t base = (uintptr_t)codePtr & ~(pageSize - 1);
-    size_t alignedSize = (codeSize + ((uintptr_t)codePtr - base) + pageSize - 1) & ~(pageSize - 1);
-    if (mprotect((void*)base, alignedSize, PROT_READ | PROT_WRITE) != 0)
-        cemuLog_log(LogType::Force, "Recompiler: mprotect RW failed for {:p} ({} bytes)", codePtr, codeSize);
-}
-
-void PPCRecompiler_commitDualMapCode(PPCRecFunction_t* func)
-{
-    if (!s_dualMapJITEnabled)
-        return;
-    PPCRecompiler_reprotectAsExecutable(func->x86Code, func->x86Size);
-}
-
-static bool PPCRecompiler_rangesOverlap(MPTR startA, MPTR endA, MPTR startB, MPTR endB)
-{
-    return startA < endB && endA > startB;
 }
 
 static void PPCRecompiler_resetVisitedTableRange(uint32 startAddress, uint32 endAddress)
@@ -920,7 +1001,7 @@ bool PPCRecompiler_ApplyIMLPasses(ppcImlGenContext_t& ppcImlGenContext)
 	return true;
 }
 
-bool PPCRecompiler_makeRecompiledFunctionActive(uint32 initialEntryPoint, PPCFunctionBoundaryTracker::PPCRange_t& range, PPCRecFunction_t* ppcRecFunc, std::vector<std::pair<MPTR, uint32>>& entryPoints)
+bool PPCRecompiler_makeRecompiledFunctionActive(uint32 initialEntryPoint, PPCFunctionBoundaryTracker::PPCRange_t& range, PPCRecFunction_t* ppcRecFunc, std::vector<std::pair<MPTR, uint32>>& entryPoints, const PPCRecompilerCompileTracker& compileTracker)
 {
     // update jump table
     PPCRecompilerState.recompilerSpinlock.lock();
@@ -935,21 +1016,8 @@ bool PPCRecompiler_makeRecompiledFunctionActive(uint32 initialEntryPoint, PPCFun
     }
     
     // check if the current range got invalidated during the time it took to recompile it
-    bool isInvalidated = false;
-    for (auto& invRange : PPCRecompilerState.invalidationRanges)
-    {
-        MPTR rStartAddr = invRange.startAddress;
-        MPTR rEndAddr = rStartAddr + invRange.size;
-        for (auto& recFuncRange : ppcRecFunc->list_ranges)
-        {
-            if (PPCRecompiler_rangesOverlap(recFuncRange.ppcAddress, recFuncRange.ppcAddress + recFuncRange.ppcSize, rStartAddr, rEndAddr))
-            {
-                isInvalidated = true;
-                break;
-            }
-        }
-    }
-    PPCRecompilerState.invalidationRanges.clear();
+    // (the list is pruned by PPCRecompilerCompileTracker once no running translation needs a range any more)
+    const bool isInvalidated = compileTracker.rangesWereInvalidated(ppcRecFunc);
     if (isInvalidated)
     {
         PPCRecompiler_resetVisitedMarkersForFunction(ppcRecFunc);
@@ -1017,6 +1085,9 @@ static void PPCRecompiler_recompileAtAddressImpl(uint32 address)
 {
 	cemu_assert_debug(ppcRecompilerInstanceData->ppcRecompilerDirectJumpTable[address / 4] == PPCRecompiler_leaveRecompilerCode_visited);
 
+	// registered before the boundary tracker reads any guest code, so every invalidation after this point is seen
+	const PPCRecompilerCompileTracker compileTracker;
+
 	// get size
 	PPCFunctionBoundaryTracker funcBoundaries;
 	funcBoundaries.trackStartPoint(address);
@@ -1062,7 +1133,8 @@ static void PPCRecompiler_recompileAtAddressImpl(uint32 address)
 	}
 	try
 	{
-		PPCRecompiler_makeRecompiledFunctionActive(address, range, func, functionEntryPoints);
+		if (!PPCRecompiler_makeRecompiledFunctionActive(address, range, func, functionEntryPoints, compileTracker))
+			return; // invalidated while it was being translated, or replaced: nothing was published, so it is not counted
 	}
 	catch (const std::bad_alloc&)
 	{
@@ -1164,7 +1236,6 @@ void PPCRecompiler_reserveLookupTableBlock(uint32 offset)
 
 	if (ppcRecompiler_reservedBlockMask[blockIndex])
 		return;
-	ppcRecompiler_reservedBlockMask[blockIndex] = true;
 
 	void* p3 = MemMapper::AllocateMemory(&(ppcRecompilerInstanceData->ppcRecompilerDirectJumpTable[offset/4]), (PPC_REC_ALLOC_BLOCK_SIZE/4)*sizeof(void*), MemMapper::PAGE_PERMISSION::P_RW, true);
 	if( !p3 )
@@ -1177,6 +1248,12 @@ void PPCRecompiler_reserveLookupTableBlock(uint32 offset)
 	{
 		ppcRecompilerInstanceData->ppcRecompilerDirectJumpTable[offset/4+i] = PPCRecompiler_leaveRecompilerCode_unvisited;
 	}
+	// Marked reserved only now, and under the spinlock that PPCRecompiler_invalidateRangeInternal holds while it reads
+	// the mask: it writes into every block marked reserved, and a block marked before its pages were committed and
+	// filled could be written while still unmapped (an invalidation on another core during a module load).
+	PPCRecompilerState.recompilerSpinlock.lock();
+	ppcRecompiler_reservedBlockMask[blockIndex] = true;
+	PPCRecompilerState.recompilerSpinlock.unlock();
 }
 
 void PPCRecompiler_allocateRange(uint32 startAddress, uint32 size)
@@ -1299,8 +1376,20 @@ void PPCRecompiler_invalidateRangeInternal(uint32 startAddr, uint32 endAddr)
 		blockStart = blockEnd;
 	}
 
-	// add entry to invalidation queue
-	PPCRecompilerState.invalidationRanges.emplace_back(startAddr, endAddr-startAddr);
+	// add entry to invalidation queue; only translations that are running now can have read the old code
+	if (PPCRecompilerState.compilesInFlight != 0)
+	{
+		PPCRecompilerState.invalidationSequence++;
+		try
+		{
+			PPCRecompilerState.invalidationRanges.emplace_back(startAddr, endAddr - startAddr, PPCRecompilerState.invalidationSequence);
+		}
+		catch (const std::bad_alloc&)
+		{
+			// can't remember the range (and must not leave the spinlock held): drop every translation now running instead
+			PPCRecompilerState.lostRangeSequence = PPCRecompilerState.invalidationSequence;
+		}
+	}
 
 
 	while (rangeStore_ppcRanges.findFirstRange(startAddr, endAddr, rStart, rEnd, rFunc) )
@@ -1409,6 +1498,13 @@ bool PPCRecompiler_Init26() {
     if (!s_dualMapJITEnabled)
         return true;
 
+    // The arena and the entry/exit code from an earlier title in this process are still mapped (they live as long as
+    // the process): reuse them. This comes before the debugger check below because on a TXM device the debugger
+    // detaches once the first title has mapped its memory, and nothing new has to be mapped now. Before, every title
+    // after the first one (including a game started from the Wii U Menu) ran in the interpreter there.
+    if (s_jitArena.region.rxAlias)
+        return PPCRecompiler_enterRecompilerCode != nullptr;
+
 #if defined(__APPLE__) && defined(__aarch64__)
     // On a TXM device the arena can only be mapped through a debugger, whatever the CPU mode says.
     // With none attached now (a JIT enabler that never attached, or one that already detached),
@@ -1422,10 +1518,7 @@ bool PPCRecompiler_Init26() {
         return false;
     }
 #endif
-    
-    if (s_jitArena.region.rxAlias)
-        return true;
-    
+
     try
     {
         // Try progressively smaller arenas before falling back to the interpreter. init() reports
@@ -1521,10 +1614,12 @@ bool PPCRecompiler_Init26() {
     }
     catch (const std::exception& e)
     {
-        if (ActiveSettings::GetCPUMode() == CPUMode::Auto) {
-            PPCCore_InitializePointer(false);
-            ppcRecompilerEnabled = false;
-        } else { throw e; }
+        // Any CPU mode falls back to the interpreter. This used to rethrow for the explicit recompiler modes (the only
+        // ones the iOS app sets), as a sliced std::exception whose message was lost, and the title launch failed.
+        cemuLog_log(LogType::Force, "Recompiler: JIT setup failed ({}); using the interpreter", e.what());
+        PPCCore_InitializePointer(false);
+        ppcRecompilerEnabled = false;
+        ppcRecompilerInited = false;
     }
     
     PPCRecompiler_finishJitMappingSession();
@@ -1569,7 +1664,8 @@ void PPCRecompiler_init()
     {
         if (appleOsMajorVersion >= 26)
         {
-            cemuLog_log(LogType::Force, PPCRecompiler_readTXMEnvVar()
+            // the environment only: PPCRecompiler_readTXMEnvVar() also asks for a debugger, and logs when there is none
+            cemuLog_log(LogType::Force, PPCRecompiler_readBoolEnvVar("HAS_TXM") == 1
                         ? "Recompiler: using iOS 26+ dual-mapped JIT via TXM/vm_remap"
                         : "Recompiler: using iOS 26+ dual-mapped JIT via vm_remap");
         }
@@ -1667,6 +1763,26 @@ void PPCRecompiler_Shutdown()
         PPCRecompilerState.targetQueue.pop();
     PPCRecompilerState.invalidationRanges.clear();
 
+    // Free the function objects before the store forgets them. The store only owns its range entries; the
+    // PPCRecFunction_t behind them (ranges, entry points) was never deleted, so every title run left all of its
+    // translated functions behind, a few MB per launch that the process kept for good. The compile workers are joined
+    // and the PPC cores are stopped, so nothing can still be reaching them. A function is stored once per range,
+    // hence the sort and unique.
+    try
+    {
+        std::vector<PPCRecFunction_t*> functions;
+        rangeStore_ppcRanges.findRanges(0, PPC_REC_CODE_AREA_SIZE, [&functions](uint32, uint32, PPCRecFunction_t* func) {
+            functions.push_back(func);
+        });
+        std::sort(functions.begin(), functions.end());
+        functions.erase(std::unique(functions.begin(), functions.end()), functions.end());
+        for (PPCRecFunction_t* func : functions)
+            delete func;
+    }
+    catch (const std::bad_alloc&)
+    {
+        // no room for the list: the objects stay behind as they did before, and the shutdown goes on
+    }
     rangeStore_ppcRanges.clear();
 
     uint32 numBlocks = PPCRecompiler_GetNumAddressSpaceBlocks();

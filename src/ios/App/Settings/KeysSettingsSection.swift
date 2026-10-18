@@ -29,12 +29,12 @@ struct KeysSettingsSection: View {
                 }
             }
         } header: {
-            SettingsSectionHeader("Wii U Keys", icon: "key", accent: .content)
+            SettingsSectionHeader("Wii U keys", icon: "key", accent: .content)
         } footer: {
             InfoButton.footer(
                 "Only needed for encrypted games. Homebrew and already-decrypted dumps don't need keys.",
-                title: "Wii U Keys",
-                text: "Encrypted games (.wux, .wud, .iso) need AES keys dumped from your own Wii U, in a text file called keys.txt with one key per line. MuffinEMU doesn't include keys.\n\nYou can also open MuffinEMU in the Files app and drop keys.txt into the \"keys\" folder.\n\nNew keys are used the next time you start a game. If you've already started a game since opening MuffinEMU, quit and reopen MuffinEMU first.")
+                title: "Wii U keys",
+                text: "Encrypted games (.wux, .wud, .iso) need keys from your own Wii U, in a text file called keys.txt with one key per line. MuffinEMU doesn't include keys.\n\nYou can also drop keys.txt into the keys folder in the MuffinEMU folder in the Files app.\n\nNew keys apply the next time you start a game. If you've already started a game since opening MuffinEMU, quit and reopen MuffinEMU first.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         // .item: a keys.txt may carry no useful type; WiiUKeys.importKeys checks the contents.

@@ -117,7 +117,9 @@ struct VertexOut {
 
 fragment float4 main0(VertexOut in [[stage_in]], texture2d<float> textureSrc [[texture(0)]], sampler samplr [[sampler(0)]]) {
     float2 textureSrcResolution = float2(textureSrc.get_width(), textureSrc.get_height());
-	return float4(bcFilter(textureSrc, samplr, in.uv * textureSrcResolution, float2(1.0, 1.0) / textureSrcResolution).rgb, 1.0);
+	// texel centres sit at +0.5, so the filter grid starts half a texel in (the GLSL version does the same); without the
+	// -0.5 the whole picture came out shifted by half a source texel
+	return float4(bcFilter(textureSrc, samplr, in.uv * textureSrcResolution - 0.5, float2(1.0, 1.0) / textureSrcResolution).rgb, 1.0);
 }
 )";
 
@@ -203,7 +205,7 @@ float3 BicubicHermiteTexture(texture2d<float> textureSrc, sampler samplr, float2
 	float2 frac = fract(pixel);
     pixel = floor(pixel) / texelSize.zw - float2(texelSize.xy/2.0);
 
-	float4 doubleSize = texelSize*texelSize;
+	float4 doubleSize = texelSize*2.0;
 
 	float3 C00 = textureSrc.sample(samplr, pixel + float2(-texelSize.x ,-texelSize.y)).rgb;
     float3 C10 = textureSrc.sample(samplr, pixel + float2( 0.0        ,-texelSize.y)).rgb;
@@ -238,8 +240,11 @@ struct VertexOut {
     float2 uv;
 };
 
-fragment float4 main0(VertexOut in [[stage_in]], texture2d<float> textureSrc [[texture(0)]], sampler samplr [[sampler(0)]], constant float2& outputResolution [[buffer(0)]]) {
-	float4 texelSize = float4(1.0 / outputResolution.xy, outputResolution.xy);
+fragment float4 main0(VertexOut in [[stage_in]], texture2d<float> textureSrc [[texture(0)]], sampler samplr [[sampler(0)]]) {
+	// The filter works on the source texture's texel grid, like the GLSL version (textureSrcResolution). It used the size
+	// of the area being drawn to instead, which put the 4x4 taps a screen pixel apart rather than a game pixel apart.
+	float2 textureSrcResolution = float2(textureSrc.get_width(), textureSrc.get_height());
+	float4 texelSize = float4(1.0 / textureSrcResolution, textureSrcResolution);
 	return float4(BicubicHermiteTexture(textureSrc, samplr, in.uv, texelSize), 1.0);
 }
 )";

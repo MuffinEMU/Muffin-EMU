@@ -399,9 +399,21 @@ namespace H264
 		if (it == sDecoderSessions.end())
 			return;
 		H264DecoderBackend* session = it->second;
-		session->Destroy();
+		// the backend's destructor stops its decoder thread first and then releases the codec. Releasing the codec
+		// here, before the thread had stopped, freed it under a decode that was still running
 		delete session;
 		sDecoderSessions.erase(it);
+	}
+
+	// A title that ends in the middle of a video rarely calls H264DECClose. Every session left behind keeps a decoder
+	// thread, the codec's frame buffers (tens of MB at 1080p) and two OSEvents in the old title's memory, and the thread
+	// could still write a frame into memory that now belongs to the next title
+	static void _DestroyAllDecoderSessions()
+	{
+		std::unique_lock _lock(sDecoderSessionsMutex);
+		for (auto& it : sDecoderSessions)
+			delete it.second;
+		sDecoderSessions.clear();
 	}
 
 	uint32 H264DECOpen(void* workMemory)
@@ -813,6 +825,11 @@ namespace H264
 
 			cafeExportRegister("h264", H264DECCheckDecunitLength, LogType::H264);
 		};
+
+		void RPLUnmapped() override
+		{
+			_DestroyAllDecoderSessions();
+		}
 	}s_COSh264Module;
 
 	COSModule* GetModule()

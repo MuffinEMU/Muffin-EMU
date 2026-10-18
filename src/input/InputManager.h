@@ -83,9 +83,6 @@ public:
 	struct MouseInfo
 	{
 		mutable std::shared_mutex m_mutex;
-#if BOOST_OS_IOS
-    std::mutex m_gc_configuration_mutex;
-#endif
 		glm::ivec2 position{};
 		bool left_down = false;
 		bool right_down = false;

@@ -146,7 +146,7 @@ struct GameInfoSections: View {
         Section {
             ScreenStatusCallout(tone: .info, message: data.isScraping
                 ? "Reading GameTDB's database\u{2026}"
-                : "There is no game data for this install yet. Scrape it from Settings > Cover + data scraping, or here.")
+                : "There is no game data for this install yet. Scrape it from Settings > Cover art, or here.")
             if data.isScraping {
                 ProgressView(value: data.fraction)
             } else {
@@ -204,6 +204,8 @@ struct GameMatchPickerView: View {
     private var results: [TitleIndexRecord] { data.search(query, preferring: regions) }
 
     var body: some View {
+        // Searched once per update: the list and the footer below both read it.
+        let results = self.results
         NavigationView {
             List {
                 if !data.hasTitleIndex {

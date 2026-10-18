@@ -42,6 +42,8 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
     case recordScreen
     case scanAmiibo
     case recentreAim
+    case performanceReadout
+    case reportProblem
     case quit
     // case wiiUMenu   // see EXTENSION POINT above
 
@@ -62,7 +64,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .resume: return "Resume"
-        case .saveStates: return "Save States"
+        case .saveStates: return "Save states"
         case .screenLayout: return "Screen layout"
         case .externalDisplay: return "External display"
         case .moveControls: return "Move controls"
@@ -70,6 +72,8 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
         case .recordScreen: return "Record screen"
         case .scanAmiibo: return "Scan amiibo"
         case .recentreAim: return "Recentre aim"
+        case .performanceReadout: return "Performance readout"
+        case .reportProblem: return "Copy bug report"
         case .quit: return "Quit game"
         }
     }
@@ -85,6 +89,8 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
         case .recordScreen: return "video.circle"
         case .scanAmiibo: return "wave.3.right"
         case .recentreAim: return "scope"
+        case .performanceReadout: return "speedometer"
+        case .reportProblem: return "doc.on.clipboard"
         case .quit: return "xmark.circle"
         }
     }
@@ -100,6 +106,8 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
         case .recordScreen: return "Records the screen the game is showing, at the game's own resolution and with its sound, to a video in the Recordings folder in Files. Choose it again to stop."
         case .scanAmiibo: return "Opens a list of amiibo files to scan. The game has to be asking for an amiibo."
         case .recentreAim: return "Takes the way you are holding the device now as straight ahead, then goes back to the game."
+        case .performanceReadout: return "Shows the FPS readout over the game until you quit it. Settings > FPS counter chooses its corner and what else it lists."
+        case .reportProblem: return "Copies one text for a bug report about this game: your device, the main settings, what the engine last reported and the end of the log. The game keeps running; paste it when you ask for help."
         case .quit: return "Asks before leaving the game."
         }
     }
@@ -183,6 +191,8 @@ struct HomeMenuActions {
     let toggleRecording: () -> Void
     let toggleScreenRecording: () -> Void
     let scanAmiibo: () -> Void
+    /// Puts BugReport.text for the running game on the clipboard.
+    let copyBugReport: () -> Void
 }
 
 private struct HomeMenuRow: Identifiable {
@@ -224,6 +234,12 @@ struct HomeMenuOverlay: View {
     @State private var page = Page.root
     @State private var focus = 0
     @State private var rowsHeight: CGFloat = 280
+    /// The bug report row shows a checkmark once it has copied, for as long as the menu is open.
+    @State private var bugReportCopied = false
+    /// The overlay as the core has it now: Settings' value at boot, or the last toggle here.
+    @State private var readoutShown = cemu_bridge_overlay_position() != Int32(ScreenPosition.disabled.rawValue)
+    /// The corner the readout was in when it was last turned off here, so turning it on puts it back.
+    private static var hiddenReadoutCorner: Int32?
     /// The highlight is for controller players: shown from the start when one is connected, and once
     /// a controller button is used otherwise, so a touch player is not handed a row that looks chosen.
     @State private var usingController = ControllerPresence.isConnected()
@@ -313,10 +329,27 @@ struct HomeMenuOverlay: View {
 
     private var header: some View {
         VStack(spacing: 2) {
-            Text(headerTitle)
-                .font(MuffinTheme.Font.sectionTitle)
-                .foregroundColor(MuffinTheme.brownDarkest)
-                .accessibilityAddTraits(.isHeader)
+            ZStack {
+                Text(headerTitle)
+                    .font(MuffinTheme.Font.sectionTitle)
+                    .foregroundColor(MuffinTheme.brownDarkest)
+                    .accessibilityAddTraits(.isHeader)
+                // Layout and External display: a back arrow that stays in view when the rows scroll.
+                if page == .layout || page == .external {
+                    HStack {
+                        Button { show(.root) } label: {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundColor(MuffinTheme.accentText)
+                                .frame(width: 44, height: 36, alignment: .leading)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Back to the HOME menu")
+                        Spacer()
+                    }
+                }
+            }
             switch page {
             case .root:
                 Text(gameName)
@@ -399,6 +432,35 @@ struct HomeMenuOverlay: View {
                 cemu_bridge_motion_recenter()
                 actions.resume()
             }
+        case .performanceReadout:
+            // Written straight to the core, which reads the position every frame, and not to Settings: a
+            // look at the frame rate during one game is not a change of the player's setting. Turning it off
+            // remembers the corner the core had (this game's own corner, if it has one), and turning it on
+            // again goes back there; with the overlay off from the start, the Settings corner or the top left.
+            var row = make {
+                let off = Int32(ScreenPosition.disabled.rawValue)
+                if readoutShown {
+                    Self.hiddenReadoutCorner = cemu_bridge_overlay_position()
+                    cemu_bridge_set_overlay_position(off)
+                } else {
+                    let stored = Int32(UserDefaults.standard.object(forKey: OverlaySettings.positionKey) as? Int
+                                       ?? OverlaySettings.defaultPosition.rawValue)
+                    let corner = [Self.hiddenReadoutCorner, stored].compactMap { $0 }.first { $0 != off }
+                        ?? Int32(ScreenPosition.topLeft.rawValue)
+                    cemu_bridge_set_overlay_position(corner)
+                }
+                readoutShown.toggle()
+            }
+            row.isSelected = readoutShown
+            return row
+        case .reportProblem:
+            // Stays open, like the recording rows, so the checkmark shows the copy happened.
+            var row = make {
+                actions.copyBugReport()
+                bugReportCopied = true
+            }
+            row.isSelected = bugReportCopied
+            return row
         case .quit:
             // Dropped, not disabled, while a save is being written: quitting tears the title down under it.
             return canQuit ? make(destructive: true, { show(.confirmQuit) }) : nil

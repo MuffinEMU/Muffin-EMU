@@ -207,9 +207,15 @@ namespace GX2
 
 	void GX2WaitForFlip()
 	{
-		if ((sint32)(_swapEndianU32(LatteGPUState.sharedArea->flipRequestCountBE) == _swapEndianU32(LatteGPUState.sharedArea->flipExecuteCountBE)))
-			return; // dont wait if no flip is requested
+		// The check is made under the scheduler lock. The GPU thread bumps flipExecuteCount and then takes this lock to wake
+		// the flip queue, so a flip that completes after the check can no longer wake an empty queue just before this
+		// thread joins it, which left the thread waiting for the next flip (a whole extra frame)
 		__OSLockScheduler();
+		if ((sint32)(_swapEndianU32(LatteGPUState.sharedArea->flipRequestCountBE) == _swapEndianU32(LatteGPUState.sharedArea->flipExecuteCountBE)))
+		{
+			__OSUnlockScheduler();
+			return; // dont wait if no flip is requested
+		}
 		g_flipThreadQueue.GetPtr()->queueAndWait(coreinit::OSGetCurrentThread());
 		__OSUnlockScheduler();
 	}

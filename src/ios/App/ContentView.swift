@@ -112,6 +112,7 @@ struct ContentView: View {
         }
         .onChange(of: appScenePhase) { phase in
             MenuMusic.shared.update(emulationState: gameManager.emulationState, appActive: phase != .background)
+            LastSessionEnd.scenePhaseChanged(phase)
         }
         .alert("Couldn't add that game", isPresented: Binding(
             get: { sharedImportError != nil }, set: { if !$0 { sharedImportError = nil } })) {
@@ -209,6 +210,9 @@ struct BootFailureView: View {
     /// Keys the player added from this screen. Nil until they do.
     @State private var keysAdded: Int?
     @State private var keysError: String?
+    @State private var reportCopied = false
+    /// The end of the launch log, taken once when the screen appears: the lines that explain the failure.
+    @State private var logTail: [String] = []
 
     /// An encrypted disc image or game folder, with no keys.txt installed: the likely reason it didn't start. Homebrew
     /// (.rpx, .elf, .wuhb), decrypted dumps and .wua archives don't need keys.
@@ -217,13 +221,33 @@ struct BootFailureView: View {
         return ["wux", "wud", "iso", "tmd"].contains(URL(fileURLWithPath: game.romPath).pathExtension.lowercased())
     }
 
-    /// What to do next, in plain words. The engine's own message and the log paths are under Details.
+    /// keys.txt is there, but no key in it opens this game (the bridge's own wording, IOSTitleLaunch).
+    private var keysDontMatch: Bool {
+        !needsCleanRestart && keysAdded == nil && message.contains("no key in keys.txt opens it")
+    }
+
+    /// The engine's message when it already tells the player what to do. Most launch failures are written that
+    /// way (missing ticket, wrong renderer, an update picked instead of the game); the short status lines are
+    /// bridge internals and stay under Details, and the two terse ones a player can hit are put in plain words.
+    private var engineAdvice: String? {
+        let m = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        if m.hasPrefix("Unable to mount title") {
+            return "MuffinEMU couldn't open this game's files. If they were moved, renamed or deleted in the Files app, remove the game from the library and add it again."
+        }
+        if m == "Invalid RPX." { return "This file isn't a Wii U program MuffinEMU can run." }
+        if m == "Not a Wii U title this build can launch." { return m }
+        return m.count >= 50 ? m : nil
+    }
+
+    /// What to do next, in plain words. The engine's own message, when it isn't already this line, and the log
+    /// paths are under Details.
     private var plainLine: String {
         if needsCleanRestart { return "Close MuffinEMU and open it again from your Home Screen, then start a game." }
         if driveWasLost { return "The drive or folder this game is stored on was disconnected. Connect it again, go back and start the game again." }
-        if endedWhileRunning { return "The game stopped. Go back and try it again. If it keeps happening, close and reopen MuffinEMU." }
-        if needsKeys { return "This game is encrypted, so it needs a keys.txt file to start." }
         if let keysAdded { return "Added \(keysAdded) key\(keysAdded == 1 ? "" : "s"). Go back and start the game again. If it still won't start, close and reopen MuffinEMU." }
+        if needsKeys { return "This game is encrypted, so it needs a keys.txt file to start." }
+        if let engineAdvice { return engineAdvice }
+        if endedWhileRunning { return "The game stopped. Go back and try it again. If it keeps happening, close and reopen MuffinEMU." }
         return "This game didn't start. Try again. If it keeps happening, close and reopen MuffinEMU."
     }
 
@@ -240,6 +264,7 @@ struct BootFailureView: View {
                 }
             }
         }
+        .onAppear { logTail = BugReport.launchLogTail(14) }
     }
 
     private func importKeys() {
@@ -286,7 +311,7 @@ struct BootFailureView: View {
                     .frame(maxWidth: 480)
             }
 
-            if needsKeys {
+            if needsKeys || keysDontMatch {
                 Button(action: importKeys) {
                     HStack(spacing: 6) {
                         Image(systemName: "key.fill")
@@ -302,11 +327,30 @@ struct BootFailureView: View {
             // anything, which is itself worth seeing rather than papering over. The logs go out through Share diagnostics.
             DisclosureGroup("Details") {
                 VStack(spacing: 10) {
-                    Text(message.isEmpty ? "The engine didn't report a reason." : message)
-                        .font(.system(.footnote, design: .rounded))
-                        .foregroundColor(.white.opacity(0.75))
-                        .multilineTextAlignment(.center)
+                    if plainLine != message {
+                        Text(message.isEmpty ? "The engine didn't report a reason." : message)
+                            .font(.system(.footnote, design: .rounded))
+                            .foregroundColor(.white.opacity(0.75))
+                            .multilineTextAlignment(.center)
+                            .textSelection(.enabled)
+                    }
+
+                    // The last lines the engine logged, in the launch log's own colours, so the line that
+                    // decided the boot is readable here without turning the launch log on beforehand.
+                    if !logTail.isEmpty {
+                        VStack(alignment: .leading, spacing: 1) {
+                            ForEach(Array(logTail.enumerated()), id: \.offset) { _, line in
+                                Text(line)
+                                    .font(.system(size: 9, weight: .regular, design: .monospaced))
+                                    .foregroundColor(LaunchLogView.colour(for: line))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        .padding(10)
+                        .background(Color.white.opacity(0.06))
+                        .cornerRadius(8)
                         .textSelection(.enabled)
+                    }
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.top, 8)
@@ -319,7 +363,23 @@ struct BootFailureView: View {
             // Only where the logs can explain something. Not on the restart screen (the logs are from the game that
             // already ended, and its own screen offered them), a disconnected drive, or missing keys.
             if !needsCleanRestart && !driveWasLost && !needsKeys {
-                shareDiagnosticsButton
+                HStack(spacing: 10) {
+                    Button {
+                        UIPasteboard.general.string = BugReport.text(game: game)
+                        reportCopied = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: reportCopied ? "checkmark" : "doc.on.clipboard")
+                                .font(.system(size: 14, weight: .semibold))
+                            Text(reportCopied ? "Copied" : "Copy bug report")
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        }
+                    }
+                    .buttonStyle(MuffinBarButtonStyle())
+                    .accessibilityHint("Copies your device, settings, this game and the end of the launch log as one text to paste when you ask for help.")
+
+                    shareDiagnosticsButton
+                }
             }
 
             if needsCleanRestart {
@@ -461,6 +521,55 @@ struct LibraryActivityBanner: View {
 
 /// One line over the game about how this launch differed from the request, for example Vulkan not starting so Metal
 /// was used. Fades on its own (GameManager.showLaunchNotice) and never takes touches.
+/// One line in the library while JIT isn't active: the most common reason a new install feels slow,
+/// stated once with the one tap that fixes it. Closes for the session; the once-per-launch alert
+/// (JITEnablerPrompter) is separate and only fires when an enabler is set up.
+struct LibraryJITBanner: View {
+    let enabler: JITEnabler
+    let onEnable: () -> Void
+    let onSettings: () -> Void
+    let onDismiss: () -> Void
+
+    private var line: String {
+        enabler == .none
+            ? "JIT isn't on, so games run slower. A JIT enabler makes them much faster."
+            : "JIT isn't on, so games run slower. Open \(enabler.name) to turn it on."
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "bolt.slash.fill")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(MuffinTheme.cautionText)
+                .accessibilityHidden(true)
+            Text(line)
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundColor(MuffinTheme.brownDarkest)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 4)
+            Button(enabler == .none ? "Set up" : "Turn on") {
+                if enabler == .none { onSettings() } else { onEnable() }
+            }
+            .font(.system(size: 12, weight: .bold, design: .rounded))
+            .buttonStyle(MuffinSecondaryButtonStyle())
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(MuffinTheme.brownMid)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(MuffinTheme.formGround, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(MuffinTheme.cautionText.opacity(0.35), lineWidth: 1))
+        .accessibilityElement(children: .contain)
+    }
+}
+
 struct LaunchNoticeBanner: View {
     let text: String
 
@@ -549,6 +658,12 @@ struct GameBrowserView: View {
     @ObservedObject private var menuStore = WiiUMenuStore.shared
 
     @State private var romImportErrorMessage: String?
+    /// JIT, as the process has it right now; read again each time the app comes back to the front, since
+    /// an enabler attaches from outside. The banner it drives is the answer to "why is it slow?".
+    @State private var jitActive = JITStatus.isActive
+    @State private var jitBannerDismissed = false
+    /// After a run that iOS ended with a game up (LastSessionEnd); the notice is taken once per launch.
+    @State private var lastSessionNotice = LastSessionEnd.fromLastRun
     /// Answers GameManager.confirmOverwrite - see the .onAppear wiring below. A plain
     /// closure captured from the continuation rather than storing the continuation
     /// type directly, so the two alert buttons don't need to know anything about
@@ -622,7 +737,10 @@ struct GameBrowserView: View {
             libraryScreen
             // Games dropped into Files > On My iPad > MuffinEMU > Roms while the app was in the background show up on return.
             .onChange(of: scenePhase) { phase in
-                if phase == .active { Task { await gameManager.rescanIfIdle() } }
+                if phase == .active {
+                    Task { await gameManager.rescanIfIdle() }
+                    jitActive = JITStatus.isActive
+                }
             }
             // The welcome guide (ContentView) can't present over the Settings sheet, so close it first.
             .onReceive(NotificationCenter.default.publisher(for: .muffinReopenOnboarding)) { _ in
@@ -717,6 +835,7 @@ struct GameBrowserView: View {
                     .buttonStyle(MuffinSecondaryButtonStyle())
                     .frame(minWidth: 44, minHeight: 44)
                     .accessibilityLabel("Settings")
+                    .accessibilityHint("Opens Settings, with search.")
 
                     Button(action: { showingFavorites.toggle() }) {
                         // Same fix as the gear above, with one difference: the ACTIVE
@@ -862,6 +981,21 @@ struct GameBrowserView: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 16)
+
+            if !jitActive && !jitBannerDismissed {
+                LibraryJITBanner(
+                    enabler: JITEnabler.current,
+                    onEnable: { JITEnablerPrompter.shared.enable() },
+                    onSettings: { showingSettings = true },
+                    onDismiss: { jitBannerDismissed = true }
+                )
+                .padding(.horizontal, 16)
+            }
+
+            if let lastSessionNotice {
+                LibraryLastSessionBanner(notice: lastSessionNotice, onDismiss: { self.lastSessionNotice = nil })
+                    .padding(.horizontal, 16)
+            }
 
             // The Wii U Menu, when one is installed. Pinned above the grid, not part of it, so
             // sorting never moves it; it is hidden while searching or viewing favourites.
@@ -1561,16 +1695,18 @@ struct EmptyGamesView: View {
 
     private var heading: String {
         switch kind {
-        case .emptyLibrary: return "No Games Yet"
-        case .noFavourites: return "No Favourites Yet"
-        case .noSearchMatch: return "No Matches"
+        case .emptyLibrary: return "No games yet"
+        case .noFavourites: return "No favourites yet"
+        case .noSearchMatch: return "No matches"
         }
     }
 
     private var lines: [String] {
         switch kind {
         case .emptyLibrary:
-            return ["Tap Import a Game, or put game files in Files > On My iPad > MuffinEMU > Roms.",
+            // The Files app names the device's own storage after the device.
+            let device = UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
+            return ["Tap Import a Game, or put game files in Files > On My \(device) > MuffinEMU > Roms.",
                     "Games you add there show up when you come back to MuffinEMU."]
         case .noFavourites:
             return ["Tap the heart on a game to add it here."]
@@ -2120,7 +2256,8 @@ struct EmulatorViewOptimized: View {
                 swapScreens: swapScreensFromHomeMenu,
                 toggleRecording: { AudioRecorder.shared.toggle(gameName: gameName) },
                 toggleScreenRecording: { ScreenRecorder.shared.toggle(gameName: gameName) },
-                scanAmiibo: { showAmiibo = true }
+                scanAmiibo: { showAmiibo = true },
+                copyBugReport: { UIPasteboard.general.string = BugReport.text(game: game) }
             )
         )
     }

@@ -29,6 +29,10 @@ final class LaunchLogStore: ObservableObject {
     /// swallowed - a gap the reader knows about is worth more than a tidy list that
     /// quietly is not the whole boot.
     @Published private(set) var droppedLines: UInt64 = 0
+    /// How many lines have been trimmed off the front of `lines` to keep it at the cap. A row's
+    /// number is this plus its index, so a row keeps its number as older lines are trimmed and
+    /// the view can follow the tail by it (the count alone stops changing once the cap is hit).
+    private(set) var firstLineNumber = 0
 
     private static let maxRenderedLines = 600
 
@@ -68,10 +72,15 @@ final class LaunchLogStore: ObservableObject {
         }
         guard !chunk.isEmpty else { return }
 
-        lines.append(contentsOf: chunk.split(separator: "\n", omittingEmptySubsequences: false).map(String.init))
-        if lines.count > Self.maxRenderedLines {
-            lines.removeFirst(lines.count - Self.maxRenderedLines)
+        // Built aside and assigned once, so a drain is one SwiftUI update rather than two.
+        var updated = lines
+        updated.append(contentsOf: chunk.split(separator: "\n", omittingEmptySubsequences: false).map(String.init))
+        let overflow = updated.count - Self.maxRenderedLines
+        if overflow > 0 {
+            updated.removeFirst(overflow)
+            firstLineNumber += overflow
         }
+        lines = updated
     }
 }
 
@@ -133,27 +142,30 @@ struct LaunchLogView: View {
             .background(Color.black.opacity(0.55))
 
             ScrollViewReader { proxy in
+                let firstLine = store.firstLineNumber
                 ScrollView(showsIndicators: true) {
                     LazyVStack(alignment: .leading, spacing: 1) {
                         ForEach(Array(store.lines.enumerated()), id: \.offset) { index, line in
                             Text(line)
                                 .font(.system(size: 9, weight: .regular, design: .monospaced))
-                                .foregroundColor(colour(for: line))
+                                .foregroundColor(Self.colour(for: line))
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .id(index)
+                                .id(firstLine + index)
                         }
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                 }
                 // Follows the tail as it grows, which is the behaviour that makes a live
-                // log readable at all. Keyed on the count rather than the last line's
-                // text, so two identical consecutive lines still scroll.
-                .onChange(of: store.lines.count) { count in
-                    guard count > 0 else { return }
+                // log readable at all. Keyed on the number of lines received rather than
+                // the last line's text, so two identical consecutive lines still scroll,
+                // and rather than the list's count, which stops changing at the cap and
+                // left the view parked once a boot passed 600 lines.
+                .onChange(of: firstLine + store.lines.count) { total in
+                    guard total > 0 else { return }
                     withAnimation(.easeOut(duration: 0.12)) {
-                        proxy.scrollTo(count - 1, anchor: .bottom)
+                        proxy.scrollTo(total - 1, anchor: .bottom)
                     }
                 }
             }
@@ -172,7 +184,7 @@ struct LaunchLogView: View {
     /// the point is to make the handful of lines that decide a boot findable in a wall
     /// of scrolling text, not to colour it in. The *OnDark colours because this panel is
     /// always dark: in light mode several themes' accent is a navy that vanished on it.
-    private func colour(for line: String) -> Color {
+    static func colour(for line: String) -> Color {
         let lower = line.lowercased()
         if lower.contains("crash") || lower.contains("failed") || lower.contains("error")
             || lower.contains("dropped a frame") || lower.contains("not present")

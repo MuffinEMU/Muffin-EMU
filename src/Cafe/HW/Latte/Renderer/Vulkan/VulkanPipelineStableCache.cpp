@@ -249,6 +249,17 @@ void VulkanPipelineStableCache::LoadPipelineFromCache(std::span<uint8> fileData)
 	// restored register view from compacted state
 	Latte::LoadGPURegisterState(*lcr, cachedPipeline->gpuState);
 
+	// An entry that can't be used (one of its shaders isn't in the shader cache, which is common after a cache was rebuilt
+	// or trimmed) used to return without freeing these. The register copy is a quarter of a megabyte, so a cache with a few
+	// hundred stale entries cost tens of megabytes on every launch of that title.
+	auto discardEntry = [&]()
+	{
+		s_spinlockSharedInternal.lock();
+		delete lcr;
+		delete cachedPipeline;
+		s_spinlockSharedInternal.unlock();
+	};
+
 	LatteDecompilerShader* vertexShader = nullptr;
 	LatteDecompilerShader* geometryShader = nullptr;
 	LatteDecompilerShader* pixelShader = nullptr;
@@ -259,6 +270,7 @@ void VulkanPipelineStableCache::LoadPipelineFromCache(std::span<uint8> fileData)
 		if (!vertexShader)
 		{
 			cemuLog_logDebug(LogType::Force, "Vertex shader not found in cache");
+			discardEntry();
 			return;
 		}
 	}
@@ -269,6 +281,7 @@ void VulkanPipelineStableCache::LoadPipelineFromCache(std::span<uint8> fileData)
 		if (!geometryShader)
 		{
 			cemuLog_logDebug(LogType::Force, "Geometry shader not found in cache");
+			discardEntry();
 			return;
 		}
 	}
@@ -279,13 +292,15 @@ void VulkanPipelineStableCache::LoadPipelineFromCache(std::span<uint8> fileData)
 		if (!pixelShader)
 		{
 			cemuLog_logDebug(LogType::Force, "Pixel shader not found in cache");
+			discardEntry();
 			return;
 		}
 	}
 	// create temporary renderpass
-	if (!pixelShader)
+	if (!pixelShader || !vertexShader)
 	{
 		cemu_assert_debug(false);
+		discardEntry();
 		return;
 	}
 	auto renderPass = __CreateTemporaryRenderPass(pixelShader, *lcr);
@@ -294,18 +309,25 @@ void VulkanPipelineStableCache::LoadPipelineFromCache(std::span<uint8> fileData)
 	PipelineInfo* pipelineInfo = new PipelineInfo(0, 0, vertexShader->compatibleFetchShader, vertexShader, pixelShader, geometryShader);
 	m_pipelineIsCachedLock.unlock();
 	// compile
+	bool pipelineInitialized = false;
 	{
 		PipelineCompiler pipelineCompiler;
 		bool requiresRobustBufferAccess = PipelineCompiler::CalcRobustBufferAccessRequirement(vertexShader, pixelShader, geometryShader);
-		if (!pipelineCompiler.InitFromCurrentGPUState(pipelineInfo, *lcr, renderPass, requiresRobustBufferAccess))
-		{
-			s_spinlockSharedInternal.lock();
-			delete lcr;
-			delete cachedPipeline;
-			s_spinlockSharedInternal.unlock();
-			return;
-		}
-		pipelineCompiler.Compile(true, true, false);
+		pipelineInitialized = pipelineCompiler.InitFromCurrentGPUState(pipelineInfo, *lcr, renderPass, requiresRobustBufferAccess);
+		if (pipelineInitialized)
+			pipelineCompiler.Compile(true, true, false);
+	}
+	if (!pipelineInitialized)
+	{
+		// same clean-up as the success path below (after the compiler object is gone); the pipeline info and the
+		// stand-in render pass were leaked here
+		s_spinlockSharedInternal.lock();
+		delete pipelineInfo;
+		delete lcr;
+		delete cachedPipeline;
+		VulkanRenderer::GetInstance()->ReleaseDestructibleObject(renderPass);
+		s_spinlockSharedInternal.unlock();
+		return;
 	}
 	// on success, calculate pipeline hash and flag as present in cache
 	uint64 pipelineBaseHash = vertexShader->baseHash;

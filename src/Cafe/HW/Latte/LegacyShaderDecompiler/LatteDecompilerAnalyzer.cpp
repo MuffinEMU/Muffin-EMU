@@ -336,6 +336,14 @@ void LatteDecompiler_analyzeTEXClause(LatteDecompilerShaderContext* shaderContex
 			{
 				shaderContext->analyzer.texUnitUsesTexelCoordinates.set(texInstruction.textureFetch.textureIndex);
 			}
+			else if (texInstruction.opcode == GPU7_TEX_INST_SAMPLE || texInstruction.opcode == GPU7_TEX_INST_SAMPLE_L ||
+				texInstruction.opcode == GPU7_TEX_INST_SAMPLE_LB || texInstruction.opcode == GPU7_TEX_INST_SAMPLE_LZ ||
+				texInstruction.opcode == GPU7_TEX_INST_SAMPLE_G)
+			{
+				// these pick a mip level, implicitly or explicitly, so the sampler's LOD bias applies (a shadow compare is left out:
+				// shadow maps have no mips to bias, and sample_compare's level options are kept exactly as they are)
+				shaderContext->analyzer.texUnitUsesLodBias.set(texInstruction.textureFetch.textureIndex);
+			}
 		}
 		else if( texInstruction.opcode == GPU7_TEX_INST_GET_COMP_TEX_LOD || texInstruction.opcode == GPU7_TEX_INST_GET_TEXTURE_RESINFO )
 		{
@@ -634,6 +642,10 @@ namespace LatteDecompiler
 
 		    if (decompilerContext->shaderType == LatteConst::ShaderType::Vertex && usesGeometryShader)
 				decompilerContext->hasUniformVarBlock = true; // uf_verticesPerInstance
+			// the sampler LOD bias of every texture sampled with a level of detail (tex{}LodBias): without the block the
+			// MSL sample code would name a supportBuffer the function never receives
+			if (decompilerContext->analyzer.texUnitUsesLodBias.any())
+				decompilerContext->hasUniformVarBlock = true;
 		}
 #endif
 	}
@@ -643,14 +655,14 @@ namespace LatteDecompiler
 		// check if uniform vars block has at least one variable
 		_initHasUniformVarBlock(decompilerContext);
 
-		if (decompilerContext->shaderType == LatteConst::ShaderType::Pixel)
+		// Every stage, not only the pixel shader: the emitters read tex{N}Scale for every texel-coordinate fetch (LD, or SAMPLE
+		// with unnormalized coordinates), and a vertex shader doing one (heightmaps, skinning palettes) with no other member in
+		// this block would name a supportBuffer / ufBlock the function never receives, and fail to compile.
+		for (sint32 t = 0; t < LATTE_NUM_MAX_TEX_UNITS; t++)
 		{
-			for (sint32 t = 0; t < LATTE_NUM_MAX_TEX_UNITS; t++)
-			{
-				if (decompilerContext->analyzer.texUnitUsesTexelCoordinates.test(t) == false)
-					continue;
-				decompilerContext->hasUniformVarBlock = true; // uf_tex%dScale
-			}
+			if (decompilerContext->analyzer.texUnitUsesTexelCoordinates.test(t) == false)
+				continue;
+			decompilerContext->hasUniformVarBlock = true; // uf_tex%dScale
 		}
 		// assign binding point to uniform var block
 		if (decompilerContext->hasUniformVarBlock)

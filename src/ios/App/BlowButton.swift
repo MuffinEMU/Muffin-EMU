@@ -58,7 +58,6 @@ struct BlowButton: View {
 
     private struct Press: Equatable {
         var down = false
-        var moved = false
     }
 
     @GestureState private var press = Press()
@@ -66,6 +65,10 @@ struct BlowButton: View {
     @State private var momentary = false
     @State private var cancelledByMove = false
     @State private var holdWork: DispatchWorkItem?
+    /// A press has begun and not yet been finished, by a lift or a cancel. Set and cleared from the
+    /// gesture's own callbacks, so a tap whose down and up both land before the next render still
+    /// counts; `press` alone is only seen at a render, and such a tap went true and back unseen.
+    @State private var pressOpen = false
 
     private let syncTimer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
@@ -87,18 +90,25 @@ struct BlowButton: View {
         .buttonStyle(MuffinBarButtonStyle(highlighted: active))
         .simultaneousGesture(
             DragGesture(minimumDistance: 0)
-                .updating($press) { value, state, _ in
-                    state.down = true
-                    if hypot(value.translation.width, value.translation.height) > Self.moveTolerance {
-                        state.moved = true
+                .updating($press) { _, state, _ in state.down = true }
+                .onChanged { value in
+                    if !pressOpen { pressBegan() }
+                    if !cancelledByMove,
+                       hypot(value.translation.width, value.translation.height) > Self.moveTolerance {
+                        cancelledByMove = true
+                        cancelPendingHold()
                     }
                 }
+                // Only a finger that lifted gets here. A press the system took away (the top bar's
+                // scroll view starting to scroll, an app switch) ends without it, below.
+                .onEnded { _ in pressEnded(lifted: true) }
         )
+        // The gesture state resets on a cancel as well as a lift. Reached after onEnded for a lift,
+        // when the press is already finished, so here it only ever finishes a cancelled one: that
+        // stops a hold but never toggles the latch, so a scroll that steals the press can't turn
+        // blowing on or off.
         .onChange(of: press.down) { down in
-            down ? pressBegan() : pressEnded()
-        }
-        .onChange(of: press.moved) { moved in
-            if moved { cancelledByMove = true; cancelPendingHold() }
+            if !down { pressEnded(lifted: false) }
         }
         .onChange(of: titleID) { _ in reset() }
         .onDisappear { reset() }
@@ -116,8 +126,17 @@ struct BlowButton: View {
     }
 
     private func pressBegan() {
+        pressOpen = true
         cancelledByMove = false
         let work = DispatchWorkItem {
+            // A press the system took away before the first render after it began went true and back
+            // unseen by the onChange below, so nothing finished it. By now a render has happened, so
+            // `press.down` says whether the finger is still there; a hold that starts without one would
+            // blow until the next tap.
+            guard pressOpen, press.down else {
+                pressOpen = false
+                return
+            }
             momentary = true
             apply()
             MuffinHaptics.tap()
@@ -126,12 +145,14 @@ struct BlowButton: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.holdThreshold, execute: work)
     }
 
-    private func pressEnded() {
+    private func pressEnded(lifted: Bool) {
+        guard pressOpen else { return }
+        pressOpen = false
         cancelPendingHold()
         if momentary {
             momentary = false           // back to whatever the latch says
             apply()
-        } else if !cancelledByMove {
+        } else if lifted && !cancelledByMove {
             latched.toggle()
             apply()
         }
@@ -144,6 +165,7 @@ struct BlowButton: View {
 
     private func reset() {
         cancelPendingHold()
+        pressOpen = false
         latched = false
         momentary = false
         cemu_bridge_set_mic_blow(false)

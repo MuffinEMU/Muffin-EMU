@@ -246,7 +246,9 @@ namespace ntag
 
 		if (!ccrNfcOpened)
 		{
+			// the flag was never set, so every read and write opened another /dev/ccr_nfc handle that nothing closed
 			gCcrNfcHandle = coreinit::IOS_Open("/dev/ccr_nfc", 0);
+			ccrNfcOpened = true;
 		}
 
 		// Prepare nfc buffer
@@ -388,6 +390,12 @@ namespace ntag
 		readResult->readOnly = readOnly;
 
 		error = __NTAGConvertNFCResult(error);
+		// the two parts come from the tag file. Together they have to fit the 0x1C8 byte tag image
+		if (error == 0 && (dataSize > sizeof(rawData) || lockedDataSize > sizeof(rawData) - dataSize))
+		{
+			cemuLog_log(LogType::Force, "NTAG: tag data is too large ({} + {} bytes)", dataSize, lockedDataSize);
+			error = NTAG_RESULT_INVALID;
+		}
 		if (error == 0)
 		{
 			memset(rwData.GetPointer(), 0, 0x1C8);
@@ -457,6 +465,7 @@ namespace ntag
 		if (!ccrNfcOpened)
 		{
 			gCcrNfcHandle = coreinit::IOS_Open("/dev/ccr_nfc", 0);
+			ccrNfcOpened = true;
 		}
 
 		// Prepare nfc buffer
@@ -556,6 +565,11 @@ namespace ntag
 		uint8 writeBuffer[0x1C8]{};
 
 		error = __NTAGConvertNFCResult(error);
+		if (error == 0 && (dataSize > sizeof(rawData) || lockedDataSize > sizeof(rawData) - dataSize))
+		{
+			cemuLog_log(LogType::Force, "NTAG: tag data is too large ({} + {} bytes)", dataSize, lockedDataSize);
+			error = NTAG_RESULT_INVALID;
+		}
 		if (error == 0)
 		{
 			// Copy raw and locked data into a contigous buffer

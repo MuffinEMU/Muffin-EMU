@@ -291,6 +291,7 @@ int Latte_ThreadEntry()
 
 std::thread sLatteThread;
 std::atomic<bool> g_latteFullSpeedRenders{false};
+std::atomic<sint32> g_latteAnisotropyOverride{-1};
 std::mutex sLatteThreadStateMutex;
 
 // initializes GPU thread which in turn also activates graphic packs

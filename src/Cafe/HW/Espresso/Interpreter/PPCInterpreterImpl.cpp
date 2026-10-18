@@ -538,6 +538,11 @@ static inline void PPCBlockCache_markCodePage(uint32 addr)
     const uint32 page = addr >> 12;
     
     s_blockCacheCodePages[page >> 5].fetch_or(1u << (page & 31), std::memory_order_relaxed);
+    // Pairs with the fence in PPCInterpreter_invalidateBlockCacheRange. The decoder marks the page and then reads
+    // the code; a writer on another core stores code and then reads the mark. Without a full fence on both sides
+    // each can miss the other's store, and the decoder keeps a block of the old code that is never invalidated.
+    // Only runs when a block is decoded, so the cost is irrelevant.
+    std::atomic_thread_fence(std::memory_order_seq_cst);
 }
 
 static inline bool PPCBlockCache_isCodePage(uint32 addr)
@@ -560,8 +565,13 @@ void PPCInterpreter_invalidateBlockCache()
 
 void PPCInterpreter_invalidateBlockCacheRange(uint32 addr, uint32 size)
 {
+    // the caller has already stored the new code; see PPCBlockCache_markCodePage
+    std::atomic_thread_fence(std::memory_order_seq_cst);
     const uint32 firstPage = addr >> 12;
-    const uint32 lastPage = (addr + (size ? size - 1 : 0)) >> 12;
+    // computed in 64 bits so a range that reaches the top of the address space doesn't wrap to a page below
+    // firstPage, which would skip the loop and invalidate nothing
+    const uint64 lastByte = std::min<uint64>((uint64)addr + (size ? size - 1 : 0), 0xFFFFFFFFull);
+    const uint32 lastPage = (uint32)(lastByte >> 12);
     for (uint32 page = firstPage; page <= lastPage; page++)
     {
         if (PPCBlockCache_isCodePage(page << 12))
@@ -574,13 +584,24 @@ void PPCInterpreter_invalidateBlockCacheRange(uint32 addr, uint32 size)
     }
 }
 
-static thread_local PPCBlockCache* t_ppcBlockCache = nullptr;
+// One cache per host thread, freed when that thread exits. The emulated cores' host threads are joined when a game
+// stops and new ones are created for the next game, so with a plain pointer every launch after the first leaked one
+// whole cache per core (the hash table alone is 3 MiB, the entry pool can grow to 16 MiB).
+// Nothing touches the cache after its thread exits: a guest thread that resumes on another host thread re-fetches
+// the cache after every handler that can switch threads (see executeTimesliceCached).
+struct PPCBlockCacheOwner
+{
+    PPCBlockCache* cache = nullptr;
+    ~PPCBlockCacheOwner() { delete cache; }
+};
+static thread_local PPCBlockCacheOwner t_ppcBlockCache;
 
 TLS_WORKAROUND_NOINLINE static PPCBlockCache& PPCBlockCache_getForCurrentThread()
 {
-    if (!t_ppcBlockCache)
-        t_ppcBlockCache = new PPCBlockCache();
-    return *t_ppcBlockCache;
+    PPCBlockCacheOwner& owner = t_ppcBlockCache;
+    if (!owner.cache)
+        owner.cache = new PPCBlockCache();
+    return *owner.cache;
 }
 
 #if (defined(__clang__) || defined(__GNUC__)) && !defined(PPC_INTERPRETER_DISABLE_THREADED_DISPATCH) && !defined(__DEBUG_OUTPUT_INSTRUCTION)
@@ -1558,9 +1579,13 @@ public:
         PPCBlockCache* cache = &PPCBlockCache_getForCurrentThread();
         while (hCPU->remainingCycles > 0)
         {
-            const uint32 gen = s_blockCacheGeneration.load(std::memory_order_acquire);
+            // Relaxed load on the per-block path; the acquire only has to happen when the counter actually changed, and
+            // the fence below pairs with the release increment in PPCInterpreter_invalidateBlockCache so the re-decode
+            // reads the new code. This takes an acquire load (ldar) off every block executed.
+            const uint32 gen = s_blockCacheGeneration.load(std::memory_order_relaxed);
             if (gen != cache->m_generation) [[unlikely]]
             {
+                std::atomic_thread_fence(std::memory_order_acquire);
                 cache->clear("code invalidated");
                 cache->m_generation = gen;
             }

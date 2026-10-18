@@ -675,6 +675,13 @@ bool cemu_bridge_framebuffer_fetch(void);
 void cemu_bridge_set_emulate_missing_effects(bool enabled);
 bool cemu_bridge_emulate_missing_effects(void);
 
+/// Settings > Graphics > Texture filtering: anisotropic filtering for every texture a game filters, as the
+/// log2 of the ratio (1 = 2x, 2 = 4x, 3 = 8x, 4 = 16x), or -1 to use what each game asks for. Only ever
+/// raises what the game or a graphic pack set, and leaves point-sampled and mipless textures alone. Read
+/// per draw by the Metal and Vulkan sampler setup, so a change shows on the next frame.
+void cemu_bridge_set_anisotropic_filtering(int32_t level);
+int32_t cemu_bridge_anisotropic_filtering(void);
+
 // ---------------------------------------------------------------------------
 // Screen orientation, gamma and the on-screen performance overlay.
 //

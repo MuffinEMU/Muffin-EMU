@@ -59,6 +59,17 @@ struct GamePageView: View {
     @State private var slots: [SaveStateSlot] = []
     @State private var slotToDelete: Int?
     @State private var confirmingRemoval = false
+    /// Keys the player added from this page. Nil until they do.
+    @State private var keysAdded: Int?
+    @State private var keysError: String?
+
+    /// An encrypted disc image or game folder with no keys.txt installed: it won't start until there is one, so
+    /// say so here, before Play, rather than on the failure screen afterwards. Homebrew (.rpx, .elf, .wuhb),
+    /// decrypted dumps and .wua archives don't need keys.
+    private var needsKeys: Bool {
+        guard keysAdded == nil, !WiiUKeys.keysFileExists() else { return false }
+        return ["wux", "wud", "iso", "tmd"].contains(URL(fileURLWithPath: live.romPath).pathExtension.lowercased())
+    }
 
     /// The installed game as the library holds it now, so a new cover, name or favourite shows at once.
     private var live: GameMetadata { gameManager.games.first { $0.id == game.id } ?? game }
@@ -152,6 +163,9 @@ struct GamePageView: View {
                     titleBlock(alignment: .center)
                     playButtons
                 }
+                if needsKeys || keysAdded != nil || keysError != nil {
+                    keysNotice
+                }
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
@@ -214,6 +228,55 @@ struct GamePageView: View {
         .accessibilityLabel("Play \(live.cardName.name)")
     }
 
+    /// Said before Play, with the fix on the same card.
+    private var keysNotice: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let keysAdded {
+                Label("Added \(keysAdded) key\(keysAdded == 1 ? "" : "s"). This game can start now.", systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundColor(MuffinTheme.brownDarkest)
+            } else {
+                Label("This game is encrypted. It needs the keys.txt dumped from your own Wii U before it can start.", systemImage: "key.fill")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundColor(MuffinTheme.brownDarkest)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(action: importKeys) {
+                    Label("Import keys.txt", systemImage: "square.and.arrow.down")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                }
+                .buttonStyle(MuffinSecondaryButtonStyle())
+                .accessibilityHint("Opens the Files picker to choose your keys.txt.")
+            }
+            if let keysError {
+                Text(keysError)
+                    .font(.system(size: 12))
+                    .foregroundColor(MuffinTheme.alertText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(MuffinTheme.cream, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(MuffinTheme.cautionText.opacity(0.35), lineWidth: 1))
+    }
+
+    private func importKeys() {
+        DocumentImport.present(contentTypes: [.item]) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                do {
+                    keysAdded = try WiiUKeys.importKeys(from: url)
+                    keysError = nil
+                } catch {
+                    keysError = error.localizedDescription
+                }
+            case .failure(let error):
+                keysError = error.localizedDescription
+            }
+        }
+    }
+
     // MARK: Your play
 
     private var yourPlaySection: some View {
@@ -223,7 +286,7 @@ struct GamePageView: View {
             SettingsRow(label: "Size on disk", value: sizeOnDisk.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? "\u{2026}",
                         icon: "internaldrive")
         } header: {
-            SettingsSectionHeader("Your play", icon: "clock.arrow.circlepath", accent: .content)
+            SettingsSectionHeader("Play history", icon: "clock.arrow.circlepath", accent: .content)
         }
     }
 

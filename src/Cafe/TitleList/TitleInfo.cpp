@@ -582,8 +582,12 @@ bool TitleInfo::Mount(std::string_view virtualPath, std::string_view subfolder, 
 		if (!r)
 		{
 			cemuLog_log(LogType::Force, "Failed to mount {} to {}", virtualPath, subfolder);
-			delete m_wudVolume;
-			m_wudVolume = nullptr;
+			// the volume is shared by every mount point of this title: only release it when no earlier mount still uses it
+			if (m_mountpoints.empty())
+			{
+				delete m_wudVolume;
+				m_wudVolume = nullptr;
+			}
 			return false;
 		}
 	}
@@ -599,8 +603,11 @@ bool TitleInfo::Mount(std::string_view virtualPath, std::string_view subfolder, 
 		if (!r)
 		{
 			cemuLog_log(LogType::Force, "Failed to mount {} to {}", virtualPath, subfolder);
-			_ZArchivePool_ReleaseInstance(m_fullPath, m_zarchive);
-			m_zarchive = nullptr;
+			if (m_mountpoints.empty()) // still in use by an earlier mount point otherwise (see the WUD case above)
+			{
+				_ZArchivePool_ReleaseInstance(m_fullPath, m_zarchive);
+				m_zarchive = nullptr;
+			}
 			return false;
 		}
 	}
@@ -616,8 +623,11 @@ bool TitleInfo::Mount(std::string_view virtualPath, std::string_view subfolder, 
 		if (!r)
 		{
 			cemuLog_log(LogType::Force, "Failed to mount {} to {}", virtualPath, subfolder);
-			delete m_wuhbreader;
-			m_wuhbreader = nullptr;
+			if (m_mountpoints.empty()) // still in use by an earlier mount point otherwise (see the WUD case above)
+			{
+				delete m_wuhbreader;
+				m_wuhbreader = nullptr;
+			}
 			return false;
 		}
 	}
@@ -636,7 +646,9 @@ void TitleInfo::Unmount(std::string_view virtualPath)
 		if (!boost::equals(itr.second, virtualPath))
 			continue;
 		fsc_unmount(itr.second.c_str(), itr.first);
-		std::erase(m_mountpoints, itr);
+		// a copy: std::erase compares against its value while it shifts the elements, and itr is one of them
+		const std::pair<sint32, std::string> mountPoint = itr;
+		std::erase(m_mountpoints, mountPoint);
 		// if the last mount point got unmounted, close any open devices
 		if (m_mountpoints.empty())
 		{
@@ -715,7 +727,10 @@ bool TitleInfo::ParseXmlInfo()
 	// code/cos.xml
 	xmlData = fsc_extractFile(fmt::format("{}code/cos.xml", mountPath).c_str());
 	if (xmlData)
+	{
+		delete m_parsedCosXml; // a WUHB with a meta.ini got a default one above
 		m_parsedCosXml = ParsedCosXml::Parse(xmlData->data(), xmlData->size());
+	}
 
 	Unmount(mountPath);
 
@@ -786,6 +801,7 @@ bool TitleInfo::ParseAppXml(std::vector<uint8>& appXmlData)
 	if (!root)
 		return false;
 
+	delete m_parsedAppXml; // a WUHB with a meta.ini got a default one before this is read
 	m_parsedAppXml = new ParsedAppXml();
 
 	// std::stoull throws on an empty or non-numeric value, and nothing above this catches it

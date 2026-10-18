@@ -54,10 +54,17 @@ namespace H264
 
 		~H264AVCDecoder()
 		{
+			// slices still queued would be decoded into the game's output buffers on the way out. Drop them, then let a
+			// decode that is already running finish before the codec context goes away (Destroy() frees what it is using)
+			{
+				std::unique_lock _l(m_decodeQueueMtx);
+				m_decodeQueue.clear();
+			}
 			m_threadShouldExit = true;
 			m_decodeSem.increment();
 			if (m_decoderThread.joinable())
 				m_decoderThread.join();
+			Destroy();
 		}
 
 		void Init(bool isBufferedMode)
@@ -127,9 +134,29 @@ namespace H264
 			result.result.cropBottom = s_dec_op.u1_frame_cropping_rect_bottom_ofst;
 			result.result.cropLeft = s_dec_op.u1_frame_cropping_rect_left_ofst;
 			result.result.cropRight = s_dec_op.u1_frame_cropping_rect_right_ofst;
+			m_lastFrameInfo = result.result;
 
 			m_displayQueue.push_back(s_dec_op.u4_ts);
 
+			_l.unlock();
+			coreinit::OSSignalEvent(m_displayQueueEvt);
+		}
+
+		// Hands a slice that couldn't be decoded back to the game without a new picture. H264DECExecute waits
+		// for a frame after every input (or once 5 are queued in buffered mode), so a slice that never reached
+		// the display queue froze the game for good and kept its slot in m_decodedSliceArray forever.
+		// The game's output buffer keeps whatever image it held, and the size of the last good frame is reported
+		void PushFailedSlice(DecodedSlice& decodedSlice)
+		{
+			std::unique_lock _l(m_decodeQueueMtx);
+			void* imageOutput = decodedSlice.result.imageOutput;
+			double timestamp = decodedSlice.result.timestamp;
+			decodedSlice.result = m_lastFrameInfo;
+			decodedSlice.result.imageOutput = imageOutput;
+			decodedSlice.result.timestamp = timestamp;
+			decodedSlice.result.isDecoded = true;
+			decodedSlice.result.hasFrame = false;
+			m_displayQueue.push_back((uint32)std::distance(m_decodedSliceArray.data(), &decodedSlice));
 			_l.unlock();
 			coreinit::OSSignalEvent(m_displayQueueEvt);
 		}
@@ -143,10 +170,7 @@ namespace H264
 				if (!DetermineBufferSizes(decodedSlice.dataToDecode.m_data, decodedSlice.dataToDecode.m_length, numByteConsumed))
 				{
 					cemuLog_log(LogType::Force, "H264AVC: Unable to determine picture size. Ignoring decode input");
-					std::unique_lock _l(m_decodeQueueMtx);
-					decodedSlice.result.isDecoded = true;
-					decodedSlice.result.hasFrame = false;
-					coreinit::OSSignalEvent(m_displayQueueEvt);
+					PushFailedSlice(decodedSlice);
 					return;
 				}
 				decodedSlice.dataToDecode.m_length -= numByteConsumed;
@@ -183,18 +207,20 @@ namespace H264
 				Decode(decodedSlice);
 				return;
 			}
-			else if (status != 0)
+			// a slice that didn't become a picture will never be output by the decoder, so it's handed back below.
+			// The call can still have output an earlier picture (buffered mode), which is passed on as usual
+			bool sliceFailed = false;
+			if (status != 0)
 			{
-				cemuLog_log(LogType::Force, "H264: Failed to decode frame (error 0x{:08x})", status);
-				decodedSlice.result.hasFrame = false;
+				cemuLog_log(LogType::Force, "H264: Failed to decode frame (error 0x{:08x}, code 0x{:08x})", status, s_dec_op.u4_error_code);
 				cemu_assert_unimplemented();
-				return;
+				sliceFailed = s_dec_op.u4_frame_decoded_flag == 0;
 			}
 
 			bt.Stop();
 			double decodeTime = bt.GetElapsedMilliseconds();
 
-			cemu_assert(s_dec_op.u4_frame_decoded_flag);
+			cemu_assert_debug(s_dec_op.u4_frame_decoded_flag);
 			cemu_assert_debug(s_dec_op.u4_num_bytes_consumed == decodedSlice.dataToDecode.m_length);
 
 			cemu_assert_debug(m_isBufferedMode || s_dec_op.u4_output_present); // if buffered mode is disabled, then every input should output a frame (except for partial slices?)
@@ -241,6 +267,8 @@ namespace H264
 
 			if (s_dec_op.u4_frame_decoded_flag)
 				m_numDecodedFrames++;
+			if (sliceFailed)
+				PushFailedSlice(decodedSlice);
 			// get VUI
 			//ih264d_ctl_get_vui_params_ip_t s_ctl_get_vui_params_ip;
 			//ih264d_ctl_get_vui_params_op_t s_ctl_get_vui_params_op;
@@ -507,6 +535,7 @@ namespace H264
 		bool m_hasBufferSizeInfo{ false };
 		bool m_isBufferedMode{ false };
 		uint32 m_numDecodedFrames{0};
+		DecodeResult m_lastFrameInfo{}; // size and crop of the last picture output, for slices that fail to decode
 		std::vector<std::vector<uint8>> m_displayBuf;
 
 		std::thread m_decoderThread;

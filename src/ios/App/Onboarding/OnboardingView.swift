@@ -357,7 +357,7 @@ private struct OnboardingSpeedControlsPage: View {
     var body: some View {
         OnboardingPageScaffold(
             title: "Speed and controls",
-            subtitle: "Three things affect speed and control:",
+            subtitle: "Good to know before your first game:",
             hero: .symbol("bolt.fill")
         ) {
             MuffinCard {
@@ -373,6 +373,14 @@ private struct OnboardingSpeedControlsPage: View {
                     OnboardingFactRow(
                         systemImage: "gamecontroller.fill",
                         text: "The on-screen pad can add analog sticks and comfort controls, and any MFi, Xbox, or PlayStation controller works right alongside it."
+                    )
+                    OnboardingFactRow(
+                        systemImage: "house.fill",
+                        text: "During a game, the house button at the top (or HOME on a controller) opens the HOME menu: save states, screen layout, the FPS readout and quitting."
+                    )
+                    OnboardingFactRow(
+                        systemImage: "lifepreserver.fill",
+                        text: "If a game won't start, the screen that appears says what to try, and Copy bug report puts everything a helper needs in one text. It's also in the HOME menu and in Settings > Help."
                     )
                 }
                 .padding(16)

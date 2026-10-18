@@ -179,6 +179,10 @@ final class GameDataStore: ObservableObject {
     private let lock = NSLock()
     private var file = GameDataFile()
     private var titleIndex: [TitleIndexRecord] = []
+    /// `titleIndex`'s titles normalized, index for index, built on the first search and dropped
+    /// when the index is replaced. The picker searches on every keystroke, and normalizing every
+    /// title of every entry each time is several regular expressions per title on the main thread.
+    private var normalizedTitleIndex: [[String]]?
     private var cancelRequested = false
     private static let overridesKey = "muffin.gamedata.manualOverrides"
     private static let lastAttemptKey = "muffin.gamedata.lastAutoAttempt"
@@ -232,12 +236,20 @@ final class GameDataStore: ObservableObject {
         let q = ArtTitleNormalizer.normalize(query)
         guard !q.isEmpty else { return [] }
         let words = q.split(separator: " ").map(String.init)
-        lock.lock(); let index = titleIndex; lock.unlock()
+        lock.lock()
+        let index = titleIndex
+        let normalizedIndex: [[String]]
+        if let cached = normalizedTitleIndex {
+            normalizedIndex = cached
+        } else {
+            normalizedIndex = index.map { $0.titles.map(ArtTitleNormalizer.normalize) }
+            normalizedTitleIndex = normalizedIndex
+        }
+        lock.unlock()
         var scored: [(Int, TitleIndexRecord)] = []
-        for rec in index {
+        for (rec, normalizedTitles) in zip(index, normalizedIndex) {
             var best = 0
-            for t in rec.titles {
-                let n = ArtTitleNormalizer.normalize(t)
+            for n in normalizedTitles {
                 var s = 0
                 if n == q { s = 100 } else if n.hasPrefix(q) { s = 80 } else if n.contains(q) { s = 60 }
                 else if words.count > 1, words.allSatisfy({ n.contains($0) }) { s = 40 }
@@ -380,6 +392,7 @@ final class GameDataStore: ObservableObject {
         lock.lock()
         file = newFile
         titleIndex = result.titleIndex
+        normalizedTitleIndex = nil
         lock.unlock()
         await MainActor.run { self.lastScrape = newFile.scrapedAt }
 

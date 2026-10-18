@@ -229,6 +229,7 @@ struct LatteDecompilerShader
 		sint32 loc_baseInstance;
 		sint32 loc_framebufferFetchSize[LATTE_NUM_MAX_TEX_UNITS];
 		std::vector<LatteUniformTextureScaleEntry_t> list_ufTexRescale; // list of mappings for uf_tex*Scale <-> uniform location
+		std::vector<LatteUniformTextureScaleEntry_t> list_ufTexLodBias; // Metal: tex*LodBias <-> uniform location (the sampler's LOD bias, which Metal samplers can't carry)
 		float ufCurrentValueAlphaTestRef;
 		float ufCurrentValueFragCoordScale[2];
 		sint32 loc_verticesPerInstance;
@@ -259,6 +260,7 @@ struct LatteDecompilerOutputUniformOffsets
 	sint32 offset_framebufferFetchSize[LATTE_NUM_MAX_TEX_UNITS];
 	sint32 offset_windowSpaceToClipSpaceTransform;
 	sint32 offset_texScale[LATTE_NUM_MAX_TEX_UNITS];
+	sint32 offset_texLodBias[LATTE_NUM_MAX_TEX_UNITS];
 	sint32 offset_baseVertex{-1};
 	sint32 offset_baseInstance{-1};
 	sint32 offset_verticesPerInstance{-1};
@@ -279,6 +281,7 @@ struct LatteDecompilerOutputUniformOffsets
 		{
 			offset_framebufferFetchSize[i] = -1;
 			offset_texScale[i] = -1;
+			offset_texLodBias[i] = -1;
 		}
 		offset_endOfBlock = 0;
 	}
