@@ -223,6 +223,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showingIconPicker = false
     @State private var showingThemePicker = false
+    @State private var askRestoreMode = false
     @State private var query = ""
     /// Which page the detail pane shows in the sidebar layout. Opens on General, the page
     /// that sits at the top of the sidebar.
@@ -522,18 +523,109 @@ struct SettingsView: View {
 
     /// General gathers the app-wide, non-gameplay settings: the Basic/Advanced mode, how
     /// MuffinEMU looks, and the app itself. It is the detail pane's landing page.
+    /// The mode segmented control's binding, with the Basic/Advanced switch logic from
+    /// SettingsModeSection (switching to Basic stows the advanced values; switching back offers
+    /// to restore them).
+    private var modeChoice: Binding<String> {
+        Binding(
+            get: { settingsModeRaw },
+            set: { newValue in
+                guard newValue != settingsModeRaw, let mode = SettingsMode(rawValue: newValue) else { return }
+                settingsModeRaw = newValue
+                switch mode {
+                case .basic: AdvancedSettings.switchToBasic()
+                case .advanced: askRestoreMode = AdvancedSettings.hasSnapshot
+                }
+            })
+    }
+
+    /// General, rebuilt as the card-based layout (grouped cards, hairline dividers, roomy rows)
+    /// instead of a system Form — the experimental EspressU-inspired direction.
     private var generalPage: some View {
-        pageBackground("General") {
-            Section {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
                 Text("Settings mode, how MuffinEMU looks, and the app itself. None of this changes how games run.")
                     .font(.system(size: 13))
-                    .foregroundColor(MuffinTheme.secondaryText)
+                    .foregroundColor(MuffinGlass.secondaryInk(MuffinTheme.secondaryText))
                     .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 10)
+
+                VStack(alignment: .leading, spacing: 7) {
+                    MuffinGroupHeader("Settings mode")
+                    MuffinGroupCard {
+                        VStack(alignment: .leading, spacing: 9) {
+                            Picker("Settings mode", selection: modeChoice) {
+                                ForEach(SettingsMode.allCases) { mode in
+                                    Text(mode.title).tag(mode.rawValue)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            Text(isAdvanced
+                                 ? "Everything is shown, including the settings most people don't need."
+                                 : "Only the settings most people need. The rest are off, at their defaults.")
+                                .font(.system(size: 12))
+                                .foregroundColor(MuffinGlass.secondaryInk(MuffinTheme.secondaryText))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 7) {
+                    MuffinGroupHeader("Appearance")
+                    MuffinGroupCard {
+                        Button { showingThemePicker = true } label: {
+                            MuffinCardRow(icon: "paintpalette.fill", title: "Theme",
+                                          subtitle: "Colours across the whole app") { MuffinRowChevron() }
+                        }.buttonStyle(.plain)
+                        MuffinCardDivider()
+                        Button { showingIconPicker = true } label: {
+                            MuffinCardRow(icon: "app.badge.fill", title: "App icon",
+                                          subtitle: "Home-screen icon and its style") { MuffinRowChevron() }
+                        }.buttonStyle(.plain)
+                        MuffinCardDivider()
+                        NavigationLink {
+                            pageBackground("Appearance") {
+                                AppearanceSettingsSection(showingIconPicker: $showingIconPicker,
+                                                          showingThemePicker: $showingThemePicker)
+                            }
+                        } label: {
+                            MuffinCardRow(icon: "slider.horizontal.3", title: "More appearance options",
+                                          subtitle: "Liquid Glass, flat or Classic, and more") { MuffinRowChevron() }
+                        }.buttonStyle(.plain)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 7) {
+                    MuffinGroupHeader("App")
+                    MuffinGroupCard {
+                        MuffinCardRow(icon: "number", title: "Version") { MuffinRowValue(appVersionString) }
+                        MuffinCardDivider()
+                        MuffinCardRow(icon: "person.fill", title: "Created by") { MuffinRowValue("Void") }
+                        MuffinCardDivider()
+                        NavigationLink {
+                            pageBackground("About") { AboutSettingsSection() }
+                        } label: {
+                            MuffinCardRow(icon: "info.circle", title: "About, credits and reset") { MuffinRowChevron() }
+                        }.buttonStyle(.plain)
+                    }
+                }
             }
-            SettingsModeSection()
-            AppearanceSettingsSection(showingIconPicker: $showingIconPicker,
-                                      showingThemePicker: $showingThemePicker)
-            appInfoSection
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 28)
+        }
+        .background(MuffinTheme.backgroundGradient.ignoresSafeArea())
+        .navigationTitle("General")
+        .muffinOpaqueNavigationBar(MuffinTheme.formGround)
+        .navigationBarTitleDisplayMode(.large)
+        .muffinScrollEdgeForGlass()
+        .alert("Restore your previous advanced settings?", isPresented: $askRestoreMode) {
+            Button("Restore") { AdvancedSettings.restoreSnapshot() }
+            Button("Keep defaults", role: .cancel) { AdvancedSettings.discardSnapshot() }
+        } message: {
+            Text("They were saved when you switched to Basic. Keep defaults forgets them.")
         }
     }
 
