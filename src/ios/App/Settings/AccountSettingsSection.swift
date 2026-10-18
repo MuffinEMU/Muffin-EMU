@@ -154,7 +154,7 @@ struct NetworkServiceSettingsSection: View {
             DeviceConnectionStatusRow()
 
             NavigationLink {
-                Form { CustomServersSettingsSection() }
+                Form { Group { CustomServersSettingsSection() }.muffinGlassRows()}.muffinGlassFormGround()
                     .navigationTitle("Custom servers")
             } label: {
                 Label("Custom servers", systemImage: "server.rack")

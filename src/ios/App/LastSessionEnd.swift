@@ -93,7 +93,9 @@ struct LibraryLastSessionBanner: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(MuffinTheme.formGround, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .muffinGlassBackground(in: RoundedRectangle(cornerRadius: 12, style: .continuous)) {
+            RoundedRectangle(cornerRadius: 12, style: .continuous).fill(MuffinTheme.formGround)
+        }
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(MuffinTheme.cautionText.opacity(0.35), lineWidth: 1))
         .accessibilityElement(children: .contain)
     }

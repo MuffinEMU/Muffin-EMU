@@ -271,9 +271,9 @@ struct SettingsView: View {
             MuffinTheme.backgroundGradient
                 .ignoresSafeArea()
 
-            Form {
+            Form { Group {
                 content()
-            }
+            }.muffinGlassRows()}.muffinGlassFormGround()
         }
         .navigationTitle(title)
         .muffinOpaqueNavigationBar(MuffinTheme.formGround)
@@ -391,7 +391,7 @@ struct SettingsView: View {
     private var isSearching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
 
     @ViewBuilder private var hub: some View {
-        Form {
+        Form { Group {
             if isSearching {
                 if results.isEmpty {
                     Section {
@@ -418,7 +418,7 @@ struct SettingsView: View {
                     }
                 }
             }
-        }
+        }.muffinGlassRows()}.muffinGlassFormGround()
     }
 
     // MARK: Sidebar layout (iOS 16+)

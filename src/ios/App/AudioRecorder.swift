@@ -272,7 +272,7 @@ struct AudioRecordingNoticeModifier: ViewModifier {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 4)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.black.opacity(0.85)))
+        .muffinDarkGlassPanel(in: RoundedRectangle(cornerRadius: MuffinGlass.isActive ? 24 : 14, style: .continuous), fallbackOpacity: 0.85)
         .frame(maxWidth: 520)
         .padding(.horizontal, 16)
         .padding(.bottom, 16)

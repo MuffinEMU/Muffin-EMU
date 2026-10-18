@@ -139,7 +139,7 @@ struct LaunchLogView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(Color.black.opacity(0.55))
+            .background(MuffinGlass.isActive ? Color.clear : Color.black.opacity(0.55))
 
             ScrollViewReader { proxy in
                 let firstLine = store.firstLineNumber
@@ -170,11 +170,11 @@ struct LaunchLogView: View {
                 }
             }
         }
-        .background(Color.black.opacity(0.82))
-        .cornerRadius(12)
+        .muffinDarkGlassPanel(in: RoundedRectangle(cornerRadius: MuffinGlass.isActive ? 20 : 12, style: .continuous), fallbackOpacity: 0.82)
+        .cornerRadius(MuffinGlass.isActive ? 20 : 12)
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+            RoundedRectangle(cornerRadius: MuffinGlass.isActive ? 20 : 12)
+                .stroke(Color.white.opacity(MuffinGlass.isActive ? 0 : 0.12), lineWidth: 1)
         )
     }
 

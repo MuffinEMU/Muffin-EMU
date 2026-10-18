@@ -86,7 +86,7 @@ struct OrganizedControllerSkinSelector: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .background(MuffinTheme.cream)
+            .background(MuffinGlass.isActive ? Color.clear : MuffinTheme.cream)
             .accessibilityValue(selectedSkin.name)
             .accessibilityHint(showingSelector ? "Hides the list of skins" : "Shows the list of skins")
 
@@ -121,12 +121,15 @@ struct OrganizedControllerSkinSelector: View {
                 .frame(maxHeight: verticalSizeClass == .compact ? 180 : 400)
             }
         }
-        .background(MuffinTheme.cream)
-        .cornerRadius(12)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(MuffinTheme.wrapper, lineWidth: 1)
-        )
+        .muffinGlassBackground(in: RoundedRectangle(cornerRadius: 22, style: .continuous)) {
+            MuffinTheme.cream
+                .cornerRadius(12)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(MuffinTheme.wrapper, lineWidth: 1)
+                )
+        }
+        .clipShape(RoundedRectangle(cornerRadius: MuffinGlass.isActive ? 22 : 12, style: .continuous))
     }
 }
 

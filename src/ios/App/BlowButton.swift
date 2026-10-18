@@ -82,7 +82,7 @@ struct BlowButton: View {
                 // once the on-state tint below darkens or lightens what is behind it.
                 .foregroundColor(active
                                  ? LegibleInk.ensure(MuffinTheme.pixelBlue, on: MuffinTheme.cream)
-                                 : MuffinTheme.brownDark)
+                                 : MuffinGlass.ink(MuffinTheme.brownDark))
         }
         // The on state is a tint inside the style, over the button's own fill, so it still
         // follows the theme and the pressed/disabled treatment, and stays the size of the

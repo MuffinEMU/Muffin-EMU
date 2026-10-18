@@ -96,7 +96,7 @@ struct AmiiboSheet: View {
             ZStack {
                 MuffinTheme.backgroundGradient.ignoresSafeArea()
 
-                List {
+                List { Group {
                     Section {
                         Button {
                             choose()
@@ -135,7 +135,7 @@ struct AmiiboSheet: View {
                             .onDelete(perform: delete)
                         }
                     }
-                }
+                }.muffinGlassRows()}.muffinGlassFormGround()
             }
             .navigationTitle("Scan amiibo")
             .muffinOpaqueNavigationBar(MuffinTheme.formGround)

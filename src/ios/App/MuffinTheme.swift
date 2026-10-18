@@ -674,7 +674,10 @@ extension View {
     /// Painted, not a material, so it adds no blur. Pass `MuffinTheme.formGround` on Form and
     /// List screens so the bar matches the rows' ground. iOS 15 keeps the system bar.
     @ViewBuilder func muffinOpaqueNavigationBar(_ fill: Color = MuffinTheme.cream) -> some View {
-        if #available(iOS 16.0, *) {
+        if MuffinGlass.isActive {
+            // Liquid Glass: leave the system's glass bar and its soft scroll edge alone.
+            self
+        } else if #available(iOS 16.0, *) {
             self.toolbarBackground(fill, for: .navigationBar)
                 .toolbarBackground(.visible, for: .navigationBar)
         } else {
@@ -736,12 +739,9 @@ struct MuffinCard<Content: View>: View {
     }
 
     var body: some View {
-        content
-            .background(fill.overlay(MuffinTheme.surfaceSheen))
-            .clipShape(shape)
-            // strokeBorder keeps the whole line inside the clip shape.
-            .overlay(shape.strokeBorder(MuffinTheme.edgeStroke, lineWidth: 1))
-            .muffinElevation(.resting)
+        // Liquid Glass on iOS 26; otherwise the cream card below. strokeBorder keeps the whole
+        // line inside the clip shape.
+        content.muffinGlassSurface(shape, fill: fill)
     }
 }
 
@@ -770,6 +770,19 @@ struct MuffinPrimaryButtonStyle: ButtonStyle {
 
         var body: some View {
             let pressed = configuration.isPressed
+            // Liquid Glass: muffin-top tinted interactive glass; the glass handles the press.
+            if MuffinGlass.isActive {
+                return AnyView(configuration.label
+                    .font(MuffinTheme.Font.primaryButton)
+                    .foregroundColor(MuffinTheme.onMuffinTop)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .muffinGlassOnly(in: Capsule(), tint: MuffinTheme.muffinTopDark, interactive: true)
+                    .opacity(isEnabled ? 1 : 0.45)
+                    .onChange(of: pressed) { nowPressed in
+                        if nowPressed { MuffinHaptics.tap() }
+                    })
+            }
             // Classic UI: opaque muffin-top gradient, 14pt corner, one shadow, 0.97 scale.
             if UIStyle.isClassic {
                 return AnyView(configuration.label
@@ -828,6 +841,19 @@ struct MuffinSecondaryButtonStyle: ButtonStyle {
 
         var body: some View {
             let pressed = configuration.isPressed
+            // Liquid Glass: clear interactive glass capsule, system ink.
+            if MuffinGlass.isActive {
+                return AnyView(configuration.label
+                    .font(MuffinTheme.Font.secondaryButton)
+                    .foregroundColor(.primary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .muffinGlassOnly(in: Capsule(), interactive: true)
+                    .opacity(isEnabled ? 1 : 0.45)
+                    .onChange(of: pressed) { nowPressed in
+                        if nowPressed { MuffinHaptics.tap() }
+                    })
+            }
             // Classic UI: cream fill that dims to 0.7 on press, 12pt corner, flat 1pt outline.
             if UIStyle.isClassic {
                 return AnyView(configuration.label

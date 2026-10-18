@@ -152,7 +152,7 @@ struct EmulatedDevicesView: View {
             ZStack {
                 MuffinTheme.backgroundGradient.ignoresSafeArea()
 
-                List {
+                List { Group {
                     Section {
                         Picker("Device", selection: $device) {
                             ForEach(EmulatedDevice.allCases) { device in
@@ -171,7 +171,7 @@ struct EmulatedDevicesView: View {
 
                     EmulatedDeviceSlotsSection(device: device)
                         .id(device)
-                }
+                }.muffinGlassRows()}.muffinGlassFormGround()
             }
             .navigationTitle("Emulated Devices")
             .muffinOpaqueNavigationBar(MuffinTheme.formGround)
@@ -347,7 +347,7 @@ private struct CreateEmulatedFigureView: View {
         ZStack {
             MuffinTheme.backgroundGradient.ignoresSafeArea()
 
-            Form {
+            Form { Group {
                 Section("Figure") {
                     NavigationLink(selectedName) {
                         EmulatedFigurePicker(figures: figures) { figure in
@@ -387,7 +387,7 @@ private struct CreateEmulatedFigureView: View {
                         ScreenStatusCallout(tone: .warning, message: errorMessage)
                     }
                 }
-            }
+            }.muffinGlassRows()}.muffinGlassFormGround()
             .navigationTitle("Create Figure")
             .muffinOpaqueNavigationBar(MuffinTheme.formGround)
             #if os(iOS)
@@ -463,7 +463,7 @@ private struct EmulatedFigurePicker: View {
         ZStack {
             MuffinTheme.backgroundGradient.ignoresSafeArea()
 
-            List {
+            List { Group {
                 if figures.isEmpty {
                     // The core has no built-in figures for this device/slot.
                     ScreenEmptyState(
@@ -507,7 +507,7 @@ private struct EmulatedFigurePicker: View {
                         .buttonStyle(.plain)
                     }
                 }
-            }
+            }.muffinGlassRows()}.muffinGlassFormGround()
         }
         .navigationTitle("Choose a Figure")
         .muffinOpaqueNavigationBar(MuffinTheme.formGround)

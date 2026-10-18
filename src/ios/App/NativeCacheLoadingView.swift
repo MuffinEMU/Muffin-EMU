@@ -96,7 +96,7 @@ private struct CacheLoadingCard: View {
         }
         .padding(14)
         .frame(width: width)
-        .background(Color.black.opacity(0.78), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .muffinDarkGlassPanel(in: RoundedRectangle(cornerRadius: MuffinGlass.isActive ? 24 : 14, style: .continuous), fallbackOpacity: 0.78)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(state.title)
         .accessibilityValue("\(percent) percent, \(countText)")

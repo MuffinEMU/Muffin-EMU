@@ -279,7 +279,7 @@ struct HomeMenuOverlay: View {
     }
 
     private func card(availableHeight: CGFloat) -> some View {
-        MuffinCard(cornerRadius: MuffinTheme.Radius.card) {
+        MuffinCard(cornerRadius: MuffinGlass.isActive ? MuffinTheme.Radius.sheet : MuffinTheme.Radius.card) {
             VStack(spacing: 8) {
                 header
                 // Scrolls when the card is taller than the screen (an iPhone in landscape), and follows the
@@ -292,6 +292,7 @@ struct HomeMenuOverlay: View {
                                     .id(row.id)
                             }
                         }
+                        .muffinGlassContainer(spacing: 8)
                         // Room for the focus ring, which is drawn just outside the row.
                         .padding(4)
                         .background(
@@ -649,7 +650,7 @@ private struct HomeMenuRowView: View {
     }
 
     private var focusRing: some View {
-        RoundedRectangle(cornerRadius: MuffinTheme.Radius.chip + 2, style: .continuous)
+        RoundedRectangle(cornerRadius: MuffinGlass.isActive ? 24 : MuffinTheme.Radius.chip + 2, style: .continuous)
             .strokeBorder(MuffinTheme.pixelBlue, lineWidth: 3)
             .padding(-2)
             .opacity(isFocused ? 1 : 0)
