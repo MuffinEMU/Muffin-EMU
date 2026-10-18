@@ -117,8 +117,8 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .controls: return "The on-screen pad, motion aiming and figure portals."
         case .screenAndSound: return "Screen layout, a TV or second screen, audio, the FPS counter and alerts."
         case .library: return "Wii U keys, how the library looks, cover art and the Wii U Menu."
-        case .accountOnline: return "Your Wii U accounts and online play."
-        case .appearance: return "Theme, colours, the app icon and Premium."
+        case .accountOnline: return "Your Wii U accounts, online play and Premium."
+        case .appearance: return "Theme, colours and the app icon."
         case .storage: return "Where files live, settings backups and moving everything to another device."
         case .support: return "When a game won't start, reporting a problem, diagnostics, credits and reset."
         }
@@ -167,8 +167,8 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .controls: return [.onScreenControls, .motion, .emulatedDevices]
         case .screenAndSound: return [.display, .audio, .overlay, .notifications]
         case .library: return [.keys, .library, .coverArt, .wiiUMenu]
-        case .accountOnline: return [.account, .network]
-        case .appearance: return [.appearance, .premium]
+        case .accountOnline: return [.account, .network, .premium]
+        case .appearance: return [.appearance]
         case .storage: return [.files, .backup, .migration]
         case .support: return [.troubleshooting, .deviceReport, .diagnostics, .about]
         }
@@ -182,7 +182,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     static let groups: [(title: String, categories: [SettingsCategory])] = [
         ("Playing", [.emulation, .controls, .screenAndSound]),
         ("Your games", [.library, .accountOnline]),
-        ("This app", [.appearance, .storage, .support]),
+        ("This app", [.storage, .support]),
     ]
 
     /// Something on this page that needs the player's attention, shown on the hub in place of the
@@ -224,8 +224,9 @@ struct SettingsView: View {
     @State private var showingIconPicker = false
     @State private var showingThemePicker = false
     @State private var query = ""
-    /// Which page the detail pane shows in the sidebar layout. Opens on the most-used page.
-    @State private var selection: SettingsRoute? = .category(.emulation)
+    /// Which page the detail pane shows in the sidebar layout. Opens on General, the page
+    /// that sits at the top of the sidebar.
+    @State private var selection: SettingsRoute? = .general
     @ObservedObject private var accountSheets = AccountSheetRouter.shared
     /// Basic hides the advanced rows (see AdvancedSettings); the pages need it for whole sections.
     @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
@@ -276,7 +277,9 @@ struct SettingsView: View {
         }
         .navigationTitle(title)
         .muffinOpaqueNavigationBar(MuffinTheme.formGround)
-        .navigationBarTitleDisplayMode(.inline)
+        // A large title here reads roomier than the old centred inline one and fills the
+        // top of the detail pane instead of leaving it bare.
+        .navigationBarTitleDisplayMode(.large)
     }
 
     private func categoryPage(_ category: SettingsCategory) -> some View {
@@ -404,7 +407,9 @@ struct SettingsView: View {
                     }
                 }
             } else {
-                SettingsModeSection()
+                Section {
+                    generalHubRow
+                }
                 ForEach(SettingsCategory.groups, id: \.title) { group in
                     Section(header: Text(group.title)) {
                         ForEach(group.categories) { category in
@@ -439,15 +444,16 @@ struct SettingsView: View {
                     .foregroundColor(MuffinTheme.cautionText)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 5)
     }
 
     @available(iOS 16.0, *)
     @ViewBuilder private var sidebar: some View {
         List(selection: $selection) {
             Section {
-                sidebarRow(icon: "slider.horizontal.3", accent: .system, title: "Settings mode",
-                           subtitle: isAdvanced ? "Advanced" : "Basic", attention: false)
+                sidebarRow(icon: "gearshape", accent: .system, title: "General",
+                           subtitle: isAdvanced ? "Advanced mode · theme · app" : "Basic mode · theme · app",
+                           attention: false)
                     .tag(SettingsRoute.general)
             }
 
@@ -491,9 +497,67 @@ struct SettingsView: View {
         }
     }
 
+    /// The app's own version string, read the way AboutSettingsSection reads it.
+    private var appVersionString: String {
+        let info = Bundle.main.infoDictionary
+        let short = info?["CFBundleShortVersionString"] as? String ?? "0.0"
+        let build = info?["CFBundleVersion"] as? String ?? "0"
+        return "\(short) (\(build))"
+    }
+
+    /// A light app block for the General page: version, author, and a way through to the
+    /// full About page (credits, licences, reset) without repeating its contents here.
+    private var appInfoSection: some View {
+        Section {
+            SettingsRow(label: "Version", value: appVersionString, icon: "number")
+            SettingsRow(label: "Created by", value: "Void", icon: "person.fill")
+            NavigationLink {
+                pageBackground("About") { AboutSettingsSection() }
+            } label: {
+                Label("About, credits and reset", systemImage: "info.circle")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+            }
+            .foregroundColor(MuffinTheme.brownDarkest)
+        } header: {
+            SettingsSectionHeader("App", icon: "app.badge", accent: .system)
+        }
+        .foregroundColor(MuffinTheme.brownDarkest)
+    }
+
+    /// General gathers the app-wide, non-gameplay settings: the Basic/Advanced mode, how
+    /// MuffinEMU looks, and the app itself. It is the detail pane's landing page.
     private var generalPage: some View {
-        pageBackground("Settings mode") {
+        pageBackground("General") {
+            Section {
+                Text("Settings mode, how MuffinEMU looks, and the app itself. None of this changes how games run.")
+                    .font(.system(size: 13))
+                    .foregroundColor(MuffinTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             SettingsModeSection()
+            AppearanceSettingsSection(showingIconPicker: $showingIconPicker,
+                                      showingThemePicker: $showingThemePicker)
+            appInfoSection
+        }
+    }
+
+    /// The hub's entry into the General page (one-column iOS 15 layout).
+    private var generalHubRow: some View {
+        NavigationLink {
+            generalPage
+        } label: {
+            HStack(spacing: 12) {
+                iconChip("gearshape", .system)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("General")
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    Text("Settings mode, appearance and the app.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+            }
+            .padding(.vertical, 3)
         }
     }
 
@@ -506,7 +570,7 @@ struct SettingsView: View {
         case .item(let item):
             pageBackground(item.title) { sectionView(item) }
         case .none:
-            categoryPage(.emulation)
+            generalPage
         }
     }
 
