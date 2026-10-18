@@ -323,12 +323,7 @@ struct SettingsView: View {
     }
 
     private func iconChip(_ icon: String, _ accent: SettingsSectionAccent) -> some View {
-        Image(systemName: icon)
-            .font(.system(size: 16, weight: .semibold))
-            .foregroundColor(accent.color)
-            .frame(width: 34, height: 34)
-            .background(accent.color.opacity(0.15))
-            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        MuffinGlassIconChip(systemName: icon, accent: accent.color, size: 34, cornerRadius: 10)
     }
 
     private func hubRow(_ category: SettingsCategory) -> some View {

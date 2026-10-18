@@ -51,6 +51,8 @@ extension View {
         #if compiler(>=6.2)
         if #available(iOS 26.0, *), UIStyle.allowsLiquidGlass {
             self.muffinGlassEffect(in: shape, tint: tint, interactive: interactive)
+                .muffinGlassRim(shape)
+                .muffinGlassLift(!interactive)
         } else {
             self.muffinPaintedSurface(shape, fill: fill, elevation: elevation)
         }
@@ -70,6 +72,7 @@ extension View {
         #if compiler(>=6.2)
         if #available(iOS 26.0, *), UIStyle.allowsLiquidGlass {
             self.muffinGlassEffect(in: shape, tint: tint, interactive: interactive)
+                .muffinGlassRim(shape)
         } else {
             self.background(fallback())
         }
@@ -98,12 +101,46 @@ extension View {
         #if compiler(>=6.2)
         if #available(iOS 26.0, *), UIStyle.allowsLiquidGlass {
             self.muffinGlassEffect(in: shape, tint: tint, interactive: interactive)
+                .muffinGlassRim(shape)
         } else {
             self
         }
         #else
         self
         #endif
+    }
+
+    /// A hairline specular rim over a glass shape: bright along the top-leading edge and fading
+    /// across, so a surface reads as a cut piece of glass with a crisp edge instead of a soft
+    /// translucent blob. Drawn with `plusLighter` so it reads as a highlight on light and dark
+    /// glass alike. No-op below iOS 26 (the painted look has its own `edgeStroke` rim).
+    @ViewBuilder func muffinGlassRim<S: Shape>(_ shape: S, strength: Double = 1) -> some View {
+        if MuffinGlass.isActive {
+            self.overlay(
+                shape.stroke(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.6 * strength),
+                                 Color.white.opacity(0.14 * strength),
+                                 Color.white.opacity(0.02 * strength)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing),
+                    lineWidth: 0.75)
+                    .blendMode(.plusLighter))
+                .allowsHitTesting(false)
+        } else {
+            self
+        }
+    }
+
+    /// A soft ambient shadow so a glass surface lifts off the content behind it. Glass gets its
+    /// depth from the material itself; this only separates a card or chip from the ground so the
+    /// floating layer reads clearly. No-op below iOS 26 (the painted look carries its own
+    /// elevation).
+    @ViewBuilder func muffinGlassLift(_ on: Bool = true) -> some View {
+        if MuffinGlass.isActive && on {
+            self.shadow(color: Color.black.opacity(0.13), radius: 7, x: 0, y: 3)
+        } else {
+            self
+        }
     }
 
     /// The pre-glass card look. Shared by the fallbacks above.
@@ -257,6 +294,34 @@ struct MuffinGlassPill<Content: View>: View {
         content
             .muffinGlassBackground(in: Capsule(), tint: tint) {
                 Capsule().fill(fallbackFill)
+            }
+    }
+}
+
+// MARK: - Glass icon chip
+
+/// A small tinted chip for a section or row icon. On Liquid Glass it is a tinted glass tile with
+/// the shared specular rim, so the glyph reads as a little physical chip of coloured glass; below
+/// iOS 26 it is the painted tinted tile with the lighting pass and a faint rim. Gives Settings a
+/// consistent, dimensional icon treatment instead of a flat colour swatch.
+struct MuffinGlassIconChip: View {
+    let systemName: String
+    var accent: Color
+    var size: CGFloat = 34
+    var cornerRadius: CGFloat = 10
+
+    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: cornerRadius, style: .continuous) }
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: size * 0.46, weight: .semibold))
+            .foregroundColor(accent)
+            .frame(width: size, height: size)
+            // muffinGlassBackground already adds the specular rim on Liquid Glass.
+            .muffinGlassBackground(in: shape, tint: accent.opacity(0.55)) {
+                shape.fill(accent.opacity(0.16))
+                    .overlay(MuffinTheme.surfaceSheen.clipShape(shape))
+                    .overlay(shape.strokeBorder(accent.opacity(0.22), lineWidth: 1))
             }
     }
 }
