@@ -116,6 +116,8 @@ extension View {
     /// glass alike. No-op below iOS 26 (the painted look has its own `edgeStroke` rim).
     @ViewBuilder func muffinGlassRim<S: Shape>(_ shape: S, strength: Double = 1) -> some View {
         if MuffinGlass.isActive {
+            // allowsHitTesting(false) must sit on the rim overlay itself, not on `self`, or the
+            // overlay swallows every tap on the surface below it (buttons, rows, cards).
             self.overlay(
                 shape.stroke(
                     LinearGradient(
@@ -124,8 +126,8 @@ extension View {
                                  Color.white.opacity(0.02 * strength)],
                         startPoint: .topLeading, endPoint: .bottomTrailing),
                     lineWidth: 0.75)
-                    .blendMode(.plusLighter))
-                .allowsHitTesting(false)
+                    .blendMode(.plusLighter)
+                    .allowsHitTesting(false))
         } else {
             self
         }
