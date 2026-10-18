@@ -611,6 +611,9 @@ static void ios_bridge_thread_begin(const char* name, bool utilityQoS = true)
 //
 // Jetsam delivers no signal and takes any buffered log with it, so these samples go
 // through the synchronous checkpoint write, not cemuLog.
+size_t PPCRecompiler_getJitArenaSize();
+size_t PPCRecompiler_getJitArenaUsed();
+
 namespace {
     std::atomic<bool> g_memWatchRunning{false};
 
@@ -645,6 +648,11 @@ namespace {
         if (n > 0 && n < (int)sizeof(line))
         {
             int m = snprintf(line + n, sizeof(line) - n, " | address space reserved %llu MB", (unsigned long long)(cemu_mem_virtual_bytes() / (1024ull * 1024ull)));
+            if (m > 0) n += m;
+            // The recompiled code is real memory too: one line should say how much of the footprint it is.
+            const uint64_t arena = (uint64_t)PPCRecompiler_getJitArenaSize();
+            m = snprintf(line + n, sizeof(line) - n, arena ? " | JIT code %llu of %llu MB" : " | no JIT arena (interpreter)",
+                         (unsigned long long)(PPCRecompiler_getJitArenaUsed() / (1024ull * 1024ull)), (unsigned long long)(arena / (1024ull * 1024ull)));
             if (m > 0) n += m;
         }
         auto& w = LatteWait::Get();
