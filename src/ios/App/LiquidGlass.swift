@@ -13,6 +13,17 @@ import SwiftUI
 // player has not turned Liquid Glass off, and Classic UI is not on). In every other case each
 // helper draws the pre-glass MuffinEMU look: the theme's cream fill, lighting pass, rim and
 // elevation, so iOS 15 to 25 render exactly as before.
+//
+// Two layers, kept apart (Apple's rule for Liquid Glass):
+//   • CONTENT — settings rows, library cards, sheets — is calm and legible. On iOS 26 it is a
+//     warm frosted *material* (`muffinGlassSurface`, i.e. every MuffinCard), never the glass
+//     effect, so nothing competes with the chrome floating above it.
+//   • CHROME — the sidebar, bars, the in-game top bar, the HOME menu, buttons, the FPS pill,
+//     icon chips — is real Liquid Glass (`muffinGlassBackground` / `muffinGlassOnly`), floating
+//     over the content.
+// Depth comes from the material refracting what is behind it and from concentric corners, NOT
+// from drawn rims or drop shadows. (The pre-glass painted look keeps its own rim and elevation,
+// which are legitimate there.)
 
 enum MuffinGlass {
     /// True when glass should be drawn right now.
@@ -36,11 +47,14 @@ enum MuffinGlass {
 }
 
 extension View {
-    /// A Liquid Glass surface in `shape`. Without glass: `fill` with the lighting pass, the
-    /// theme rim and `elevation`, which is what MuffinCard and the secondary button wore.
+    /// A CONTENT surface in `shape`: a card, a settings section, a sheet panel. On Liquid Glass
+    /// it is a warm frosted material (the theme fill washed over `.regularMaterial`) with a
+    /// hairline rim and concentric corners — calm and legible, so the glass chrome above it can
+    /// do the refracting. Below iOS 26 it is the painted cream card (`fill` + lighting pass +
+    /// theme rim + `elevation`), exactly as before.
     ///
-    /// - tint: a theme colour for the glass to pick up (accent or muffin-top). Nil is clear glass.
-    /// - interactive: the glass reacts to touch (use on buttons and tappable rows only).
+    /// `tint` / `interactive` are accepted for call-site compatibility and ignored for content
+    /// (content is never interactive glass).
     @ViewBuilder func muffinGlassSurface<S: InsettableShape>(
         _ shape: S,
         tint: Color? = nil,
@@ -50,9 +64,7 @@ extension View {
     ) -> some View {
         #if compiler(>=6.2)
         if #available(iOS 26.0, *), UIStyle.allowsLiquidGlass {
-            self.muffinGlassEffect(in: shape, tint: tint, interactive: interactive)
-                .muffinGlassRim(shape)
-                .muffinGlassLift(!interactive)
+            self.muffinContentMaterial(shape, fill: fill)
         } else {
             self.muffinPaintedSurface(shape, fill: fill, elevation: elevation)
         }
@@ -61,8 +73,8 @@ extension View {
         #endif
     }
 
-    /// Glass behind the view, or nothing special: for a view that already has its own
-    /// fallback background and only wants the glass swapped in on iOS 26.
+    /// CHROME glass behind the view (bars, the in-game top bar, overlays), or the supplied
+    /// fallback below iOS 26. Clean glass: the material alone, no drawn rim.
     @ViewBuilder func muffinGlassBackground<S: Shape, F: View>(
         in shape: S,
         tint: Color? = nil,
@@ -72,13 +84,35 @@ extension View {
         #if compiler(>=6.2)
         if #available(iOS 26.0, *), UIStyle.allowsLiquidGlass {
             self.muffinGlassEffect(in: shape, tint: tint, interactive: interactive)
-                .muffinGlassRim(shape)
         } else {
             self.background(fallback())
         }
         #else
         self.background(fallback())
         #endif
+    }
+
+    /// A CONTENT background in `shape` (the library panel, a game card): the warm frosted
+    /// material on Liquid Glass, the supplied painted fallback below iOS 26. Unlike
+    /// `muffinGlassBackground` this never uses the glass effect — content stays calm so the
+    /// chrome above it reads. No stroke of its own; the caller adds a hairline if it wants one.
+    /// `wash` is how much of the warm fill sits over the material: a low value (an airy ground
+    /// panel) lets the gradient through; a high value (a card tile) reads as near-solid cream, so
+    /// a tile lifts clearly off the panel behind it instead of frosting-on-frosting into mud.
+    @ViewBuilder func muffinContentBackground<S: Shape, F: View>(
+        in shape: S,
+        fill: Color = MuffinTheme.cream,
+        wash: Double = 0.40,
+        @ViewBuilder fallback: () -> F
+    ) -> some View {
+        if MuffinGlass.isActive {
+            self.background {
+                shape.fill(.regularMaterial)
+                shape.fill(fill.opacity(wash))
+            }
+        } else {
+            self.background(fallback())
+        }
     }
 
     /// A dark panel for text drawn white over the game (logs, progress, dialogs). On Liquid
@@ -92,7 +126,8 @@ extension View {
         }
     }
 
-    /// Glass behind the view when active; otherwise the view is returned untouched.
+    /// CHROME glass behind the view when active; otherwise the view is returned untouched.
+    /// Clean glass, no drawn rim.
     @ViewBuilder func muffinGlassOnly<S: Shape>(
         in shape: S,
         tint: Color? = nil,
@@ -101,7 +136,6 @@ extension View {
         #if compiler(>=6.2)
         if #available(iOS 26.0, *), UIStyle.allowsLiquidGlass {
             self.muffinGlassEffect(in: shape, tint: tint, interactive: interactive)
-                .muffinGlassRim(shape)
         } else {
             self
         }
@@ -110,42 +144,7 @@ extension View {
         #endif
     }
 
-    /// A hairline specular rim over a glass shape: bright along the top-leading edge and fading
-    /// across, so a surface reads as a cut piece of glass with a crisp edge instead of a soft
-    /// translucent blob. Drawn with `plusLighter` so it reads as a highlight on light and dark
-    /// glass alike. No-op below iOS 26 (the painted look has its own `edgeStroke` rim).
-    @ViewBuilder func muffinGlassRim<S: Shape>(_ shape: S, strength: Double = 1) -> some View {
-        if MuffinGlass.isActive {
-            // allowsHitTesting(false) must sit on the rim overlay itself, not on `self`, or the
-            // overlay swallows every tap on the surface below it (buttons, rows, cards).
-            self.overlay(
-                shape.stroke(
-                    LinearGradient(
-                        colors: [Color.white.opacity(0.6 * strength),
-                                 Color.white.opacity(0.14 * strength),
-                                 Color.white.opacity(0.02 * strength)],
-                        startPoint: .topLeading, endPoint: .bottomTrailing),
-                    lineWidth: 0.75)
-                    .blendMode(.plusLighter)
-                    .allowsHitTesting(false))
-        } else {
-            self
-        }
-    }
-
-    /// A soft ambient shadow so a glass surface lifts off the content behind it. Glass gets its
-    /// depth from the material itself; this only separates a card or chip from the ground so the
-    /// floating layer reads clearly. No-op below iOS 26 (the painted look carries its own
-    /// elevation).
-    @ViewBuilder func muffinGlassLift(_ on: Bool = true) -> some View {
-        if MuffinGlass.isActive && on {
-            self.shadow(color: Color.black.opacity(0.13), radius: 7, x: 0, y: 3)
-        } else {
-            self
-        }
-    }
-
-    /// The pre-glass card look. Shared by the fallbacks above.
+    /// The pre-glass card look. Shared by the content fallback above.
     fileprivate func muffinPaintedSurface<S: InsettableShape>(
         _ shape: S, fill: Color, elevation: MuffinTheme.Elevation
     ) -> some View {
@@ -154,6 +153,19 @@ extension View {
             .clipShape(shape)
             .overlay(shape.strokeBorder(MuffinTheme.edgeStroke, lineWidth: 1))
             .muffinElevation(elevation)
+    }
+
+    /// A warm frosted content surface for iOS 26: the theme fill washed over `.regularMaterial`,
+    /// clipped to `shape` with a hairline rim. The material gives the separation, so there is no
+    /// drop shadow — content sits calmly under the floating chrome.
+    fileprivate func muffinContentMaterial<S: InsettableShape>(_ shape: S, fill: Color) -> some View {
+        self
+            .background {
+                shape.fill(.regularMaterial)
+                shape.fill(fill.opacity(0.40))
+            }
+            .clipShape(shape)
+            .overlay(shape.strokeBorder(MuffinTheme.edgeStroke.opacity(0.7), lineWidth: 1))
     }
 
     /// Native button styles for plain SwiftUI buttons (`.glass`), or the supplied fallback
@@ -203,7 +215,7 @@ extension View {
     /// row trait to every Section inside it). Without glass: the list's own rows.
     @ViewBuilder func muffinGlassRows() -> some View {
         if MuffinGlass.isActive {
-            self.listRowBackground(Rectangle().fill(.thinMaterial))
+            self.listRowBackground(Rectangle().fill(.regularMaterial))
         } else {
             self
         }
@@ -270,7 +282,7 @@ extension View {
 // MARK: - Glass card
 
 /// A card on Liquid Glass (MuffinCard's pre-glass look below iOS 26), for views that want the
-/// glass surface without the MuffinCard wrapper.
+/// content surface without the MuffinCard wrapper.
 struct MuffinGlassCard<Content: View>: View {
     var cornerRadius: CGFloat = 18
     var tint: Color?
@@ -286,7 +298,8 @@ struct MuffinGlassCard<Content: View>: View {
 
 // MARK: - Glass pill
 
-/// A small capsule of glass for a status pill or badge floating over a game or a cover.
+/// A small capsule of glass for a status pill or badge floating over a game or a cover. This is
+/// chrome, so it is real glass on iOS 26.
 struct MuffinGlassPill<Content: View>: View {
     var tint: Color?
     var fallbackFill: Color = Color.black.opacity(0.55)
@@ -302,10 +315,11 @@ struct MuffinGlassPill<Content: View>: View {
 
 // MARK: - Glass icon chip
 
-/// A small tinted chip for a section or row icon. On Liquid Glass it is a tinted glass tile with
-/// the shared specular rim, so the glyph reads as a little physical chip of coloured glass; below
-/// iOS 26 it is the painted tinted tile with the lighting pass and a faint rim. Gives Settings a
-/// consistent, dimensional icon treatment instead of a flat colour swatch.
+/// A small tinted chip for a section or row icon. This is a control-sized accent, so on Liquid
+/// Glass it is a tinted glass tile (tint used sparingly, as Apple advises) and the glyph reads as
+/// a little physical chip of coloured glass; below iOS 26 it is the painted tinted tile with the
+/// lighting pass and a faint rim. Gives Settings a consistent, dimensional icon treatment instead
+/// of a flat colour swatch.
 struct MuffinGlassIconChip: View {
     let systemName: String
     var accent: Color
@@ -319,7 +333,6 @@ struct MuffinGlassIconChip: View {
             .font(.system(size: size * 0.46, weight: .semibold))
             .foregroundColor(accent)
             .frame(width: size, height: size)
-            // muffinGlassBackground already adds the specular rim on Liquid Glass.
             .muffinGlassBackground(in: shape, tint: accent.opacity(0.55)) {
                 shape.fill(accent.opacity(0.16))
                     .overlay(MuffinTheme.surfaceSheen.clipShape(shape))

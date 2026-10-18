@@ -510,9 +510,13 @@ private struct LibraryOptionsButton<Options: View>: View {
 }
 
 private func libraryCardChrome<V: View>(_ view: V, radius: CGFloat = 16) -> some View {
-    view
-        .clipShape(RoundedRectangle(cornerRadius: MuffinGlass.isActive ? radius + 4 : radius, style: .continuous))
-        .muffinGlassBackground(in: RoundedRectangle(cornerRadius: radius + 4, style: .continuous)) {
+    // A game card is CONTENT: a calm frosted surface on Liquid Glass (not the glass effect), the
+    // painted cream card below iOS 26. A hairline keeps the card's edge off the panel material
+    // behind it on iOS 26; the fallback already carries its own wrapper stroke.
+    let outer = RoundedRectangle(cornerRadius: MuffinGlass.isActive ? radius + 4 : radius, style: .continuous)
+    return view
+        .clipShape(outer)
+        .muffinContentBackground(in: RoundedRectangle(cornerRadius: radius + 4, style: .continuous), wash: 0.78) {
             MuffinTheme.cream
                 .cornerRadius(radius)
                 .overlay(
@@ -521,6 +525,7 @@ private func libraryCardChrome<V: View>(_ view: V, radius: CGFloat = 16) -> some
                 )
                 .shadow(color: MuffinTheme.shadow.opacity(0.15), radius: 8, x: 0, y: 4)
         }
+        .overlay(outer.strokeBorder(MuffinTheme.edgeStroke.opacity(MuffinGlass.isActive ? 0.7 : 0), lineWidth: 1))
 }
 
 /// Picks the view for the chosen style. The standard style is the existing GameCardOptimized.

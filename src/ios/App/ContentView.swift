@@ -1063,7 +1063,9 @@ struct GameBrowserView: View {
         .frame(maxHeight: .infinity)
         .background(
             Color.clear
-                .muffinGlassBackground(in: RoundedCorner(radius: 28, corners: [.topLeft, .topRight])) {
+                // The library ground is CONTENT: a frosted material panel on Liquid Glass, the
+                // cream panel below iOS 26 — the game cards and chrome float above it.
+                .muffinContentBackground(in: RoundedCorner(radius: 28, corners: [.topLeft, .topRight]), wash: 0.35) {
                     MuffinTheme.cream
                         .clipShape(RoundedCorner(radius: 28, corners: [.topLeft, .topRight]))
                 }
