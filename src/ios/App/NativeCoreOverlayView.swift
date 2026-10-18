@@ -106,8 +106,9 @@ private extension Color {
 
 // MARK: - Views
 
-/// One translucent card of text. Matches the core's own look: 14pt base size times the text
-/// scale, black at 65% opacity behind it.
+/// One translucent card of text. 14pt base size times the text scale. On Liquid Glass the
+/// readout floats over the game on dark-scheme glass so it stays legible; below iOS 26 it is
+/// the core's own look, black at 65% opacity behind it.
 private struct NativeOverlayCardView: View {
     let lines: [String]
     let color: Int
@@ -128,8 +129,7 @@ private struct NativeOverlayCardView: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        .background(Color.black.opacity(0.65))
-        .cornerRadius(6)
+        .muffinDarkGlassPanel(in: RoundedRectangle(cornerRadius: 6, style: .continuous), fallbackOpacity: 0.65)
     }
 }
 

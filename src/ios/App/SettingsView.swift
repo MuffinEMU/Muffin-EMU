@@ -273,7 +273,7 @@ struct SettingsView: View {
 
             Form { Group {
                 content()
-            }.muffinGlassRows()}.muffinGlassFormGround()
+            }.muffinGlassRows()}.muffinGlassFormGround().muffinScrollEdgeForGlass()
         }
         .navigationTitle(title)
         .muffinOpaqueNavigationBar(MuffinTheme.formGround)
@@ -485,6 +485,7 @@ struct SettingsView: View {
             }
         }
         .listStyle(.sidebar)
+        .muffinScrollEdgeForGlass()
         .navigationTitle("Settings")
         .muffinOpaqueNavigationBar(MuffinTheme.formGround)
         .searchable(text: $query, placement: .sidebar, prompt: "Search settings")
