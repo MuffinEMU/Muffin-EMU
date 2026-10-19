@@ -480,6 +480,9 @@ struct SettingsView: View {
             }
         }
         .listStyle(.sidebar)
+        // The selected row pops in the theme's own accent (Bakery's is the blueberry), the same
+        // accent main uses, instead of the muted system default.
+        .tint(MuffinTheme.pixelBlue)
         .muffinScrollEdgeForGlass()
         .navigationTitle("Settings")
         .muffinOpaqueNavigationBar(MuffinTheme.formGround)

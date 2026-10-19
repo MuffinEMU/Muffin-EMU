@@ -162,7 +162,9 @@ extension View {
         self
             .background {
                 shape.fill(.regularMaterial)
-                shape.fill(fill.opacity(0.40))
+                // Enough of the theme's own cream sits over the blur that the surface reads as
+                // warm cream rather than a dusty tint of whatever saturated ground is behind it.
+                shape.fill(fill.opacity(0.62))
             }
             .clipShape(shape)
             .overlay(shape.strokeBorder(MuffinTheme.edgeStroke.opacity(0.7), lineWidth: 1))
@@ -215,7 +217,14 @@ extension View {
     /// row trait to every Section inside it). Without glass: the list's own rows.
     @ViewBuilder func muffinGlassRows() -> some View {
         if MuffinGlass.isActive {
-            self.listRowBackground(Rectangle().fill(.regularMaterial))
+            // The material plus a wash of the theme cream, so Settings rows read as warm cream
+            // and lift off the page ground instead of being a near-white frost over it.
+            self.listRowBackground(
+                ZStack {
+                    Rectangle().fill(.regularMaterial)
+                    Rectangle().fill(MuffinTheme.cream.opacity(0.34))
+                }
+            )
         } else {
             self
         }
@@ -228,11 +237,13 @@ extension View {
         if #available(iOS 26.0, *), UIStyle.allowsLiquidGlass {
             self.scrollContentBackground(.hidden)
                 .background(
-                    // The system grouped ground with a wash of the theme on it: headers and
-                    // footers sit straight on this, so it stays near neutral for their ink,
-                    // while the translucent rows above still pick the theme up.
+                    // A warm page ground: the system grouped ground, a wash of the theme cream so
+                    // it reads warm rather than grey, and only a faint tint of the (already calmed)
+                    // gradient — enough to belong to the theme without the dusty mauve the full
+                    // gradient left behind the rows.
                     MuffinTheme.formGround
-                        .overlay(MuffinTheme.backgroundGradient.opacity(0.28))
+                        .overlay(MuffinTheme.cream.opacity(0.24))
+                        .overlay(MuffinTheme.backgroundGradient.opacity(0.14))
                         .ignoresSafeArea())
         } else {
             self

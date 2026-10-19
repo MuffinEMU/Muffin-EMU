@@ -252,16 +252,29 @@ enum MuffinTheme {
     /// The grouped background a Form or List draws, for a navigation bar that should match it.
     static var formGround: Color { Color(UIColor.systemGroupedBackground) }
 
-    /// The background gradient's colours, top to bottom, for the tokens below.
+    /// A background stop softened toward the theme's own page colour (`cream`), so content,
+    /// cards and buttons sitting on the gradient read with real contrast instead of fighting a
+    /// fully saturated ground. Derived from each theme's palette, so the calmer ground applies
+    /// to every theme, not just Bakery, and a dark-ground theme softens toward its dark page
+    /// colour rather than washing out toward white.
+    static func calmed(_ hex: String, dark: Bool) -> String {
+        muffinMixHex(hex, dark ? t.creamDark : t.creamLight, dark ? 0.20 : 0.30)
+    }
+
+    /// The background gradient's colours, top to bottom, for the tokens below. Calmed, so the
+    /// readable-text tokens are computed against the same softened ground that is drawn.
     private static func backgroundSamples(dark: Bool) -> [String] {
         let lightStops = t.backgroundStopsLight
         let darkStops = t.backgroundStopsDark
+        let raw: [String]
         if lightStops.count >= 2 && lightStops.count == darkStops.count {
-            return dark ? darkStops : lightStops
+            raw = dark ? darkStops : lightStops
+        } else {
+            let top = dark ? t.backgroundTopDark : t.backgroundTopLight
+            let bottom = dark ? t.backgroundBottomDark : t.backgroundBottomLight
+            raw = [0.0, 0.25, 0.5, 0.75, 1.0].map { muffinMixHex(top, bottom, $0) }
         }
-        let top = dark ? t.backgroundTopDark : t.backgroundTopLight
-        let bottom = dark ? t.backgroundBottomDark : t.backgroundBottomLight
-        return [0.0, 0.25, 0.5, 0.75, 1.0].map { muffinMixHex(top, bottom, $0) }
+        return raw.map { calmed($0, dark: dark) }
     }
 
     /// Text drawn straight onto the background gradient (the library header, the decrypt
@@ -318,7 +331,7 @@ enum MuffinTheme {
         let lightStops = t.backgroundStopsLight
         let darkStops = t.backgroundStopsDark
         if lightStops.count >= 2 && lightStops.count == darkStops.count {
-            let colors = zip(lightStops, darkStops).map { Color(light: $0, dark: $1) }
+            let colors = zip(lightStops, darkStops).map { Color(light: calmed($0, dark: false), dark: calmed($1, dark: true)) }
             let locations = t.backgroundStopLocations
             // Straight top-to-bottom so bands sit at a specific height.
             if locations.count == colors.count {
@@ -327,7 +340,12 @@ enum MuffinTheme {
             }
             return LinearGradient(colors: colors, startPoint: .top, endPoint: .bottom)
         }
-        return LinearGradient(colors: [backgroundTop, backgroundBottom], startPoint: .topLeading, endPoint: .bottomTrailing)
+        return LinearGradient(
+            colors: [
+                Color(light: calmed(t.backgroundTopLight, dark: false), dark: calmed(t.backgroundTopDark, dark: true)),
+                Color(light: calmed(t.backgroundBottomLight, dark: false), dark: calmed(t.backgroundBottomDark, dark: true))
+            ],
+            startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
     static var muffinTopGradient: LinearGradient {
@@ -770,15 +788,25 @@ struct MuffinPrimaryButtonStyle: ButtonStyle {
 
         var body: some View {
             let pressed = configuration.isPressed
-            // Liquid Glass: muffin-top tinted interactive glass; the glass handles the press.
+            // Liquid Glass build: the primary action is the same rich muffin-top gradient button
+            // the painted (main) look uses, as a capsule — opaque, with its gradient, glint and
+            // rim — rather than a translucent tint that mixed with the ground into mud. It is the
+            // proven main button, so it works for every theme, each in its own muffin-top colour.
             if MuffinGlass.isActive {
+                let glassFill = (pressed ? MuffinTheme.muffinTopGradientPressed : MuffinTheme.muffinTopGradient)
+                    .overlay(MuffinTheme.controlSheen)
                 return AnyView(configuration.label
                     .font(MuffinTheme.Font.primaryButton)
                     .foregroundColor(MuffinTheme.onMuffinTop)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
-                    .muffinGlassOnly(in: Capsule(), tint: MuffinTheme.muffinTopDark, interactive: true)
+                    .background(glassFill)
+                    .clipShape(Capsule())
+                    .overlay(Capsule().strokeBorder(MuffinTheme.controlEdgeStroke, lineWidth: 1))
+                    .muffinElevation(pressed ? .flush : .raised)
                     .opacity(isEnabled ? 1 : 0.45)
+                    .scaleEffect(pressed ? MuffinTheme.Motion.pressScale : 1)
+                    .animation(MuffinTheme.Motion.press(isPressed: pressed, reduceMotion: reduceMotion), value: pressed)
                     .onChange(of: pressed) { nowPressed in
                         if nowPressed { MuffinHaptics.tap() }
                     })

@@ -39,8 +39,8 @@ struct AboutSettingsSection: View {
             }
 
             Text(MeloControlsSetting.isAvailable
-                 ? "MuffinEMU is built on Cemu, and its core includes code from MeloCafe by stossy11. The optional Melo-Controller pad is also by stossy11."
-                 : "MuffinEMU is built on Cemu, and its core includes code from MeloCafe by stossy11.")
+                 ? "MuffinEMU is built on Cemu. The optional Melo-Controller pad is by stossy11."
+                 : "MuffinEMU is built on Cemu.")
                 .font(.system(size: 12))
                 .foregroundColor(MuffinTheme.secondaryText)
 
