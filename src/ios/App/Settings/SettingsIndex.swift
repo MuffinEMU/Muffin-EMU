@@ -71,9 +71,10 @@ enum SettingsIndex {
 
     private static let emulation: [SettingEntry] = [
         stored("Use the recompiler (JIT)", .cpu, "muffin.cpu.recompiler", true, "interpreter"),
-        stored("Favour accuracy", .cpu, "muffin.cpu.favourAccuracy", false, "glitch crash fix"),
-        stored("Favour performance", .cpu, FavourPerformance.storageKey, FavourPerformance.defaultValue, "speed fast"),
-        stored("One-core mode", .cpu, OneCoreMode.storageKey, OneCoreMode.defaultValue, "single core low power"),
+        // The profile is stored as three switches; each is listed as changed under the profile it means.
+        stored("Performance profile: Accuracy", .cpu, "muffin.cpu.favourAccuracy", false, "favour accuracy glitch crash fix"),
+        stored("Performance profile: Speed", .cpu, FavourPerformance.storageKey, FavourPerformance.defaultValue, "favour performance fast"),
+        stored("Performance profile: Battery saver", .cpu, OneCoreMode.storageKey, OneCoreMode.defaultValue, "one-core mode single core low power heat"),
         stored("CPU cores", .cpu, CoreMode.storageKey, CoreMode.defaultValue.rawValue, "multicore threads"),
         stored("Cool down automatically", .cpu, ThermalMonitor.autoThrottleKey, ThermalMonitor.autoThrottleDefault, "heat thermal hot throttle"),
         stored("Cool down starts at", .cpu, ThermalSettings.thresholdKey, ThermalSettings.defaultThreshold.rawValue, "heat thermal"),
@@ -238,6 +239,8 @@ enum PerGameField: CaseIterable {
     case preCompileShaders, favourAccuracy, coreMode, renderScale, upscaleFilter, downscaleFilter
     case favourPerformance, fullSpeedRenders, fullSpeedShaderMode, oneCoreMode, screenLayout
     case autoHideControls, performanceOverlay
+    /// Any of the three switches a performance profile sets (see PerformanceProfile).
+    case performanceProfile
 
     func isSet(in overrides: GameOverrides) -> Bool {
         switch self {
@@ -254,6 +257,8 @@ enum PerGameField: CaseIterable {
         case .screenLayout: return overrides.screenLayout != nil
         case .autoHideControls: return overrides.autoHideControls != nil
         case .performanceOverlay: return overrides.performanceOverlay != nil
+        case .performanceProfile:
+            return overrides.favourAccuracy != nil || overrides.favourPerformance != nil || overrides.oneCoreMode != nil
         }
     }
 

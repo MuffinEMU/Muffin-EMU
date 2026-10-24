@@ -92,7 +92,7 @@ struct TroubleshootingSection: View {
         Step(id: 1, symptom: "Games run slowly.",
              fix: "Check JIT under Performance and graphics > JIT. Without a JIT enabler attached, MuffinEMU runs the slower interpreter. The library shows a line while JIT is off."),
         Step(id: 2, symptom: "A game glitches, desyncs or crashes.",
-             fix: "Turn on Favour accuracy for that game (its page > Game settings) or for every game under Performance and graphics > CPU (Advanced mode), and try one core."),
+             fix: "Choose the Accuracy performance profile for that game (its page > Game settings) or for every game under Performance and graphics > CPU (Advanced mode), and try one core."),
         Step(id: 3, symptom: "The screen stays black after the game starts.",
              fix: "Turn on Show launch log under Help > Diagnostics (Advanced mode) and start the game again: the log shows how far it got. Try the other renderer under Performance and graphics > Graphics (Advanced mode)."),
         Step(id: 4, symptom: "MuffinEMU closes while a game loads.",

@@ -185,7 +185,7 @@ struct GraphicsSettingsSection: View {
             PerGameOverrideNote(field: .renderScale)
             textureFilteringPicker
             if favourPerformance {
-                Text("Favour performance is on (see CPU), so the picture is limited to Balanced resolution with linear scaling.")
+                Text("The Speed performance profile is on (see CPU), so the picture is limited to Balanced resolution with linear scaling.")
                     .font(.system(size: 12))
                     .foregroundColor(MuffinTheme.secondaryText)
             }

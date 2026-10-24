@@ -26,6 +26,25 @@ struct CPUSettingsSection: View {
 
     private var advanced: Bool { SettingsMode.isAdvanced(raw: settingsModeRaw) }
 
+    private var profile: PerformanceProfile {
+        PerformanceProfile(accuracy: favourAccuracy, performance: favourPerformance, oneCore: oneCoreMode)
+    }
+
+    /// Sets all three switches and tells the engine, as the three toggles each used to.
+    private var profileChoice: Binding<PerformanceProfile> {
+        Binding(
+            get: { profile },
+            set: { choice in
+                guard let switches = choice.switches else { return }
+                favourAccuracy = switches.accuracy
+                favourPerformance = switches.performance
+                oneCoreMode = switches.oneCore
+                cemu_bridge_set_favour_accuracy(switches.accuracy)
+                cemu_bridge_set_favour_performance(switches.performance)
+                cemu_bridge_set_low_power_mode(switches.oneCore)
+            })
+    }
+
     private var selectedModeUnavailable: Bool { advanced && !(CoreMode(rawValue: coreModeRaw)?.isAvailable ?? true) }
 
     var body: some View {
@@ -49,60 +68,25 @@ struct CPUSettingsSection: View {
 
             // Advanced mode only: Basic keeps these at their defaults (see AdvancedSettings).
             if advanced {
-                Toggle(isOn: $favourAccuracy) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Favour accuracy")
+                // One choice for Favour accuracy, Favour performance and One-core mode, stored under
+                // their own keys as before (see PerformanceProfile).
+                VStack(alignment: .leading, spacing: 4) {
+                    Picker(selection: profileChoice) {
+                        ForEach(PerformanceProfile.choices(including: profile)) { choice in
+                            Text(choice.title).tag(choice)
+                        }
+                    } label: {
+                        Text("Performance profile")
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        Text(favourAccuracy
-                             ? "Slower but more accurate. Uses one CPU core."
-                             : "Faster. Turn on if a game glitches or crashes.")
-                            .font(.system(size: 12))
-                            .foregroundColor(MuffinTheme.secondaryText)
                     }
+                    .pickerStyle(.menu)
+                    .tint(MuffinTheme.accentText)
+                    Text(profile.summary)
+                        .font(.system(size: 12))
+                        .foregroundColor(MuffinTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .tint(MuffinTheme.accentText)
-                .onChange(of: favourAccuracy) { newValue in
-                    cemu_bridge_set_favour_accuracy(newValue)
-                    // Opposite trades, so turning one on turns the other off.
-                    if newValue { favourPerformance = false }
-                }
-                PerGameOverrideNote(field: .favourAccuracy)
-
-                Toggle(isOn: $favourPerformance) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Favour performance")
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        Text(favourPerformance
-                             ? "Faster, but the picture is softer and some games look wrong."
-                             : "The normal balance of speed and quality.")
-                            .font(.system(size: 12))
-                            .foregroundColor(MuffinTheme.secondaryText)
-                    }
-                }
-                .tint(MuffinTheme.accentText)
-                .onChange(of: favourPerformance) { newValue in
-                    cemu_bridge_set_favour_performance(newValue)
-                    if newValue { favourAccuracy = false }
-                }
-                PerGameOverrideNote(field: .favourPerformance)
-
-                // See OneCoreMode in RenderScale.swift.
-                Toggle(isOn: $oneCoreMode) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("One-core mode")
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        Text(oneCoreMode
-                             ? "Uses one CPU core, ignoring the CPU cores setting."
-                             : "Follows the CPU cores setting.")
-                            .font(.system(size: 12))
-                            .foregroundColor(MuffinTheme.secondaryText)
-                    }
-                }
-                .tint(MuffinTheme.accentText)
-                .onChange(of: oneCoreMode) { newValue in
-                    cemu_bridge_set_low_power_mode(newValue)
-                }
-                PerGameOverrideNote(field: .oneCoreMode)
+                PerGameOverrideNote(field: .performanceProfile)
 
                 // Auto by default: decides per game from its profile, this device's performance cores and
                 // its thermal state, and leans to one core (see CoreMode in RenderScale.swift).
@@ -231,7 +215,7 @@ struct CPUSettingsSection: View {
             InfoButton.footer(
                 "CPU changes apply the next time you start a game.",
                 title: "CPU",
-                text: "The recompiler (JIT) makes games run much faster. It needs a JIT enabler (StikJIT, SideStore or LiveContainer); without one the slower interpreter runs instead. The top row shows which one you got.\n\nFavour accuracy is slower but can help a game that glitches or crashes: it uses one CPU core, waits for each shader, and runs a few kinds of float instructions in the interpreter instead of the JIT. Favour performance is faster, but the picture is softer and some games may look wrong. Only one of them can be on.\n\nCool down automatically lowers the resolution when iOS says the device is too hot. In Advanced mode you can choose when it starts: Serious (the default) starts as soon as iOS slows the device down, and Critical waits until it slows it down a lot. Device heat shows what iOS reports.\n\nCPU changes apply the next time you start a game.")
+                text: "The recompiler (JIT) makes games run much faster. It needs a JIT enabler (StikJIT, SideStore or LiveContainer); without one the slower interpreter runs instead. The top row shows which one you got.\n\nPerformance profile (Advanced mode) picks the trade-off. Balanced is the default. Speed is faster, but the picture is softer and some games may look wrong. Accuracy is slower but can help a game that glitches or crashes: it uses one CPU core, waits for each shader, and runs a few kinds of float instructions in the interpreter instead of the JIT. Battery saver runs on one CPU core whatever CPU cores says, for less heat and battery use. A game can have its own profile in its Game settings.\n\nCool down automatically lowers the resolution when iOS says the device is too hot. In Advanced mode you can choose when it starts: Serious (the default) starts as soon as iOS slows the device down, and Critical waits until it slows it down a lot. Device heat shows what iOS reports.\n\nCPU changes apply the next time you start a game.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }

@@ -343,16 +343,50 @@ struct GameOptionsView: View {
             })
     }
 
+    private var profileIsCustom: Bool {
+        own.favourAccuracy != nil || own.favourPerformance != nil || own.oneCoreMode != nil
+    }
+
+    /// This game's own profile, its values over Settings' for any switch it doesn't set. Nil while it
+    /// follows Settings for all three.
+    private var ownProfile: PerformanceProfile? {
+        guard profileIsCustom else { return nil }
+        return PerformanceProfile(accuracy: own.favourAccuracy ?? store.globalFavourAccuracy,
+                                  performance: own.favourPerformance ?? store.globalFavourPerformance,
+                                  oneCore: own.oneCoreMode ?? store.globalOneCoreMode)
+    }
+
+    private var profileNote: String? { ownProfile.map(\.summary) }
+
+    /// "" follows Settings for all three switches; a profile sets all three for this game.
+    private var profileChoice: Binding<String> {
+        Binding(
+            get: { ownProfile?.rawValue ?? "" },
+            set: { raw in
+                store.updateOverrides(for: key) { next in
+                    if let switches = PerformanceProfile(rawValue: raw)?.switches {
+                        next.favourAccuracy = switches.accuracy
+                        next.favourPerformance = switches.performance
+                        next.oneCoreMode = switches.oneCore
+                    } else {
+                        next.favourAccuracy = nil
+                        next.favourPerformance = nil
+                        next.oneCoreMode = nil
+                    }
+                }
+            })
+    }
+
     /// Only said when something else decides the core count, or the choice may not work here.
     private var coreModeNote: String? {
         let effective = store.effectiveCoreMode(for: key)
         if !effective.isAvailable { return "May not work on this device." }
         guard effective != .single else { return nil }
         if store.effectiveFavourAccuracy(for: key) {
-            return "Favour accuracy is on for this game, so it runs on one core whatever this says."
+            return "The Accuracy profile runs this game on one core whatever this says."
         }
         if store.effectiveOneCoreMode(for: key) {
-            return "One-core mode is on for this game, so it runs on one core whatever this says."
+            return "The Battery saver profile runs this game on one core whatever this says."
         }
         return nil
     }
@@ -422,17 +456,11 @@ struct GameOptionsView: View {
                 OverrideChoice.options(settingsHas: store.globalPreCompileShaders)
             }
             if isAdvanced {
-                GameOverrideRow("Favour accuracy", isCustom: own.favourAccuracy != nil,
-                                selection: store.onOffChoice(\.favourAccuracy, for: key)) {
-                    OverrideChoice.options(settingsHas: store.globalFavourAccuracy)
-                }
-                GameOverrideRow("Favour performance", isCustom: own.favourPerformance != nil,
-                                selection: store.onOffChoice(\.favourPerformance, for: key)) {
-                    OverrideChoice.options(settingsHas: store.globalFavourPerformance)
-                }
-                GameOverrideRow("One-core mode", isCustom: own.oneCoreMode != nil,
-                                selection: store.onOffChoice(\.oneCoreMode, for: key)) {
-                    OverrideChoice.options(settingsHas: store.globalOneCoreMode)
+                GameOverrideRow("Performance profile", isCustom: profileIsCustom, note: profileNote, selection: profileChoice) {
+                    Text(sameAsSettings(PerformanceProfile.current.title)).tag("")
+                    ForEach(PerformanceProfile.choices(including: ownProfile ?? .balanced)) { choice in
+                        Text(choice.title).tag(choice.rawValue)
+                    }
                 }
                 GameOverrideRow("CPU cores", isCustom: own.coreMode != nil, note: coreModeNote, selection: coreModeChoice) {
                     Text(sameAsSettings(CoreMode.current.title)).tag("")
@@ -454,12 +482,12 @@ struct GameOptionsView: View {
                 InfoButton.footer(
                     "How fast this game runs and how it looks.",
                     title: "Performance and graphics",
-                    text: "Compile shaders in the background builds shaders while the game keeps running. Most games want this on; Nano Assault Neo breaks with it.\n\nFavour accuracy is slower but more accurate, and can fix a game that glitches or crashes. It also keeps the game on one CPU core. Favour performance and One-core mode work as they do in Settings.\n\nCPU cores picks how many cores run the game. Auto decides for each game and device.\n\nResolution and the two scaling filters change how the picture is drawn for this game.")
+                    text: "Compile shaders in the background builds shaders while the game keeps running. Most games want this on; Nano Assault Neo breaks with it.\n\nPerformance profile picks the trade-off for this game: Speed, Accuracy (slower but more accurate, on one CPU core; can fix a game that glitches or crashes) or Battery saver (one CPU core).\n\nCPU cores picks how many cores run the game. Auto decides for each game and device.\n\nResolution and the two scaling filters change how the picture is drawn for this game.")
             } else {
                 InfoButton.footer(
                     "Resolution, CPU cores, screen layout and more can be set per game when Settings mode is Advanced (Settings > General).",
                     title: "Performance and graphics",
-                    text: "Compile shaders in the background builds shaders while the game keeps running. Most games want this on; Nano Assault Neo breaks with it, so it can be set per game.\n\nSwitch Settings mode to Advanced on Settings > General to set Favour accuracy, CPU cores, Resolution, the scaling filters, Steady frame rate, screen layout, the FPS counter and controller auto-hide for this game too.")
+                    text: "Compile shaders in the background builds shaders while the game keeps running. Most games want this on; Nano Assault Neo breaks with it, so it can be set per game.\n\nSwitch Settings mode to Advanced on Settings > General to set the performance profile, CPU cores, Resolution, the scaling filters, Steady frame rate, screen layout, the FPS counter and controller auto-hide for this game too.")
             }
         }
     }
@@ -507,7 +535,7 @@ struct GameOptionsView: View {
     /// above are overridden at launch (filtersToPush).
     private var favourPerformanceNote: String? {
         store.effectiveFavourPerformance(for: key) && !store.effectiveFavourAccuracy(for: key)
-            ? "Favour performance is on for this game, so the picture is drawn at Balanced at most, with linear scaling."
+            ? "The Speed profile is on for this game, so the picture is drawn at Balanced at most, with linear scaling."
             : nil
     }
 
