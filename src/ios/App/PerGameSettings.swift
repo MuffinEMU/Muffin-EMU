@@ -298,13 +298,14 @@ struct GameOverrideRow<Selection: Hashable, Options: View>: View {
 }
 
 extension GameOverrides {
-    /// How many settings this game has its own value for. A field added to GameOverrides goes in this
-    /// list too.
+    /// How many settings this game has its own value for, counted the way the screen shows them. A field
+    /// added to GameOverrides goes in this list too.
     var customCount: Int {
-        let fields: [Any?] = [preCompileShaders, favourAccuracy, coreMode, renderScale, upscaleFilter, downscaleFilter,
-                              favourPerformance, fullSpeedRenders, fullSpeedShaderMode, oneCoreMode, screenLayout,
-                              autoHideControls, performanceOverlay]
-        return fields.filter { $0 != nil }.count
+        let fields: [Any?] = [preCompileShaders, coreMode, renderScale, upscaleFilter, downscaleFilter,
+                              fullSpeedRenders, fullSpeedShaderMode, screenLayout, autoHideControls, performanceOverlay]
+        // The three switches a performance profile sets are one row (see PerformanceProfile).
+        let hasProfile = favourAccuracy != nil || favourPerformance != nil || oneCoreMode != nil
+        return fields.filter { $0 != nil }.count + (hasProfile ? 1 : 0)
     }
 }
 
