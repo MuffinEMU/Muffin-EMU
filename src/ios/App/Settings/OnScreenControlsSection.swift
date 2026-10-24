@@ -381,6 +381,7 @@ struct OnScreenControlsSection: View {
             }
         }
         .tint(MuffinTheme.pixelBlue)
+        PerGameOverrideNote(field: .autoHideControls)
     }
 
     @ViewBuilder private var topBarOptions: some View {

@@ -357,6 +357,25 @@ struct GameOptionsView: View {
         return nil
     }
 
+    /// The same settings for every game, opened from here so changing what "Same as Settings" means
+    /// doesn't mean leaving the game for Settings. These are Settings' own sections.
+    private func allGamesLink<Sections: View>(@ViewBuilder _ sections: () -> Sections) -> some View {
+        let content = sections()
+        return NavigationLink {
+            ZStack {
+                MuffinTheme.backgroundGradient
+                    .ignoresSafeArea()
+                Form { Group { content }.muffinGlassRows()}.muffinGlassFormGround()
+            }
+            .navigationTitle("Settings for all games")
+            .foregroundColor(MuffinTheme.brownDarkest)
+        } label: {
+            Label("Change for all games", systemImage: "slider.horizontal.3")
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .foregroundColor(MuffinTheme.accentText)
+        }
+    }
+
     private func pageHeader(_ category: SettingsCategory) -> some View {
         SettingsSectionHeader(category.title, icon: category.icon, accent: category.accent)
     }
@@ -422,6 +441,11 @@ struct GameOptionsView: View {
                     }
                 }
                 graphicsRows
+            }
+            allGamesLink {
+                ShaderCacheSection()
+                CPUSettingsSection()
+                GraphicsSettingsSection()
             }
         } header: {
             pageHeader(.emulation)
@@ -500,6 +524,10 @@ struct GameOptionsView: View {
                             selection: store.onOffChoice(\.performanceOverlay, for: key)) {
                 OverrideChoice.options(settingsHas: store.globalOverlayPosition != .disabled)
             }
+            allGamesLink {
+                DisplaySettingsSection()
+                OverlaySettingsSection()
+            }
         } header: {
             pageHeader(.screenAndSound)
         }
@@ -510,6 +538,9 @@ struct GameOptionsView: View {
             GameOverrideRow("Hide on-screen controls when a controller is connected", isCustom: own.autoHideControls != nil,
                             selection: store.onOffChoice(\.autoHideControls, for: key)) {
                 OverrideChoice.options(settingsHas: store.globalAutoHideControls)
+            }
+            allGamesLink {
+                OnScreenControlsSection()
             }
         } header: {
             pageHeader(.controls)

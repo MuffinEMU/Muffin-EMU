@@ -66,6 +66,7 @@ struct CPUSettingsSection: View {
                     // Opposite trades, so turning one on turns the other off.
                     if newValue { favourPerformance = false }
                 }
+                PerGameOverrideNote(field: .favourAccuracy)
 
                 Toggle(isOn: $favourPerformance) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -83,6 +84,7 @@ struct CPUSettingsSection: View {
                     cemu_bridge_set_favour_performance(newValue)
                     if newValue { favourAccuracy = false }
                 }
+                PerGameOverrideNote(field: .favourPerformance)
 
                 // See OneCoreMode in RenderScale.swift.
                 Toggle(isOn: $oneCoreMode) {
@@ -100,6 +102,7 @@ struct CPUSettingsSection: View {
                 .onChange(of: oneCoreMode) { newValue in
                     cemu_bridge_set_low_power_mode(newValue)
                 }
+                PerGameOverrideNote(field: .oneCoreMode)
 
                 // Auto by default: decides per game from its profile, this device's performance cores and
                 // its thermal state, and leans to one core (see CoreMode in RenderScale.swift).
@@ -145,6 +148,7 @@ struct CPUSettingsSection: View {
                         coreModeRaw = CoreMode.resolved(saved).rawValue
                     }
                 }
+                PerGameOverrideNote(field: .coreMode)
             }
 
             // On by default: at .serious iOS is already throttling, so lowering the pixel count

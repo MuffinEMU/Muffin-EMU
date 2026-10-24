@@ -9,7 +9,7 @@ import SwiftUI
 /// index that places it on a page and makes it searchable. Moving a section between pages never
 /// touches its storage keys.
 enum SettingsItem: String, CaseIterable, Identifiable {
-    case settingsMode, appearance, about
+    case settingsMode, changedSettings, appearance, about
     case cpu, jit, graphics, shaderCache, emulatedClock
     case onScreenControls, motion, emulatedDevices
     case display, externalDisplay, audio, overlay, notifications
@@ -23,6 +23,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .settingsMode: return "Settings mode"
+        case .changedSettings: return "Changed from default"
         case .appearance: return "Appearance"
         case .about: return "About"
         case .cpu: return "CPU"
@@ -59,6 +60,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
     var summary: String {
         switch self {
         case .settingsMode: return "Basic or Advanced: how many options Settings shows."
+        case .changedSettings: return "Every setting you've changed, and games with settings of their own."
         case .appearance: return "Theme, app icon, Flat surfaces and Classic UI."
         case .about: return "Version, credits, licences and reset."
         case .cpu: return "CPU cores, the recompiler, Favour accuracy and cooling down."
@@ -94,6 +96,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
     var keywords: String {
         switch self {
         case .settingsMode: return "basic advanced simple more options hidden"
+        case .changedSettings: return "changed modified custom different defaults per game overrides"
         case .appearance: return "theme colours colors icon dark light classic flat look"
         case .about: return "version credits licences licenses reset support defaults github documentation"
         case .cpu: return "cores threads multicore interpreter speed processor performance accuracy heat thermal cool"
@@ -203,7 +206,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 
     var items: [SettingsItem] {
         switch self {
-        case .general: return [.settingsMode, .appearance, .about]
+        case .general: return [.settingsMode, .changedSettings, .appearance, .about]
         case .emulation: return [.cpu, .jit, .graphics, .shaderCache, .emulatedClock]
         case .controls: return [.onScreenControls, .motion, .emulatedDevices]
         case .screenAndSound: return [.display, .externalDisplay, .audio, .overlay, .notifications]
@@ -248,17 +251,24 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 enum SettingsRoute: Hashable {
     case category(SettingsCategory)
     case item(SettingsItem)
+    /// A setting found by search, shown as the section that holds it. Its own case so each result row
+    /// in the sidebar has its own selection tag.
+    case setting(SettingEntry)
 
     var category: SettingsCategory {
         switch self {
         case .category(let category): return category
         case .item(let item): return SettingsCategory.category(of: item)
+        case .setting(let entry): return SettingsCategory.category(of: entry.item)
         }
     }
 
     var item: SettingsItem? {
-        if case .item(let item) = self { return item }
-        return nil
+        switch self {
+        case .category: return nil
+        case .item(let item): return item
+        case .setting(let entry): return entry.item
+        }
     }
 }
 
@@ -298,6 +308,7 @@ struct SettingsView: View {
     @ViewBuilder private func sectionView(_ item: SettingsItem) -> some View {
         switch item {
         case .settingsMode: SettingsModeSection()
+        case .changedSettings: ChangedSettingsSection(open: { AnyView(sectionPage($0)) })
         case .appearance:
             AppearanceSettingsSection(showingIconPicker: $showingIconPicker, showingThemePicker: $showingThemePicker)
         case .about: AboutSettingsSection()
@@ -439,9 +450,11 @@ struct SettingsView: View {
 
     // MARK: Search
 
+    private var normalizedQuery: String { query.trimmingCharacters(in: .whitespaces).lowercased() }
+
     /// Sections matching a search: by title, by keyword, or because their page's title matches.
     private var results: [SettingsItem] {
-        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        let q = normalizedQuery
         guard !q.isEmpty else { return [] }
         return SettingsItem.allCases.filter { item in
             guard isAdvanced || !item.advancedOnly else { return false }
@@ -449,6 +462,18 @@ struct SettingsView: View {
                 || item.keywords.contains(q)
                 || SettingsCategory.category(of: item).title.lowercased().contains(q)
         }
+    }
+
+    /// Single settings matching a search by their own name, so "haptic" finds Haptic feedback and says
+    /// where it is.
+    private var settingResults: [SettingEntry] {
+        let q = normalizedQuery
+        guard !q.isEmpty else { return [] }
+        return Array(SettingsIndex.search(q, advanced: isAdvanced).prefix(40))
+    }
+
+    private func path(of entry: SettingEntry) -> String {
+        "\(SettingsCategory.category(of: entry.item).title) \u{203A} \(entry.item.title)"
     }
 
     private var isSearching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
@@ -509,10 +534,22 @@ struct SettingsView: View {
     @ViewBuilder private var hub: some View {
         Form { Group {
             if isSearching {
-                Section(header: Text("Results")) {
-                    if results.isEmpty {
-                        noResults
-                    } else {
+                if results.isEmpty && settingResults.isEmpty {
+                    Section { noResults }
+                }
+                if !settingResults.isEmpty {
+                    Section(header: Text("Settings")) {
+                        ForEach(settingResults) { entry in
+                            NavigationLink {
+                                sectionPage(entry.item)
+                            } label: {
+                                settingResultLabel(entry)
+                            }
+                        }
+                    }
+                }
+                if !results.isEmpty {
+                    Section(header: Text("Sections")) {
                         ForEach(results) { item in
                             resultRow(item)
                         }
@@ -574,6 +611,18 @@ struct SettingsView: View {
         .accessibilityLabel("\(item.title), in \(category.title)")
     }
 
+    /// A setting found by search: its name, and the page and section it's in.
+    private func settingResultLabel(_ entry: SettingEntry) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(entry.title)
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+            Text(path(of: entry))
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+        }
+    }
+
     private func searchResultRow(_ item: SettingsItem) -> some View {
         let category = SettingsCategory.category(of: item)
         return HStack(spacing: 11) {
@@ -608,10 +657,20 @@ struct SettingsView: View {
     @ViewBuilder private var sidebar: some View {
         List(selection: $selection) {
             if isSearching {
-                Section(header: Text("Results")) {
-                    if results.isEmpty {
-                        noResults
-                    } else {
+                if results.isEmpty && settingResults.isEmpty {
+                    Section { noResults }
+                }
+                if !settingResults.isEmpty {
+                    Section(header: Text("Settings")) {
+                        ForEach(settingResults) { entry in
+                            settingResultLabel(entry)
+                                .padding(.vertical, 3)
+                                .tag(SettingsRoute.setting(entry))
+                        }
+                    }
+                }
+                if !results.isEmpty {
+                    Section(header: Text("Sections")) {
                         ForEach(results) { item in
                             searchResultRow(item)
                                 .tag(SettingsRoute.item(item))
@@ -712,6 +771,8 @@ struct SettingsView: View {
                 legacyBody
             }
         }
+        // The rows that name games (Changed from default, "Set differently for 2 games") read the library here.
+        .environment(\.settingsLibraryGames, gameManager.games)
         .sheet(isPresented: $showingIconPicker) {
             IconPickerView()
         }

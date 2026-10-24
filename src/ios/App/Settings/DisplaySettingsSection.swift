@@ -61,6 +61,7 @@ struct DisplaySettingsSection: View {
             } message: {
                 Text(screenLayout.description)
             }
+            PerGameOverrideNote(field: .screenLayout)
 
             if screenLayout == .singleScreen {
                 Toggle(isOn: $showLocalSwapButton) {

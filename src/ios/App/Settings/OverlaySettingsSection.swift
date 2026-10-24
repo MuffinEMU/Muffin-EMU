@@ -93,6 +93,7 @@ struct OverlaySettingsSection: View {
                                 setPosition: { cemu_bridge_set_overlay_position($0) },
                                 setTextColor: { cemu_bridge_set_overlay_text_color($0) },
                                 setTextScale: { cemu_bridge_set_overlay_text_scale($0) })
+            PerGameOverrideNote(field: .performanceOverlay)
             fpsToggle
             if advanced {
                 drawcallsToggle

@@ -28,6 +28,7 @@ struct ShaderCacheSection: View {
             .onChange(of: asyncShaderCompile) { newValue in
                 cemu_bridge_set_async_shader_compile(newValue)
             }
+            PerGameOverrideNote(field: .preCompileShaders)
             SettingsRow(label: "Size on disk", value: Self.formatBytes(learnedCacheBytes + compiledCacheBytes))
             SettingsRow(label: "Last updated", value: ShaderCacheInfo.formatDate(lastUpdated))
             if SettingsMode.isAdvanced(raw: settingsModeRaw) {
