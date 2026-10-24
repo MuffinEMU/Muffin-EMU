@@ -5,12 +5,13 @@
 
 import SwiftUI
 
-/// Basic / Advanced, at the very top of Settings. Basic hides the advanced rows and keeps those
-/// settings at their defaults; switching back offers to bring the old values back. The switching
-/// itself lives in AdvancedSettings.
+/// Basic / Advanced, at the top of General. Basic hides the advanced rows and runs those settings at
+/// their defaults; switching back to Advanced brings your own values back, with nothing to answer.
+/// The switching itself lives in AdvancedSettings.
 struct SettingsModeSection: View {
     @AppStorage(SettingsMode.storageKey) private var modeRaw = SettingsMode.defaultValue.rawValue
-    @State private var askRestore = false
+    /// Re-read after each switch, since it lives in AdvancedSettings' snapshot rather than a key here.
+    @State private var pausedCount = AdvancedSettings.pausedCount
 
     private var choice: Binding<String> {
         Binding(
@@ -22,8 +23,9 @@ struct SettingsModeSection: View {
                 case .basic:
                     AdvancedSettings.switchToBasic()
                 case .advanced:
-                    askRestore = AdvancedSettings.hasSnapshot
+                    if AdvancedSettings.hasSnapshot { AdvancedSettings.restoreSnapshot() }
                 }
+                pausedCount = AdvancedSettings.pausedCount
             })
     }
 
@@ -40,23 +42,27 @@ struct SettingsModeSection: View {
                 .pickerStyle(.segmented)
                 Text(SettingsMode.isAdvanced(raw: modeRaw)
                      ? "Everything is shown, including the settings most people don't need."
-                     : "Only the settings most people need. The rest are off, at their defaults.")
+                     : "Only the settings most people need. The advanced ones run at their defaults until you switch back.")
                     .font(.system(size: 12))
                     .foregroundColor(MuffinTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
+                if !SettingsMode.isAdvanced(raw: modeRaw) && pausedCount > 0 {
+                    Label("\(pausedCount) advanced setting\(pausedCount == 1 ? " is" : "s are") paused. Switch to Advanced to bring \(pausedCount == 1 ? "it" : "them") back.",
+                          systemImage: "pause.circle")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(MuffinTheme.accentText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         } footer: {
             InfoButton.footer(
-                "Basic hides the advanced settings and puts them back to their defaults.",
+                "Basic hides the advanced settings and runs them at their defaults until you switch back.",
                 title: "Settings mode",
-                text: "Basic keeps Settings short. The advanced settings go back to their defaults and their rows are hidden.\n\nAdvanced shows everything: the renderer, scaling filters, gamma, Steady frame rate, CPU cores and other performance switches, the emulated clock, overlay details, motion tuning, stick feel, audio channels, diagnostics, and extra options for each game.\n\nWhen you switch to Basic, MuffinEMU saves your advanced settings. When you switch back, it asks whether to restore them or keep the defaults.\n\nReset settings to defaults (under About) also returns this to Basic and forgets the saved values.")
+                text: "Basic keeps Settings short. The advanced settings run at their defaults and their rows are hidden.\n\nAdvanced shows everything: the renderer, scaling filters, gamma, Steady frame rate, CPU cores and other performance switches, the emulated clock, overlay details, motion tuning, stick feel, audio channels, diagnostics, and extra options for each game.\n\nWhen you switch to Basic, MuffinEMU sets your advanced settings, and each game's, aside and uses the defaults. Switching back to Advanced puts them all back as they were.\n\nReset settings to defaults (under About) also returns this to Basic and forgets the saved values.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
-        .alert("Restore your previous advanced settings?", isPresented: $askRestore) {
-            Button("Restore") { AdvancedSettings.restoreSnapshot() }
-            Button("Keep defaults", role: .cancel) { AdvancedSettings.discardSnapshot() }
-        } message: {
-            Text("They were saved when you switched to Basic. Keep defaults forgets them.")
+        .onReceive(NotificationCenter.default.publisher(for: .muffinSettingsWereReset)) { _ in
+            pausedCount = AdvancedSettings.pausedCount
         }
     }
 }
