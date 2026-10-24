@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms under GPL-3.0 section 7(b) and 7(c) apply: see ATTRIBUTION.md in the repository root.
 
+import Combine
 import SwiftUI
 
 /// One setting as search and "Changed from default" see it: its name as its row shows it, the section
@@ -392,7 +393,7 @@ struct ChangedSettingsSection: View {
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         .onAppear { changed = SettingsIndex.changed() }
-        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification).receive(on: RunLoop.main)) { _ in
             changed = SettingsIndex.changed()
         }
     }
