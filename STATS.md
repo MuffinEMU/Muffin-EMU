@@ -1,10 +1,10 @@
 # MuffinEMU community stats
 
-Updated 2026-10-23 by the Community stats workflow. History: [history.jsonl](history.jsonl) and [traffic-daily.csv](traffic-daily.csv).
+Updated 2026-10-24 by the Community stats workflow. History: [history.jsonl](history.jsonl) and [traffic-daily.csv](traffic-daily.csv).
 
 | | |
 |---|---|
-| IPA downloads, all releases | **864** (+238 in 7 days) |
+| IPA downloads, all releases | **898** (+227 in 7 days) |
 | Stars | 4 (+1 in 7 days) |
 | Forks | 0 (+0 in 7 days) |
 | Watchers | 1 |
@@ -13,18 +13,18 @@ Updated 2026-10-23 by the Community stats workflow. History: [history.jsonl](his
 
 | Channel | Downloads |
 |---|---|
-| stable | 789 |
+| stable | 822 |
 | experimental | 30 |
 | other | 30 |
-| nightly | 14 |
+| nightly | 15 |
 | audit | 1 |
 
 ## Stable releases (newest first)
 
 | Release | Downloads |
 |---|---|
-| v10.3 | 205 |
-| v10.2 | 32 |
+| v10.3 | 237 |
+| v10.2 | 33 |
 | v10.1 | 14 |
 | v10.0 | 17 |
 | v9.9 | 6 |
