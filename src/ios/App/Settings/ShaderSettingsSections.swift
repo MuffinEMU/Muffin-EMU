@@ -5,35 +5,8 @@
 
 import SwiftUI
 
-/// Whether a shader is built while the game keeps running, or the game waits for it. This is
-/// the global default; the per-game override is in the library's long-press menu.
-struct ShaderCompilationSection: View {
-    @AppStorage("muffin.shaders.asyncCompile") private var asyncShaderCompile = true
-
-    var body: some View {
-        Section {
-            Toggle(isOn: $asyncShaderCompile) {
-                Text("Compile shaders in the background")
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-            }
-            .tint(MuffinTheme.accentText)
-            .onChange(of: asyncShaderCompile) { newValue in
-                cemu_bridge_set_async_shader_compile(newValue)
-            }
-        } header: {
-            SettingsSectionHeader("Shader compilation", icon: "hammer", accent: .core)
-        } footer: {
-            InfoButton.footer(
-                "On: effects may flicker the first time they appear. Off: the game pauses briefly instead.",
-                title: "Shader compilation",
-                text: "Shaders are the small programs your device uses to draw effects. On, the game keeps running while new ones are prepared, so an effect may flicker or appear late the first time. Off, the game pauses for each one instead.\n\nNano Assault Neo has problems with this on. Turn it off for that game only: press and hold it in your library.\n\nFavour accuracy (under CPU) always waits for each shader. This applies the next time you start a game.")
-        }
-        .foregroundColor(MuffinTheme.brownDarkest)
-    }
-}
-
 /// Shader cache size across every game, when it last changed, and the two clear actions (compiled shaders
-/// only, or everything including learned ones), each behind a confirmation. Per game: the game's own options.
+/// only, or everything including learned ones), each behind a confirmation. Per game: the game's Game page and Game settings.
 struct ShaderCacheSection: View {
     @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
     @AppStorage("muffin.shaders.asyncCompile") private var asyncShaderCompile = true
@@ -78,7 +51,7 @@ struct ShaderCacheSection: View {
         } header: {
             SettingsSectionHeader("Shader cache", icon: "externaldrive", accent: .core)
         } footer: {
-            InfoButton.footer("Games save the shaders they need so they start faster and stutter less. Clear compiled shaders to free space; they rebuild the next time you play. Clear all also removes learned shaders, so games stutter until they relearn them. To clear one game, use its options. Close the game first.")
+            InfoButton.footer("Games save the shaders they need so they start faster and stutter less. Clear compiled shaders to free space; they rebuild the next time you play. Clear all also removes learned shaders, so games stutter until they relearn them. To clear one game, use its page in the library. Close the game first.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         .onAppear(perform: refreshCacheStats)

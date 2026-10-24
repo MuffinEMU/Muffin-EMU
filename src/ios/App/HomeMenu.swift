@@ -100,7 +100,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
         case .resume: return "Closes the menu and carries on with the game."
         case .saveStates: return "Opens the save state slots."
         case .screenLayout: return "Opens the screen layout choices."
-        case .externalDisplay: return "Opens the external display settings, the same ones as in Settings > Display."
+        case .externalDisplay: return "Opens the external display settings, the same ones as in Settings > External display."
         case .moveControls: return "Closes the menu and lets you drag the on-screen controls."
         case .recordAudio: return "Records the game's sound to an M4A file in the Recordings folder in Files. Choose it again to stop."
         case .recordScreen: return "Records the screen the game is showing, at the game's own resolution and with its sound, to a video in the Recordings folder in Files. Choose it again to stop."
@@ -244,7 +244,7 @@ struct HomeMenuOverlay: View {
     /// a controller button is used otherwise, so a touch player is not handed a row that looks chosen.
     @State private var usingController = ControllerPresence.isConnected()
 
-    // The same settings as Settings > Display, so a change in either place shows in the other.
+    // The same settings as Settings > External display, so a change in either place shows in the other.
     @AppStorage(ExternalDisplaySystemSettings.enabledKey)
     private var externalDisplayEnabled = ExternalDisplaySystemSettings.defaultEnabled
     @AppStorage(DisplayLayoutSettings.swapKey)
@@ -488,7 +488,7 @@ struct HomeMenuOverlay: View {
         return result
     }
 
-    /// Settings > Display's external display rows, as menu rows: switches show a checkmark when on, and
+    /// Settings > External display's rows, as menu rows: switches show a checkmark when on, and
     /// "This device shows" is one row per choice. Each change re-routes at once, as it does in Settings.
     private var externalRows: [HomeMenuRow] {
         var result: [HomeMenuRow] = [
