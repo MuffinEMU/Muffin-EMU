@@ -55,12 +55,12 @@ struct NotificationSettingsSection: View {
 
     var body: some View {
         Section {
-            positionPicker
             // How they look is Advanced mode only (see AdvancedSettings).
-            if advanced {
-                textColorField
-                textScaleSlider
-            }
+            ScreenTextStyleRows(positionRaw: $positionRaw, textColor: $textColor, textScale: $textScale,
+                                showsLook: advanced,
+                                setPosition: { cemu_bridge_set_notification_position($0) },
+                                setTextColor: { cemu_bridge_set_notification_text_color($0) },
+                                setTextScale: { cemu_bridge_set_notification_text_scale($0) })
             controllerProfilesToggle
             controllerBatteryToggle
             shaderCompilingToggle
@@ -74,54 +74,6 @@ struct NotificationSettingsSection: View {
                 text: fullText)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
-    }
-
-    private var positionPicker: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Position")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-            Picker("Position", selection: $positionRaw) {
-                ForEach(ScreenPosition.allCases) { position in
-                    Text(position.title).tag(position.rawValue)
-                }
-            }
-            .pickerStyle(.menu)
-            // The row's own Text is the label; a menu picker in a Form row prints its label as well.
-            .labelsHidden()
-            .tint(MuffinTheme.accentText)
-        }
-        .onChange(of: positionRaw) { newValue in
-            cemu_bridge_set_notification_position(Int32(newValue))
-        }
-    }
-
-    private var textColorField: some View {
-        ColorPicker("Text colour", selection: packedColourBinding($textColor), supportsOpacity: false)
-            .font(.system(size: 15, weight: .semibold, design: .rounded))
-            .disabled(isOff)
-            .onChange(of: textColor) { newValue in
-                cemu_bridge_set_notification_text_color(UInt32(truncatingIfNeeded: newValue))
-            }
-    }
-
-    private var textScaleSlider: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text("Text size")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                Spacer()
-                Text("\(textScale)%")
-                    .font(.system(size: 13, design: .monospaced))
-                    .foregroundColor(MuffinTheme.secondaryText)
-            }
-            Slider(
-                value: Binding(get: { Double(textScale) }, set: { textScale = Int($0) }),
-                in: 50...200, step: 25)
-        }
-        .disabled(isOff)
-        .onChange(of: textScale) { newValue in
-            cemu_bridge_set_notification_text_scale(Int32(newValue))
-        }
     }
 
     private var controllerProfilesToggle: some View {
