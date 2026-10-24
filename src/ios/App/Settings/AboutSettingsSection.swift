@@ -66,13 +66,13 @@ struct AboutSettingsSection: View {
                 SettingsDefaults.reset(includingPerGameOverrides: false)
                 resetMessage = "Settings reset to defaults."
             }
-            Button("Reset Settings and Per-Game Options", role: .destructive) {
+            Button("Reset Settings and Every Game's Settings", role: .destructive) {
                 SettingsDefaults.reset(includingPerGameOverrides: true)
-                resetMessage = "Settings and per-game options reset to defaults."
+                resetMessage = "Settings and every game's settings reset to defaults."
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("Puts every option in Settings back to its default, including controls, graphics, audio, overlay and appearance. Your library, favourites, keys.txt, accounts, theme, app icon and premium unlock are not affected. Per-game options stay unless you pick the second button.")
+            Text("Puts every option in Settings back to its default, including controls, graphics, audio, overlay and appearance. Your library, favourites, keys.txt, accounts, theme, app icon and premium unlock are not affected. Each game's own settings stay unless you pick the second button.")
         }
     }
 }

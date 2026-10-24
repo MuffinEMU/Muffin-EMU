@@ -81,7 +81,8 @@ struct AdvancedGroup {
 /// (see `advancedFields` at the bottom).
 ///
 /// Switching to Basic saves the current advanced values (a snapshot in UserDefaults), then sets
-/// every one back to its default. Switching back to Advanced offers to restore the snapshot.
+/// every one back to its default: they are paused, not lost. Switching back to Advanced brings the
+/// snapshot back on its own.
 enum AdvancedSettings {
     /// What the app keeps while Basic is on, so Restore has something to bring back. The "muffin."
     /// prefix means a settings reset removes both.
@@ -271,7 +272,7 @@ enum AdvancedSettings {
             || PerGameSettingsStore.shared.overridesByGame.values.contains { !$0.advancedFields.isIdentity }
     }
 
-    /// Whether a snapshot is waiting for the person to restore or discard it.
+    /// Whether Basic is holding saved advanced values for the next switch to Advanced.
     static var hasSnapshot: Bool {
         let defaults = UserDefaults.standard
         let values = defaults.dictionary(forKey: snapshotKey) ?? [:]
@@ -335,7 +336,7 @@ enum AdvancedSettings {
         NotificationCenter.default.post(name: .muffinSettingsWereReset, object: nil)
     }
 
-    /// "Keep defaults": forgets what Basic saved.
+    /// Forgets what Basic saved (a settings import replaces it).
     static func discardSnapshot() {
         let defaults = UserDefaults.standard
         defaults.removeObject(forKey: snapshotKey)
@@ -347,6 +348,24 @@ enum AdvancedSettings {
     static func resetModeAndSnapshot() {
         discardSnapshot()
         UserDefaults.standard.removeObject(forKey: SettingsMode.storageKey)
+    }
+
+    /// How many advanced settings Basic is holding away from their defaults, in the app and in each
+    /// game's own options: what Settings mode says is paused.
+    static var pausedCount: Int {
+        let defaults = UserDefaults.standard
+        let values = defaults.dictionary(forKey: snapshotKey) ?? [:]
+        let app = allSettings.filter { setting in
+            guard let saved = values[setting.key] else { return false }
+            guard let defaultValue = setting.defaultValue else { return true }
+            return !(saved as AnyObject).isEqual(defaultValue)
+        }.count
+        var games = 0
+        if let data = defaults.data(forKey: perGameSnapshotKey),
+           let saved = try? JSONDecoder().decode([String: GameOverrides].self, from: data) {
+            games = saved.values.reduce(0) { $0 + $1.advancedFields.customCount }
+        }
+        return app + games
     }
 
     /// Tells the engine every advanced setting's current stored value.

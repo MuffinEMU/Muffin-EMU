@@ -131,8 +131,10 @@ struct GraphicsSettingsSection: View {
             // Basic keeps them at their defaults (see AdvancedSettings).
             if advanced {
                 fullSpeedRendersToggle
+                PerGameOverrideNote(field: .fullSpeedRenders)
                 if fullSpeedRenders {
                     fullSpeedShaderPicker
+                    PerGameOverrideNote(field: .fullSpeedShaderMode)
                 }
                 rendererPicker
                 // Only the Vulkan renderer loads MoltenVK, so Metal users have nothing to pick here.
@@ -140,11 +142,14 @@ struct GraphicsSettingsSection: View {
                     moltenVKPicker
                 }
                 upscalePicker
+                PerGameOverrideNote(field: .upscaleFilter)
                 downscalePicker
+                PerGameOverrideNote(field: .downscaleFilter)
             }
             resolutionPicker
+            PerGameOverrideNote(field: .renderScale)
             if favourPerformance {
-                Text("Favour performance is on (Settings > CPU), so the picture is drawn at Balanced at most, with linear scaling.")
+                Text("The Speed performance profile is on (Settings > CPU), so the picture is drawn at Balanced at most, with linear scaling.")
                     .font(.system(size: 12))
                     .foregroundColor(MuffinTheme.secondaryText)
             }

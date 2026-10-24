@@ -5,35 +5,8 @@
 
 import SwiftUI
 
-/// Whether a shader is built while the game keeps running, or the game waits for it. This is
-/// the global default; the per-game override is in the library's long-press menu.
-struct ShaderCompilationSection: View {
-    @AppStorage("muffin.shaders.asyncCompile") private var asyncShaderCompile = true
-
-    var body: some View {
-        Section {
-            Toggle(isOn: $asyncShaderCompile) {
-                Text("Compile shaders in the background")
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-            }
-            .tint(MuffinTheme.accentText)
-            .onChange(of: asyncShaderCompile) { newValue in
-                cemu_bridge_set_async_shader_compile(newValue)
-            }
-        } header: {
-            SettingsSectionHeader("Shader Compilation", icon: "hammer", accent: .core)
-        } footer: {
-            InfoButton.footer(
-                "On keeps the game running while a shader builds; things may flicker the first time they appear. Off waits for each shader and stutters instead.",
-                title: "Shader Compilation",
-                text: "On, the game keeps running while new shaders are built, and you may see something flicker or appear late the first time it is drawn. Off, the game waits for each one, which stutters instead.\n\nNano Assault Neo breaks with this on. Set it off for that game only: long-press it in your library.\n\nFavour accuracy (under CPU) always waits for each shader, whatever this is set to. It applies the next time you start a game.")
-        }
-        .foregroundColor(MuffinTheme.brownDarkest)
-    }
-}
-
 /// Shader cache size across every game, when it last changed, and the two clear actions (compiled shaders
-/// only, or everything including learned ones), each behind a confirmation. Per game: the game's own options.
+/// only, or everything including learned ones), each behind a confirmation. Per game: the game's Game page and Game settings.
 struct ShaderCacheSection: View {
     @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
     @AppStorage("muffin.shaders.asyncCompile") private var asyncShaderCompile = true
@@ -55,6 +28,7 @@ struct ShaderCacheSection: View {
             .onChange(of: asyncShaderCompile) { newValue in
                 cemu_bridge_set_async_shader_compile(newValue)
             }
+            PerGameOverrideNote(field: .preCompileShaders)
             SettingsRow(label: "Size on disk", value: Self.formatBytes(learnedCacheBytes + compiledCacheBytes))
             SettingsRow(label: "Last updated", value: ShaderCacheInfo.formatDate(lastUpdated))
             if SettingsMode.isAdvanced(raw: settingsModeRaw) {
@@ -78,7 +52,7 @@ struct ShaderCacheSection: View {
         } header: {
             SettingsSectionHeader("Shaders", icon: "externaldrive", accent: .core)
         } footer: {
-            InfoButton.footer("What every game has saved so it starts faster. To clear one game, open its options. Clearing needs the game closed.")
+            InfoButton.footer("What every game has saved so it starts faster. To clear one game, open its page in the library. Clearing needs the game closed.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         .onAppear(perform: refreshCacheStats)

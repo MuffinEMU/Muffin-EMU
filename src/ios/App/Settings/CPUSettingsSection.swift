@@ -26,6 +26,25 @@ struct CPUSettingsSection: View {
 
     private var advanced: Bool { SettingsMode.isAdvanced(raw: settingsModeRaw) }
 
+    private var profile: PerformanceProfile {
+        PerformanceProfile(accuracy: favourAccuracy, performance: favourPerformance, oneCore: oneCoreMode)
+    }
+
+    /// Sets all three switches and tells the engine, as the three toggles each used to.
+    private var profileChoice: Binding<PerformanceProfile> {
+        Binding(
+            get: { profile },
+            set: { choice in
+                guard let switches = choice.switches else { return }
+                favourAccuracy = switches.accuracy
+                favourPerformance = switches.performance
+                oneCoreMode = switches.oneCore
+                cemu_bridge_set_favour_accuracy(switches.accuracy)
+                cemu_bridge_set_favour_performance(switches.performance)
+                cemu_bridge_set_low_power_mode(switches.oneCore)
+            })
+    }
+
     private var selectedModeUnavailable: Bool { advanced && !(CoreMode(rawValue: coreModeRaw)?.isAvailable ?? true) }
 
     var body: some View {
@@ -49,57 +68,25 @@ struct CPUSettingsSection: View {
 
             // Advanced mode only: Basic keeps these at their defaults (see AdvancedSettings).
             if advanced {
-                Toggle(isOn: $favourAccuracy) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Favour accuracy")
+                // One choice for Favour accuracy, Favour performance and One-core mode, stored under
+                // their own keys as before (see PerformanceProfile).
+                VStack(alignment: .leading, spacing: 4) {
+                    Picker(selection: profileChoice) {
+                        ForEach(PerformanceProfile.choices(including: profile)) { choice in
+                            Text(choice.title).tag(choice)
+                        }
+                    } label: {
+                        Text("Performance profile")
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        Text(favourAccuracy
-                             ? "Slower but more accurate: one CPU core and stricter GPU syncing."
-                             : "Faster, with some accuracy shortcuts.")
-                            .font(.system(size: 12))
-                            .foregroundColor(MuffinTheme.secondaryText)
                     }
+                    .pickerStyle(.menu)
+                    .tint(MuffinTheme.accentText)
+                    Text(profile.summary)
+                        .font(.system(size: 12))
+                        .foregroundColor(MuffinTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .tint(MuffinTheme.accentText)
-                .onChange(of: favourAccuracy) { newValue in
-                    cemu_bridge_set_favour_accuracy(newValue)
-                    // Opposite trades, so turning one on turns the other off.
-                    if newValue { favourPerformance = false }
-                }
-
-                Toggle(isOn: $favourPerformance) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Favour performance")
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        Text(favourPerformance
-                             ? "As fast as possible: a softer picture, rougher lighting in some games, and shaders that may pop in."
-                             : "Off: the normal balance of speed and quality.")
-                            .font(.system(size: 12))
-                            .foregroundColor(MuffinTheme.secondaryText)
-                    }
-                }
-                .tint(MuffinTheme.accentText)
-                .onChange(of: favourPerformance) { newValue in
-                    cemu_bridge_set_favour_performance(newValue)
-                    if newValue { favourAccuracy = false }
-                }
-
-                // See OneCoreMode in RenderScale.swift.
-                Toggle(isOn: $oneCoreMode) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("One-core mode")
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        Text(oneCoreMode
-                             ? "One CPU core, whatever CPU cores is set to below."
-                             : "Follows the CPU cores setting below.")
-                            .font(.system(size: 12))
-                            .foregroundColor(MuffinTheme.secondaryText)
-                    }
-                }
-                .tint(MuffinTheme.accentText)
-                .onChange(of: oneCoreMode) { newValue in
-                    cemu_bridge_set_low_power_mode(newValue)
-                }
+                PerGameOverrideNote(field: .performanceProfile)
 
                 // Auto by default: decides per game from its profile, this device's performance cores and
                 // its thermal state, and leans to one core (see CoreMode in RenderScale.swift).
@@ -145,6 +132,7 @@ struct CPUSettingsSection: View {
                         coreModeRaw = CoreMode.resolved(saved).rawValue
                     }
                 }
+                PerGameOverrideNote(field: .coreMode)
             }
 
             // On by default: at .serious iOS is already throttling, so lowering the pixel count
@@ -225,9 +213,9 @@ struct CPUSettingsSection: View {
             SettingsSectionHeader("CPU", icon: "cpu", accent: .core)
         } footer: {
             InfoButton.footer(
-                "Changes to the CPU switches apply the next time you start a game. Cool down automatically only acts when the device overheats; One-core mode is the always-on version.",
+                "Changes to the CPU switches apply the next time you start a game. Cool down automatically only acts when the device overheats; the Battery saver profile is the always-on version.",
                 title: "CPU",
-                text: "The recompiler needs a JIT enabler (StikJIT, SideStore or LiveContainer). Without one the interpreter runs instead, which is much slower; the CPU line above shows which you got.\n\nFavour accuracy is slower but can fix a game that glitches, desyncs or crashes. It also builds every shader before it is needed, whatever Compile shaders in the background is set to.\n\nFavour performance is the opposite trade: everything runs as fast as MuffinEMU can make it, and some quality goes. The picture is drawn at Balanced at most with linear scaling, so it's softer. Shaders skip the Wii U's exact multiply rule, which is faster but can make lighting or shadows look wrong in some games. Shaders always compile in the background, so things can pop in for a moment instead of the game pausing. Crash reports carry less detail. Favour accuracy and Favour performance turn each other off, and a game set to favour accuracy in its own options still does.\n\nCool down automatically acts when iOS reports the device is overheating, and Device heat shows that same state. In Advanced mode, Cool down starts at picks the point: Serious (the default) acts as soon as iOS starts throttling, Critical waits until iOS is throttling hard.\n\nThe recompiler, Favour accuracy, Favour performance, One-core mode and CPU cores apply the next time you start a game.")
+                text: "The recompiler needs a JIT enabler (StikJIT, SideStore or LiveContainer). Without one the interpreter runs instead, which is much slower; the CPU line above shows which you got.\n\nPerformance profile (Advanced mode) picks one trade-off. Balanced is the default.\n\nAccuracy is slower but can fix a game that glitches, desyncs or crashes. It runs on one CPU core and builds every shader before it is needed, whatever Compile shaders in the background is set to.\n\nSpeed is the opposite trade: everything runs as fast as MuffinEMU can make it, and some quality goes. The picture is drawn at Balanced at most with linear scaling, so it's softer. Shaders skip the Wii U's exact multiply rule, which is faster but can make lighting or shadows look wrong in some games. Shaders always compile in the background, so things can pop in for a moment instead of the game pausing. Crash reports carry less detail.\n\nBattery saver runs on one CPU core whatever CPU cores is set to, for less heat and battery use, at some cost in frame rate.\n\nA game can have its own profile in its Game settings.\n\nCool down automatically acts when iOS reports the device is overheating, and Device heat shows that same state. In Advanced mode, Cool down starts at picks the point: Serious (the default) acts as soon as iOS starts throttling, Critical waits until iOS is throttling hard.\n\nThe recompiler, the performance profile and CPU cores apply the next time you start a game.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }

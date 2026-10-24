@@ -16,8 +16,8 @@ extension Notification.Name {
 /// Emulated Clock ("timebaseShift"), which predate the prefix.
 ///
 /// Never touched: the premium unlock, the selected theme, the onboarding-completed flag,
-/// and per-game overrides (only removed if the person picks "Reset Settings and Per-Game
-/// Options"). Also never touched: the library's own records (favorites, the region and
+/// and per-game overrides (only removed if the person picks "Reset settings and every
+/// game's settings"). Also never touched: the library's own records (favorites, the region and
 /// title-name cache, graphic pack release info) and results the app worked out by itself
 /// (cores Auto keeps on one, a Vulkan start failure, the one-time clock repair flag). They
 /// share the "muffin." prefix but are data, not settings, and the confirmation says the
@@ -44,7 +44,7 @@ enum SettingsDefaults {
     private static let alwaysExcludedPrefixes = ["muffin.library.", "muffin.graphicPacks."]
 
     /// Per-game, like the overrides in PerGameSettingsStore: Adaptive's learned layout for each
-    /// game. Kept unless the person picks "Reset Settings and Per-Game Options".
+    /// game. Kept unless the person picks "Reset settings and every game's settings".
     private static let perGamePrefix = "muffin.touchlab.adaptive."
 
     /// More that is state rather than a setting: left out of a settings export along with everything

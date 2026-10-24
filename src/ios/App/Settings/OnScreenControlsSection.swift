@@ -7,7 +7,8 @@ import SwiftUI
 
 /// Every on-screen control setting except which cluster sits where - moving a
 /// cluster is a thing you can only sensibly do with a game under it, so that lives
-/// in the emulator view. Size and opacity are worth setting from here too, and
+/// in the emulator view. The section itself is a short list (style, sticks on or off, the
+/// resets); the rest sits on pages of their own: Size and feel, Stick tuning, During play. Size and opacity are worth setting from here too, and
 /// "Reset controls to default" needs to be reachable from somewhere that is not itself on top of
 /// the pad.
 struct OnScreenControlsSection: View {
@@ -125,154 +126,43 @@ struct OnScreenControlsSection: View {
                 .tint(MuffinTheme.pixelBlue)
             }
 
+            // The rest is grouped on pages of its own, so this section stays a short list you can
+            // read at a glance: what each page holds is said under its name.
+            subPageLink("Size and feel", systemImage: "hand.point.up.left", summary: sizeAndFeelSummary) {
+                subPage("Size and feel", footer: "Reset to default, on the On-screen Controls list, puts these back.") {
+                    sizeAndFeelRows
+                }
+            }
+
             // Only while the mode they belong to is on. A deadzone slider
             // under a d-pad is a control with nothing behind it. The TouchLab styles always
             // have sticks, and read the same gate, deadzone and curve.
             if joystickMode || usingTouchLab || previewPadEnabled {
-                // Gate, deadzone, curve and spacing live on their own page so this section
-                // stays a short list of the things most people change.
-                NavigationLink {
-                    Form { Section { joystickOptions } }
-                        .navigationTitle("Stick tuning")
-                } label: {
-                    Label("Stick tuning", systemImage: "dial.medium")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                subPageLink("Stick tuning", systemImage: "dial.medium",
+                            summary: "Calibration, spacing and how the sticks feel. Applies to every control style.") {
+                    subPage("Stick tuning", footer: "Calibration applies to every control style: this pad, the new pad system (preview) and each TouchLab style.") {
+                        joystickOptions
+                    }
                 }
             }
 
-            // iPad only: an iPhone has no spare height to move them in. Applies to MuffinEMU's
-            // pad and to the TouchLab styles whose shoulders are fixed.
-            if ControllerLayoutSettings.supportsShoulderOffset
-                && (!usingTouchLab || TouchLabSettings.hasMovableShoulders(touchLabScheme)) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text(shoulderStore.label(in: windowSize.effectiveSize, touchLab: usingTouchLab))
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        Spacer()
-                        // The TouchLab styles can only move them down, so a "higher" left over from
-                        // MuffinEMU's pad would describe nothing on screen.
-                        Text(ControllerLayoutSettings.shoulderOffsetLabel(usingTouchLab ? max(0, shoulderBinding.wrappedValue) : shoulderBinding.wrappedValue))
-                            .font(.system(size: 13, design: .monospaced))
-                            .foregroundColor(.secondary)
-                    }
-                    HStack(spacing: 10) {
-                        Image(systemName: "arrow.up.and.down")
-                            .accessibilityHidden(true)
-                        Slider(
-                            value: shoulderBinding,
-                            in: ControllerLayoutSettings.shoulderOffsetRange(touchLab: usingTouchLab, in: windowSize.effectiveSize),
-                            step: ControllerLayoutSettings.shoulderOffsetStep
-                        )
-                        .accessibilityLabel("Shoulder button height")
-                        .accessibilityValue(ControllerLayoutSettings.shoulderOffsetLabel(usingTouchLab ? max(0, shoulderBinding.wrappedValue) : shoulderBinding.wrappedValue))
-                    }
-                    Toggle("Same height in portrait and landscape",
-                           isOn: shoulderStore.linkBinding(in: windowSize.effectiveSize, touchLab: usingTouchLab))
-                        .font(.system(size: 13, design: .rounded))
-                    Text("Moves the four shoulder buttons up or down together. They stop before they would leave the screen or touch the sticks and buttons.")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+            subPageLink("During play", systemImage: "play.rectangle",
+                        summary: "The top bar, and when the controls hide or pause the game.") {
+                subPage("During play", footer: "To move buttons, start a game and tap the move button in the top bar.") {
+                    duringPlayRows
                 }
             }
 
-            // One Group: the Section stays under ViewBuilder's ten direct children.
+            subPageLink("New pad system (preview)", systemImage: "sparkles", summary: "Try the pad that's being built.") {
+                ZStack {
+                    MuffinTheme.backgroundGradient.ignoresSafeArea()
+                    Form { PreviewPadSection() }
+                }
+                .navigationTitle("New pad system (preview)")
+                .foregroundColor(MuffinTheme.brownDarkest)
+            }
+
             Group {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Button size")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                HStack(spacing: 10) {
-                    Image(systemName: "minus.magnifyingglass")
-                    Slider(
-                        value: $controlScale,
-                        in: ControllerLayoutSettings.minScale...ControllerLayoutSettings.maxScale
-                    )
-                    .accessibilityLabel("Button size")
-                    Image(systemName: "plus.magnifyingglass")
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Opacity")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                HStack(spacing: 10) {
-                    Image(systemName: "circle.lefthalf.filled")
-                    Slider(value: $controlOpacity, in: 0.2...1.0)
-                        .accessibilityLabel("Opacity")
-                    Image(systemName: "circle.fill")
-                }
-            }
-
-            Toggle(isOn: $hapticsEnabled) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Haptic feedback")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text("A light tap on press. Turn off if it feels like buzzing rather than a button.")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                }
-            }
-            .tint(MuffinTheme.pixelBlue)
-
-            Toggle(isOn: hideTopBar) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Hide the top bar while playing")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text("The bar fades away a few seconds after you last touch it. Tap the small handle at the top of the screen, or swipe down from it, to bring it back. It stays up while paused, in menus, and with VoiceOver on. On by default.")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .tint(MuffinTheme.pixelBlue)
-
-            // How long the bar waits, and how big the handle is: Advanced mode only (see AdvancedSettings).
-            if advanced && hideTopBar.wrappedValue {
-                topBarOptions
-            }
-
-            NavigationLink {
-                Form { PreviewPadSection() }
-                    .navigationTitle("New pad system (preview)")
-            } label: {
-                Label("New pad system (preview)", systemImage: "sparkles")
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-            }
-
-            Toggle(isOn: $pauseWhileEditing) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Pause while moving the controls")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text("The game waits while you move or adjust the on-screen controls, and carries on when you tap Done.")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                }
-            }
-            .tint(MuffinTheme.pixelBlue)
-
-            Toggle(isOn: $hideControlsInHomeMenu) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Hide the on-screen controls in the home menu")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text("The controls disappear while the home menu is open and come back when it closes.")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                }
-            }
-            .tint(MuffinTheme.pixelBlue)
-
-            Toggle(isOn: $autoHideWithController) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Hide on-screen controls when a controller is connected")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text("The controls come back when it disconnects. The GamePad's screen stays, so you can still touch it.")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                }
-            }
-            .tint(MuffinTheme.pixelBlue)
-            }
-
             // Resets MuffinEMU's own pad (size, opacity, stick spacing, moved buttons), which is
             // also what the TouchLab styles read for size, opacity and stick spacing.
             Button(role: .destructive, action: { showingResetLayoutConfirmation = true }) {
@@ -289,6 +179,7 @@ struct OnScreenControlsSection: View {
                 Text(bindingsResetResult)
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
+            }
             }
         } header: {
             SettingsSectionHeader("On-screen Controls", icon: "gamecontroller", accent: .io)
@@ -321,6 +212,176 @@ struct OnScreenControlsSection: View {
         } message: {
             Text("Rebuilds the default button bindings. Use this if some buttons do nothing while the sticks still work. Any buttons you remapped go back to default.")
         }
+    }
+
+    // MARK: Pages
+
+    private var sizeAndFeelSummary: String {
+        ControllerLayoutSettings.supportsShoulderOffset
+            ? "Button size, opacity, haptic feedback and shoulder button height."
+            : "Button size, opacity and haptic feedback."
+    }
+
+    /// A row that opens one of this section's pages, with a line saying what's on it.
+    private func subPageLink<Destination: View>(_ title: String, systemImage: String, summary: String,
+                                                @ViewBuilder destination: () -> Destination) -> some View {
+        NavigationLink {
+            destination()
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Label(title, systemImage: systemImage)
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                Text(summary)
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// One of this section's pages: its rows in one Section on the Settings background.
+    private func subPage<Content: View>(_ title: String, footer: String,
+                                        @ViewBuilder content: () -> Content) -> some View {
+        ZStack {
+            MuffinTheme.backgroundGradient.ignoresSafeArea()
+            Form {
+                Section {
+                    content()
+                } footer: {
+                    InfoButton.footer(footer)
+                }
+            }
+        }
+        .navigationTitle(title)
+        .foregroundColor(MuffinTheme.brownDarkest)
+    }
+
+    @ViewBuilder private var sizeAndFeelRows: some View {
+        // iPad only: an iPhone has no spare height to move them in. Applies to MuffinEMU's
+        // pad and to the TouchLab styles whose shoulders are fixed.
+        if ControllerLayoutSettings.supportsShoulderOffset
+            && (!usingTouchLab || TouchLabSettings.hasMovableShoulders(touchLabScheme)) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(shoulderStore.label(in: windowSize.effectiveSize, touchLab: usingTouchLab))
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    Spacer()
+                    // The TouchLab styles can only move them down, so a "higher" left over from
+                    // MuffinEMU's pad would describe nothing on screen.
+                    Text(ControllerLayoutSettings.shoulderOffsetLabel(usingTouchLab ? max(0, shoulderBinding.wrappedValue) : shoulderBinding.wrappedValue))
+                        .font(.system(size: 13, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+                HStack(spacing: 10) {
+                    Image(systemName: "arrow.up.and.down")
+                        .accessibilityHidden(true)
+                    Slider(
+                        value: shoulderBinding,
+                        in: ControllerLayoutSettings.shoulderOffsetRange(touchLab: usingTouchLab, in: windowSize.effectiveSize),
+                        step: ControllerLayoutSettings.shoulderOffsetStep
+                    )
+                    .accessibilityLabel("Shoulder button height")
+                    .accessibilityValue(ControllerLayoutSettings.shoulderOffsetLabel(usingTouchLab ? max(0, shoulderBinding.wrappedValue) : shoulderBinding.wrappedValue))
+                }
+                Toggle("Same height in portrait and landscape",
+                       isOn: shoulderStore.linkBinding(in: windowSize.effectiveSize, touchLab: usingTouchLab))
+                    .font(.system(size: 13, design: .rounded))
+                Text("Moves the four shoulder buttons up or down together. They stop before they would leave the screen or touch the sticks and buttons.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Button size")
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+            HStack(spacing: 10) {
+                Image(systemName: "minus.magnifyingglass")
+                Slider(
+                    value: $controlScale,
+                    in: ControllerLayoutSettings.minScale...ControllerLayoutSettings.maxScale
+                )
+                .accessibilityLabel("Button size")
+                Image(systemName: "plus.magnifyingglass")
+            }
+        }
+
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Opacity")
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+            HStack(spacing: 10) {
+                Image(systemName: "circle.lefthalf.filled")
+                Slider(value: $controlOpacity, in: 0.2...1.0)
+                    .accessibilityLabel("Opacity")
+                Image(systemName: "circle.fill")
+            }
+        }
+
+        Toggle(isOn: $hapticsEnabled) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Haptic feedback")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                Text("A light tap on press. Turn off if it feels like buzzing rather than a button.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .tint(MuffinTheme.pixelBlue)
+
+    }
+
+    @ViewBuilder private var duringPlayRows: some View {
+        Toggle(isOn: hideTopBar) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Hide the top bar while playing")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                Text("The bar fades away a few seconds after you last touch it. Tap the small handle at the top of the screen, or swipe down from it, to bring it back. It stays up while paused, in menus, and with VoiceOver on. On by default.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .tint(MuffinTheme.pixelBlue)
+
+        // How long the bar waits, and how big the handle is: Advanced mode only (see AdvancedSettings).
+        if advanced && hideTopBar.wrappedValue {
+            topBarOptions
+        }
+
+        Toggle(isOn: $pauseWhileEditing) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Pause while moving the controls")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                Text("The game waits while you move or adjust the on-screen controls, and carries on when you tap Done.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .tint(MuffinTheme.pixelBlue)
+
+        Toggle(isOn: $hideControlsInHomeMenu) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Hide the on-screen controls in the home menu")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                Text("The controls disappear while the home menu is open and come back when it closes.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .tint(MuffinTheme.pixelBlue)
+
+        Toggle(isOn: $autoHideWithController) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Hide on-screen controls when a controller is connected")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                Text("The controls come back when it disconnects. The GamePad's screen stays, so you can still touch it.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .tint(MuffinTheme.pixelBlue)
+        PerGameOverrideNote(field: .autoHideControls)
     }
 
     @ViewBuilder private var topBarOptions: some View {
@@ -524,6 +585,6 @@ struct OnScreenControlsSection: View {
     }
 
     private var fullText: String {
-        "Add analog sticks puts both sticks on screen alongside the d-pad and face buttons. Push further for more speed.\n\nGate is the shape the stick can reach. Octagon matches the real GamePad; Round reaches full travel in every direction.\n\nCalibrate sticks has you rest your thumb, push to every edge and let go, then sets where full push is and ignores the wobble of your resting thumb. It applies to every control style.\n\nDeadzone is how far you can move before the game notices. Turn it up only if a resting thumb makes the game drift.\n\nFine control makes small movements gentler: at linear, halfway is half speed; higher values make halfway slower.\n\nIn Advanced mode, Stick fine-tuning sets each stick on its own: inner deadzone, outer deadzone (where full push is reached), anti-deadzone (the least the game is sent once past the deadzone, for games with their own), fine control, horizontal and vertical sensitivity, and invert. Its test circle shows what the game is sent. It is also in the move-controls panel in a game. The Deadzone and Fine control sliders set both sticks.\n\nStick spacing moves both sticks closer together or further apart, for smaller or bigger hands. On a narrow screen it stops before the sticks would touch.\n\nOn iPad, L, R, ZL and ZR height moves the four shoulder buttons up or down together, stopping before they would leave the screen or touch a stick or button.\n\nButton size and opacity adjust the size MuffinEMU picks for your screen.\n\nHide the top bar while playing fades the Back and pause bar out a few seconds after you last touch it, so it stops covering the picture. A small handle stays at the top centre of the screen: tap it, or swipe down from it, to bring the bar back. The bar stays up while the game is paused, a menu is open, or VoiceOver is on.\n\nIn Advanced mode, Top bar hides after sets the wait (2, 4 or 8 seconds) and Reveal handle sets the size of the area you tap to bring the bar back. Normal is the default; Large is easier to hit but can take touches meant for the GamePad screen at the top of the picture.\n\nHide on-screen controls when a controller is connected takes the controls off the screen while a controller is paired, and puts them back when it disconnects. It is off by default. The GamePad's screen stays visible and touchable either way.\n\nThese settings apply to every game. Two things are kept per game instead: Adaptive remembers where your thumbs land, and Melo-Controller remembers where you moved its buttons.\n\nTo move a cluster, start a game and tap the move button in the top bar. There you can also switch control style without leaving the game."
+        "The list holds the control style, Add analog sticks and the resets. Size and feel (button size, opacity, haptics and, on iPad, shoulder height), Stick tuning and During play (the top bar and when the controls hide) are pages of their own.\n\nAdd analog sticks puts both sticks on screen alongside the d-pad and face buttons. Push further for more speed.\n\nGate is the shape the stick can reach. Octagon matches the real GamePad; Round reaches full travel in every direction.\n\nCalibrate sticks has you rest your thumb, push to every edge and let go, then sets where full push is and ignores the wobble of your resting thumb. It applies to every control style.\n\nDeadzone is how far you can move before the game notices. Turn it up only if a resting thumb makes the game drift.\n\nFine control makes small movements gentler: at linear, halfway is half speed; higher values make halfway slower.\n\nIn Advanced mode, Stick fine-tuning sets each stick on its own: inner deadzone, outer deadzone (where full push is reached), anti-deadzone (the least the game is sent once past the deadzone, for games with their own), fine control, horizontal and vertical sensitivity, and invert. Its test circle shows what the game is sent. It is also in the move-controls panel in a game. The Deadzone and Fine control sliders set both sticks.\n\nStick spacing moves both sticks closer together or further apart, for smaller or bigger hands. On a narrow screen it stops before the sticks would touch.\n\nOn iPad, L, R, ZL and ZR height moves the four shoulder buttons up or down together, stopping before they would leave the screen or touch a stick or button.\n\nButton size and opacity adjust the size MuffinEMU picks for your screen.\n\nHide the top bar while playing fades the Back and pause bar out a few seconds after you last touch it, so it stops covering the picture. A small handle stays at the top centre of the screen: tap it, or swipe down from it, to bring the bar back. The bar stays up while the game is paused, a menu is open, or VoiceOver is on.\n\nIn Advanced mode, Top bar hides after sets the wait (2, 4 or 8 seconds) and Reveal handle sets the size of the area you tap to bring the bar back. Normal is the default; Large is easier to hit but can take touches meant for the GamePad screen at the top of the picture.\n\nHide on-screen controls when a controller is connected takes the controls off the screen while a controller is paired, and puts them back when it disconnects. It is off by default. The GamePad's screen stays visible and touchable either way.\n\nThese settings apply to every game. Two things are kept per game instead: Adaptive remembers where your thumbs land, and Melo-Controller remembers where you moved its buttons.\n\nTo move a cluster, start a game and tap the move button in the top bar. There you can also switch control style without leaving the game."
     }
 }

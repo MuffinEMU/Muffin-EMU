@@ -158,7 +158,7 @@ final class PerGameSettingsStore: ObservableObject {
     }
 
     /// Clears every per-game override at once - used by Settings > About > "Reset
-    /// Settings and Per-Game Options", the only path that touches this store from
+    /// settings and every game's settings", the only path that touches this store from
     /// the global reset. Ordinary "Reset Settings" leaves it alone entirely.
     func removeAllOverrides() {
         overridesByGame = [:]
@@ -232,21 +232,39 @@ struct GameContextMenu: View {
     }
 }
 
-/// One override row: the setting's name and menu, with a line under it saying what it follows
-/// or what this game has been set to. Used for every per-game choice on the options screen.
-private struct OverridePickerRow<Selection: Hashable, Options: View>: View {
+
+/// A per-game on/off choice. Following Settings is a real third state you can go back to, not
+/// wherever a toggle happens to land.
+enum OverrideChoice: Hashable {
+    case followSettings, on, off
+
+    /// The menu for an on/off row. The first option says what Settings has, so the row shows what
+    /// applies without a caption under it.
+    @ViewBuilder static func options(settingsHas value: Bool) -> some View {
+        Text("Same as Settings (\(value ? "On" : "Off"))").tag(OverrideChoice.followSettings)
+        Text("On").tag(OverrideChoice.on)
+        Text("Off").tag(OverrideChoice.off)
+    }
+}
+
+/// The label of a per-game menu's first option, naming what Settings has now.
+func sameAsSettings(_ value: String) -> String { "Same as Settings (\(value))" }
+
+/// One per-game choice: the setting's name, a dot while this game has its own value, its menu, and a
+/// note under it only when there is something to warn about.
+struct GameOverrideRow<Selection: Hashable, Options: View>: View {
     let title: String
-    let caption: String
+    let isCustom: Bool
+    let note: String?
     let selection: Binding<Selection>
-    let isDisabled: Bool
     let options: Options
 
-    init(title: String, caption: String, selection: Binding<Selection>, isDisabled: Bool = false,
+    init(_ title: String, isCustom: Bool, note: String? = nil, selection: Binding<Selection>,
          @ViewBuilder options: () -> Options) {
         self.title = title
-        self.caption = caption
+        self.isCustom = isCustom
+        self.note = note
         self.selection = selection
-        self.isDisabled = isDisabled
         self.options = options()
     }
 
@@ -255,189 +273,306 @@ private struct OverridePickerRow<Selection: Hashable, Options: View>: View {
             Picker(selection: selection) {
                 options
             } label: {
-                Text(title)
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                HStack(spacing: 6) {
+                    Text(title)
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    if isCustom {
+                        Circle()
+                            .fill(MuffinTheme.accentText)
+                            .frame(width: 7, height: 7)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityValue(isCustom ? "Set for this game" : "")
             }
             .pickerStyle(.menu)
             .tint(MuffinTheme.accentText)
-            .disabled(isDisabled)
-            Text(caption)
-                .font(.system(size: 12))
-                .foregroundColor(MuffinTheme.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
+            if let note {
+                Text(note)
+                    .font(.system(size: 12))
+                    .foregroundColor(MuffinTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 }
 
-/// The full per-game settings screen "View Game Options" opens into.
+extension GameOverrides {
+    /// How many settings this game has its own value for, counted the way the screen shows them. A field
+    /// added to GameOverrides goes in this list too.
+    var customCount: Int {
+        let fields: [Any?] = [preCompileShaders, coreMode, renderScale, upscaleFilter, downscaleFilter,
+                              fullSpeedRenders, fullSpeedShaderMode, screenLayout, autoHideControls, performanceOverlay]
+        // The three switches a performance profile sets are one row (see PerformanceProfile).
+        let hasProfile = favourAccuracy != nil || favourPerformance != nil || oneCoreMode != nil
+        return fields.filter { $0 != nil }.count + (hasProfile ? 1 : 0)
+    }
+}
+
+/// A game's own settings, pushed from its Game page. The rows sit under the same page names, icons and
+/// colours as Settings, so a choice is found in the same place in both. Each menu starts with what
+/// Settings has; anything else sets it for this game only, and a dot marks the rows that are.
 ///
-/// Only reachable from the library, so a game is never running while these change: every
-/// choice here is read when the game next starts.
+/// Only reachable from the library, so a game is never running while these change: every choice here is
+/// read when the game next starts. Saves and shader cache imports are on the Game page itself.
 struct GameOptionsView: View {
     let game: GameMetadata
     @ObservedObject var store: PerGameSettingsStore
-    /// The whole library, so a cache file that belongs to another game can say which one.
-    var libraryGames: [GameMetadata] = []
-    @Environment(\.dismiss) private var dismiss
     @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
-
-    /// One line of feedback under the buttons rather than an alert. An alert for a
-    /// success is a second tap for something the person already knows they did; the
-    /// failures here are all short enough to read in place.
-    @State private var saveTransferMessage: String?
     @State private var coreWarning: CoreMode?
-    @State private var saveTransferFailed = false
-    @State private var showingImportConfirmation = false
+    @State private var confirmReset = false
 
-    /// Same idea for the shader cache imports: one line under the buttons, red when nothing was imported.
-    @State private var cacheImportMessage: String?
-    @State private var cacheImportFailed = false
-    @State private var cacheImportBusy = false
-    /// A pipeline cache whose name doesn't say which renderer made it, waiting for the answer.
-    @State private var pendingPipeline: PendingPipeline?
+    private var key: String { game.settingsKey }
+    private var own: GameOverrides { store.overrides(for: key) }
+    private var isAdvanced: Bool { SettingsMode.isAdvanced(raw: settingsModeRaw) }
 
-    private struct PendingPipeline: Identifiable {
-        let id = UUID()
-        let staged: URL
-        let name: String
-    }
+    /// What a launch uses in the current Settings mode (see activeOverrides).
+    private var active: GameOverrides { isAdvanced ? own : own.removingAdvancedFields() }
 
-    /// Three real states, not two - "use whichever the global setting is right now" has
-    /// to be a choice you can return to, not just wherever the toggle happens to land.
-    /// Shared by every per-game override on this screen, not just shaders.
-    private enum TriState: String, CaseIterable, Identifiable {
-        case useGlobalDefault, on, off
-        var id: String { rawValue }
-        var title: String {
-            switch self {
-            case .useGlobalDefault: return "Use Global Default"
-            case .on: return "On"
-            case .off: return "Off"
-            }
-        }
-    }
-
-    private func binding(for keyPath: WritableKeyPath<GameOverrides, Bool?>,
-                         set setter: @escaping (Bool?) -> Void) -> Binding<TriState> {
-        Binding(
-            get: {
-                switch store.overrides(for: game.settingsKey)[keyPath: keyPath] {
-                case .none: return .useGlobalDefault
-                case .some(true): return .on
-                case .some(false): return .off
-                }
-            },
-            set: { choice in
-                switch choice {
-                case .useGlobalDefault: setter(nil)
-                case .on: setter(true)
-                case .off: setter(false)
-                }
-            })
-    }
-
-    private var shaderChoice: Binding<TriState> {
-        binding(for: \.preCompileShaders) { store.setPreCompileShaders($0, for: game.settingsKey) }
-    }
-
-    private var favourAccuracyChoice: Binding<TriState> {
-        binding(for: \.favourAccuracy) { store.setFavourAccuracy($0, for: game.settingsKey) }
-    }
-
-    /// nil is "Use Global Default"; the tag is CoreMode.rawValue otherwise. A stored value this
-    /// version does not know (saved by a newer one) reads as "Use Global Default", which is what
-    /// the launch does with it.
+    /// "" is Same as Settings; otherwise CoreMode.rawValue. A value saved by a newer version reads as
+    /// Same as Settings, which is what the launch does with it.
     private var coreModeChoice: Binding<String> {
         Binding(
             get: {
-                guard let raw = store.overrides(for: game.settingsKey).coreMode, CoreMode(rawValue: raw) != nil else { return "" }
+                guard let raw = own.coreMode, CoreMode(rawValue: raw) != nil else { return "" }
                 return raw
             },
             set: {
                 let mode = CoreMode(rawValue: $0)
-                store.setCoreMode(mode, for: game.settingsKey)
+                store.updateOverrides(for: key) { $0.coreMode = mode?.rawValue }
                 if let mode, !mode.isAvailable { coreWarning = mode }
             })
     }
 
-    // MARK: Captions
-
-    /// "Follows Settings, which has it on." or "Set for this game only. Settings has it on."
-    private func caption(pinned: Bool, settingsValue: String) -> String {
-        pinned
-            ? "Set for this game only. Settings has it \(settingsValue)."
-            : "Follows Settings, which has it \(settingsValue)."
+    private var profileIsCustom: Bool {
+        own.favourAccuracy != nil || own.favourPerformance != nil || own.oneCoreMode != nil
     }
 
-    private var shaderCaption: String {
-        caption(pinned: store.overrides(for: game.settingsKey).preCompileShaders != nil,
-                settingsValue: store.globalPreCompileShaders ? "on" : "off")
+    /// This game's own profile, its values over Settings' for any switch it doesn't set. Nil while it
+    /// follows Settings for all three.
+    private var ownProfile: PerformanceProfile? {
+        guard profileIsCustom else { return nil }
+        return PerformanceProfile(accuracy: own.favourAccuracy ?? store.globalFavourAccuracy,
+                                  performance: own.favourPerformance ?? store.globalFavourPerformance,
+                                  oneCore: own.oneCoreMode ?? store.globalOneCoreMode)
     }
 
-    private var favourAccuracyCaption: String {
-        caption(pinned: store.overrides(for: game.settingsKey).favourAccuracy != nil,
-                settingsValue: store.globalFavourAccuracy ? "on" : "off")
+    private var profileNote: String? { ownProfile.map(\.summary) }
+
+    /// "" follows Settings for all three switches; a profile sets all three for this game.
+    private var profileChoice: Binding<String> {
+        Binding(
+            get: { ownProfile?.rawValue ?? "" },
+            set: { raw in
+                store.updateOverrides(for: key) { next in
+                    if let switches = PerformanceProfile(rawValue: raw)?.switches {
+                        next.favourAccuracy = switches.accuracy
+                        next.favourPerformance = switches.performance
+                        next.oneCoreMode = switches.oneCore
+                    } else {
+                        next.favourAccuracy = nil
+                        next.favourPerformance = nil
+                        next.oneCoreMode = nil
+                    }
+                }
+            })
     }
 
-    private var coreModeCaption: String {
-        let base = caption(pinned: store.overrides(for: game.settingsKey).coreMode != nil,
-                           settingsValue: "set to \(CoreMode.current.title)")
-        let effective = store.effectiveCoreMode(for: game.settingsKey)
-        if !effective.isAvailable { return base + " May not work on this device." }
-        guard effective != .single else { return base }
-        if store.effectiveFavourAccuracy(for: game.settingsKey) {
-            return base + " Favour accuracy is on for this game, so it runs on one core whatever this says."
+    /// Only said when something else decides the core count, or the choice may not work here.
+    private var coreModeNote: String? {
+        let effective = store.effectiveCoreMode(for: key)
+        if !effective.isAvailable { return "May not work on this device." }
+        guard effective != .single else { return nil }
+        if store.effectiveFavourAccuracy(for: key) {
+            return "The Accuracy profile runs this game on one core whatever this says."
         }
-        if OneCoreMode.isEnabled {
-            return base + " One-core mode is on in Settings, so games run on one core whatever this says."
+        if store.effectiveOneCoreMode(for: key) {
+            return "The Battery saver profile runs this game on one core whatever this says."
         }
-        return base
+        return nil
+    }
+
+    /// The same settings for every game, opened from here so changing what "Same as Settings" means
+    /// doesn't mean leaving the game for Settings. These are Settings' own sections.
+    private func allGamesLink<Sections: View>(@ViewBuilder _ sections: () -> Sections) -> some View {
+        let content = sections()
+        return NavigationLink {
+            ZStack {
+                MuffinTheme.backgroundGradient
+                    .ignoresSafeArea()
+                Form { content }
+            }
+            .navigationTitle("Settings for all games")
+            .foregroundColor(MuffinTheme.brownDarkest)
+        } label: {
+            Label("Change for all games", systemImage: "slider.horizontal.3")
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .foregroundColor(MuffinTheme.accentText)
+        }
+    }
+
+    private func pageHeader(_ category: SettingsCategory) -> some View {
+        SettingsSectionHeader(category.title, icon: category.icon, accent: category.accent)
     }
 
     // MARK: Sections
 
-    private var overridesSection: some View {
+    private var summarySection: some View {
         Section {
-            OverridePickerRow(title: "Compile shaders in the background", caption: shaderCaption, selection: shaderChoice) {
-                ForEach(TriState.allCases) { choice in
-                    Text(choice.title).tag(choice)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(game.cardName.name)
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(summaryLine)
+                    .font(.system(size: 13))
+                    .foregroundColor(MuffinTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.vertical, 2)
+            if !active.isIdentity {
+                Button(role: .destructive) {
+                    confirmReset = true
+                } label: {
+                    DestructiveSettingsLabel(title: "Reset this game's settings", systemImage: "arrow.uturn.backward")
                 }
             }
-            // Advanced mode only (see AdvancedSettings).
-            if SettingsMode.isAdvanced(raw: settingsModeRaw) {
-                OverridePickerRow(title: "Favour accuracy", caption: favourAccuracyCaption, selection: favourAccuracyChoice) {
-                    ForEach(TriState.allCases) { choice in
-                        Text(choice.title).tag(choice)
+        } footer: {
+            InfoButton.footer(
+                "Changes apply the next time you start the game.",
+                title: "Game settings",
+                text: "Every menu here starts with \"Same as Settings\", which follows the matching setting in Settings, even if you change it later. Picking anything else sets it for this game only and puts a dot beside it.\n\nScreen layout and Hide on-screen controls when a controller is connected are put in place when the game starts, and your own choices come back when it stops. A layout change you make during the game is not kept.\n\nPerformance overlay On uses the corner chosen in Settings, or the top left if Settings has it off.\n\nChanges apply the next time you start the game.")
+        }
+    }
+
+    private var summaryLine: String {
+        let count = active.customCount
+        if count == 0 { return "Follows Settings for everything. Pick a value below to set it for this game only." }
+        return "\(count) setting\(count == 1 ? "" : "s") set for this game only, marked with a dot. Everything else follows Settings."
+    }
+
+    private var performanceSection: some View {
+        Section {
+            GameOverrideRow("Compile shaders in the background", isCustom: own.preCompileShaders != nil,
+                            selection: store.onOffChoice(\.preCompileShaders, for: key)) {
+                OverrideChoice.options(settingsHas: store.globalPreCompileShaders)
+            }
+            if isAdvanced {
+                GameOverrideRow("Performance profile", isCustom: profileIsCustom, note: profileNote, selection: profileChoice) {
+                    Text(sameAsSettings(PerformanceProfile.current.title)).tag("")
+                    ForEach(PerformanceProfile.choices(including: ownProfile ?? .balanced)) { choice in
+                        Text(choice.title).tag(choice.rawValue)
                     }
                 }
-                OverridePickerRow(title: "CPU cores", caption: coreModeCaption, selection: coreModeChoice) {
-                    Text("Use Global Default").tag("")
+                GameOverrideRow("CPU cores", isCustom: own.coreMode != nil, note: coreModeNote, selection: coreModeChoice) {
+                    Text(sameAsSettings(CoreMode.current.title)).tag("")
                     ForEach(CoreMode.listed) { mode in
                         Text(mode.isAvailable ? mode.title : mode.title + ", may not work").tag(mode.rawValue)
                     }
                 }
+                graphicsRows
             }
-            if !store.overrides(for: game.settingsKey).isIdentity {
-                Button {
-                    store.clearOverrides(for: game.settingsKey)
-                } label: {
-                    Label("Use Global Defaults for All", systemImage: "arrow.uturn.backward")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                }
+            allGamesLink {
+                ShaderCacheSection()
+                CPUSettingsSection()
+                GraphicsSettingsSection()
             }
         } header: {
-            SettingsSectionHeader("Overrides", icon: "slider.horizontal.3", accent: .core)
+            pageHeader(.emulation)
         } footer: {
-            InfoButton.footer(
-                "\"Use Global Default\" follows Settings; On or Off sets this game only. Changes apply the next time you start the game.",
-                title: "Overrides",
-                // Favour accuracy and CPU cores are Advanced mode only, so Basic doesn't describe them.
-                text: "Compile shaders in the background builds shaders while the game keeps running. Most games want this on; Nano Assault Neo breaks with it, so it can be set per game.\n\n"
-                    + (SettingsMode.isAdvanced(raw: settingsModeRaw)
-                        ? "Favour accuracy is slower but more accurate, and can fix a game that glitches or crashes. It also keeps the game on one CPU core. See Settings > CPU.\n\nCPU cores picks how many cores run the game. Auto decides for each game and device.\n\n"
-                        : "")
-                    + "\"Use Global Default\" follows the matching setting in Settings, even if you change it later. On or Off sets this game only.\n\nChanges apply the next time you start the game."
-            )
+            if isAdvanced {
+                InfoButton.footer(
+                    "How fast this game runs and how it looks.",
+                    title: "Performance and graphics",
+                    text: "Compile shaders in the background builds shaders while the game keeps running. Most games want this on; Nano Assault Neo breaks with it.\n\nPerformance profile picks the trade-off for this game: Speed, Accuracy (slower but more accurate, on one CPU core; can fix a game that glitches or crashes) or Battery saver (one CPU core).\n\nCPU cores picks how many cores run the game. Auto decides for each game and device.\n\nResolution and the two scaling filters change how the picture is drawn for this game.")
+            } else {
+                InfoButton.footer(
+                    "Resolution, CPU cores, screen layout and more can be set per game when Settings mode is Advanced (Settings > General).",
+                    title: "Performance and graphics",
+                    text: "Compile shaders in the background builds shaders while the game keeps running. Most games want this on; Nano Assault Neo breaks with it, so it can be set per game.\n\nSwitch Settings mode to Advanced on Settings > General to set the performance profile, CPU cores, Resolution, the scaling filters, Steady frame rate, screen layout, the performance overlay and controller auto-hide for this game too.")
+            }
+        }
+    }
+
+    @ViewBuilder private var graphicsRows: some View {
+        GameOverrideRow("Resolution", isCustom: own.renderScale != nil,
+                        selection: store.textChoice(\.renderScale, known: RenderScale.allCases.map(\.rawValue), for: key)) {
+            Text(sameAsSettings(RenderScale.storedChoice.title)).tag("")
+            ForEach(RenderScale.allCases) { scale in
+                Text(scale.title).tag(scale.rawValue)
+            }
+        }
+        GameOverrideRow("Filter when enlarging", isCustom: own.upscaleFilter != nil,
+                        selection: store.numberChoice(\.upscaleFilter, known: ScaleFilter.allCases.map(\.rawValue), for: key)) {
+            Text(sameAsSettings(store.globalUpscaleFilter.title)).tag(-1)
+            ForEach(ScaleFilter.allCases) { filter in
+                Text(filter.title).tag(filter.rawValue)
+            }
+        }
+        GameOverrideRow("Filter when shrinking", isCustom: own.downscaleFilter != nil,
+                        note: favourPerformanceNote,
+                        selection: store.numberChoice(\.downscaleFilter, known: ScaleFilter.allCases.map(\.rawValue), for: key)) {
+            Text(sameAsSettings(store.globalDownscaleFilter.title)).tag(-1)
+            ForEach(ScaleFilter.allCases) { filter in
+                Text(filter.title).tag(filter.rawValue)
+            }
+        }
+        GameOverrideRow("Steady frame rate", isCustom: own.fullSpeedRenders != nil,
+                        selection: store.onOffChoice(\.fullSpeedRenders, for: key)) {
+            OverrideChoice.options(settingsHas: store.globalFullSpeedRenders)
+        }
+        if own.fullSpeedRenders ?? store.globalFullSpeedRenders {
+            GameOverrideRow("First time a new effect appears", isCustom: own.fullSpeedShaderMode != nil,
+                            selection: store.numberChoice(\.fullSpeedShaderMode,
+                                                          known: FullSpeedRenders.ShaderMode.allCases.map(\.rawValue), for: key)) {
+                Text(sameAsSettings(store.globalFullSpeedShaderMode.title)).tag(-1)
+                ForEach(FullSpeedRenders.ShaderMode.allCases) { mode in
+                    Text(mode.title).tag(mode.rawValue)
+                }
+            }
+        }
+    }
+
+    /// The same note Settings > Graphics shows: with Favour performance on (and accuracy off), the filters
+    /// above are overridden at launch (filtersToPush).
+    private var favourPerformanceNote: String? {
+        store.effectiveFavourPerformance(for: key) && !store.effectiveFavourAccuracy(for: key)
+            ? "The Speed profile is on for this game, so the picture is drawn at Balanced at most, with linear scaling."
+            : nil
+    }
+
+    private var screenSection: some View {
+        Section {
+            GameOverrideRow("Screen layout", isCustom: own.screenLayout != nil,
+                            selection: store.textChoice(\.screenLayout, known: ScreenLayout.allCases.map(\.rawValue), for: key)) {
+                Text(sameAsSettings(store.globalScreenLayout.string)).tag("")
+                ForEach(ScreenLayout.allCases) { layout in
+                    Text(layout.string).tag(layout.rawValue)
+                }
+            }
+            GameOverrideRow("Performance overlay", isCustom: own.performanceOverlay != nil,
+                            selection: store.onOffChoice(\.performanceOverlay, for: key)) {
+                OverrideChoice.options(settingsHas: store.globalOverlayPosition != .disabled)
+            }
+            allGamesLink {
+                DisplaySettingsSection()
+                OverlaySettingsSection()
+            }
+        } header: {
+            pageHeader(.screenAndSound)
+        }
+    }
+
+    private var controlsSection: some View {
+        Section {
+            GameOverrideRow("Hide on-screen controls when a controller is connected", isCustom: own.autoHideControls != nil,
+                            selection: store.onOffChoice(\.autoHideControls, for: key)) {
+                OverrideChoice.options(settingsHas: store.globalAutoHideControls)
+            }
+            allGamesLink {
+                OnScreenControlsSection()
+            }
+        } header: {
+            pageHeader(.controls)
         }
     }
 
@@ -460,240 +595,40 @@ struct GameOptionsView: View {
         }
     }
 
-    private var gameSavesSection: some View {
-        Section {
-            exportSaveButton
-            importSaveButton
-            if let saveTransferMessage {
-                Text(saveTransferMessage)
-                    .font(.system(size: 12))
-                    .foregroundColor(saveTransferFailed ? .red : MuffinTheme.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        } header: {
-            SettingsSectionHeader("Game saves", icon: "externaldrive", accent: .io)
-        } footer: {
-            InfoButton.footer(
-                "The save the game itself writes. Not a save state. Export is available once the game has saved.",
-                title: "Game saves",
-                text: "This is the save the game itself writes. It uses the Wii U\'s own format, so it can move between MuffinEMU, desktop Cemu and a real console. A save state is a snapshot of the whole emulated console and only MuffinEMU can read it.\n\nExport writes a folder named after the game and title ID. Import accepts that folder, a folder named after the title ID from another Cemu install, or its \'user\' folder. Importing replaces the current save; the old one is first copied to save-backups in MuffinEMU\'s Documents folder."
-            )
-        }
-    }
-
-    private var exportSaveButton: some View {
-        Button {
-            GameSaveTransfer.export(game) { result in
-                switch result {
-                case .success(let note):
-                    saveTransferMessage = note
-                    saveTransferFailed = false
-                case .failure(let error):
-                    saveTransferMessage = error.localizedDescription
-                    // Backing out of the picker is not an error, so it is not shown as one.
-                    if case GameSaveTransfer.TransferError.cancelled = error {
-                        saveTransferFailed = false
-                    } else {
-                        saveTransferFailed = true
-                    }
-                }
-            }
-        } label: {
-            Label("Export game saves", systemImage: "square.and.arrow.up")
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
-        }
-        .disabled(!GameSaveTransfer.hasSave(for: game))
-    }
-
-    // Confirmed, unlike export: this one replaces what is already there. It is backed up
-    // either way, but someone should know they are about to swap their progress out before
-    // the picker opens, not after.
-    private var importSaveButton: some View {
-        Button(role: .destructive) {
-            showingImportConfirmation = true
-        } label: {
-            Label("Import game save folder", systemImage: "square.and.arrow.down")
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
-        }
-    }
-
-    private func pickSaveFolder() {
-        DocumentImport.present(contentTypes: [.folder]) { result in
-            switch result {
-            case .success(let urls):
-                guard let picked = urls.first else { return }
-                do {
-                    saveTransferMessage = try GameSaveTransfer.importSave(game, from: picked)
-                    saveTransferFailed = false
-                } catch {
-                    saveTransferMessage = error.localizedDescription
-                    saveTransferFailed = true
-                }
-            case .failure(let error):
-                saveTransferMessage = error.localizedDescription
-                saveTransferFailed = true
-            }
-        }
-    }
-
-    // MARK: Shader caches
-
-    private var shaderCachesSection: some View {
-        Section {
-            Button {
-                pickCacheFile(.shaders)
-            } label: {
-                Label("Import learned shaders", systemImage: "square.and.arrow.down")
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-            }
-            .disabled(cacheImportBusy)
-            Button {
-                pickCacheFile(.pipeline)
-            } label: {
-                Label("Import shader pipeline caches", systemImage: "square.and.arrow.down.on.square")
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-            }
-            .disabled(cacheImportBusy)
-            if cacheImportBusy {
-                HStack(spacing: 8) {
-                    ProgressView()
-                    Text("Importing\u{2026}")
-                        .font(.system(size: 12))
-                        .foregroundColor(MuffinTheme.secondaryText)
-                }
-            }
-            if let cacheImportMessage {
-                Text(cacheImportMessage)
-                    .font(.system(size: 12))
-                    .foregroundColor(cacheImportFailed ? .red : MuffinTheme.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        } header: {
-            SettingsSectionHeader("Shader caches", icon: "hammer", accent: .core)
-        } footer: {
-            InfoButton.footer(
-                "Add a shader cache from desktop Cemu or another MuffinEMU, so this game starts with its shaders already learned.",
-                title: "Shader caches",
-                text: "Learned shaders are what a game has revealed by drawing with them. Importing adds them to this game's own file: anything the game already has stays as it is, and the file is never replaced.\n\nThe file has to be this game's: MuffinEMU checks the version stamp inside it, not the name. Desktop Cemu's files work: learned shaders are named like 000500001010ec00_shaders.bin and are converted the first time the game starts. MuffinEMU's are named ..._mtlshaders.bin. Desktop caches from before Cemu 1.16 use another format and can't be converted.\n\nPipeline caches are named ..._vkpipeline.bin (desktop Cemu, Vulkan) or ..._mtlpipeline.bin (MuffinEMU, Metal). A Vulkan one only helps the Vulkan renderer and a Metal one only the Metal renderer; it's stored either way and used when you switch. Each also needs the game's learned shaders. Import with the game closed. The sizes in Settings update the next time you open it."
-            )
-        }
-    }
-
-    private func pickCacheFile(_ kind: ShaderCacheImport.Kind) {
-        DocumentImport.present(contentTypes: ShaderCacheImport.pickerTypes) { result in
-            switch result {
-            case .success(let urls):
-                guard let picked = urls.first else { return }
-                let name = picked.lastPathComponent
-                cacheImportBusy = true
-                cacheImportMessage = nil
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let staged: URL
-                    do {
-                        staged = try ShaderCacheImport.stage(picked)
-                    } catch {
-                        DispatchQueue.main.async {
-                            finishCacheImport(ShaderCacheImport.Outcome(message: "Couldn't read \"\(name)\": \(error.localizedDescription)", failed: true))
-                        }
-                        return
-                    }
-                    if kind == .pipeline, ShaderCacheImport.pipelineIsVulkan(fileName: name) == nil {
-                        // the contents don't say which renderer wrote it, so ask
-                        DispatchQueue.main.async {
-                            cacheImportBusy = false
-                            pendingPipeline = PendingPipeline(staged: staged, name: name)
-                        }
-                        return
-                    }
-                    runCacheImport(kind, staged: staged, name: name, pipelineIsVulkan: ShaderCacheImport.pipelineIsVulkan(fileName: name))
-                }
-            case .failure(let error):
-                finishCacheImport(ShaderCacheImport.Outcome(message: error.localizedDescription, failed: true))
-            }
-        }
-    }
-
-    /// Runs on a background queue.
-    private func runCacheImport(_ kind: ShaderCacheImport.Kind, staged: URL, name: String, pipelineIsVulkan: Bool?) {
-        let outcome = ShaderCacheImport.run(kind: kind, game: game, library: libraryGames, staged: staged,
-                                            originalName: name, pipelineIsVulkan: pipelineIsVulkan)
-        DispatchQueue.main.async { finishCacheImport(outcome) }
-    }
-
-    private func finishCacheImport(_ outcome: ShaderCacheImport.Outcome) {
-        cacheImportBusy = false
-        cacheImportMessage = outcome.message
-        cacheImportFailed = outcome.failed
-    }
-
-    private func answerPipelineRenderer(_ pending: PendingPipeline, vulkan: Bool) {
-        pendingPipeline = nil
-        cacheImportBusy = true
-        DispatchQueue.global(qos: .userInitiated).async {
-            runCacheImport(.pipeline, staged: pending.staged, name: pending.name, pipelineIsVulkan: vulkan)
-        }
-    }
-
-    private func discardPending(_ pending: PendingPipeline) {
-        try? FileManager.default.removeItem(at: pending.staged)
-    }
-
-    private var optionsForm: some View {
-        Form {
-            overridesSection
-            AdvancedGameOptionsSection(game: game, store: store)
-            GameShaderCacheSection(game: game)
-            graphicPacksSection
-            gameSavesSection
-            shaderCachesSection
-        }
-    }
-
     var body: some View {
-        // NavigationStack needs iOS 16+; the deployment target is 15.0.
-        NavigationView {
-            ZStack {
-                MuffinTheme.backgroundGradient
-                    .ignoresSafeArea()
+        ZStack {
+            MuffinTheme.backgroundGradient
+                .ignoresSafeArea()
 
-                optionsForm
-            }
-            .confirmationDialog("Import a save folder?", isPresented: $showingImportConfirmation, titleVisibility: .visible) {
-                Button("Choose folder", role: .destructive, action: pickSaveFolder)
-                Button("Cancel", role: .cancel) { }
-            } message: {
-                Text("This replaces \(game.title)\'s current save. The one you have now is backed up first, and the game should be closed before you do this.")
-            }
-            .confirmationDialog("Which renderer made this pipeline cache?", isPresented: Binding(
-                get: { pendingPipeline != nil },
-                set: { if !$0 { pendingPipeline = nil } }
-            ), titleVisibility: .visible, presenting: pendingPipeline) { pending in
-                Button("Vulkan (desktop Cemu)") { answerPipelineRenderer(pending, vulkan: true) }
-                Button("Metal (MuffinEMU)") { answerPipelineRenderer(pending, vulkan: false) }
-                Button("Cancel", role: .cancel) { discardPending(pending) }
-            } message: { pending in
-                Text("\"\(pending.name)\" doesn't say. Desktop Cemu's are named ..._vkpipeline.bin and MuffinEMU's ..._mtlpipeline.bin. It's stored under the matching name either way.")
-            }
-            .alert("May not work on this device", isPresented: Binding(
-                get: { coreWarning != nil },
-                set: { if !$0 { coreWarning = nil } }
-            ), presenting: coreWarning) { _ in
-                Button("OK", role: .cancel) { }
-            } message: { mode in
-                Text(mode.limitWarning)
-            }
-            .navigationTitle(game.title)
-            .muffinOpaqueNavigationBar(MuffinTheme.formGround)
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+            Form {
+                summarySection
+                performanceSection
+                if isAdvanced {
+                    screenSection
+                    controlsSection
                 }
+                graphicPacksSection
             }
         }
-        .navigationViewStyle(.stack)
+        .confirmationDialog("Reset this game's settings?", isPresented: $confirmReset, titleVisibility: .visible) {
+            Button("Reset", role: .destructive) { store.clearOverrides(for: key) }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("\(game.cardName.name) goes back to following Settings for everything.")
+        }
+        .alert("May not work on this device", isPresented: Binding(
+            get: { coreWarning != nil },
+            set: { if !$0 { coreWarning = nil } }
+        ), presenting: coreWarning) { _ in
+            Button("OK", role: .cancel) { }
+        } message: { mode in
+            Text(mode.limitWarning)
+        }
+        .navigationTitle("Game settings")
+        .muffinOpaqueNavigationBar(MuffinTheme.formGround)
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
         .foregroundColor(MuffinTheme.brownDarkest)
     }
 }

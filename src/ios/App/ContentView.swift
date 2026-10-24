@@ -994,7 +994,9 @@ struct GameBrowserView: View {
             .sheet(isPresented: $showingIconPicker) {
                 IconPickerView()
             }
-            .sheet(isPresented: $showingSettings) {
+            // Full screen, not a sheet: Settings is a sidebar beside the open page, which needs
+            // the whole screen to be worth it instead of a small floating card.
+            .fullScreenCover(isPresented: $showingSettings) {
                 SettingsView(gameManager: gameManager)
             }
             .sheet(item: $renameTarget) { game in

@@ -71,7 +71,7 @@ enum ShaderCacheInfo {
     }
 }
 
-/// One game's shader cache on its options screen: how much is cached and when it last changed, clearing
+/// One game's shader cache on its Game page: how much is cached and when it last changed, clearing
 /// it for this game alone, and (Advanced mode) the counts, the learned/compiled split and exporting it.
 /// Settings > Shaders does the same for every game at once.
 ///

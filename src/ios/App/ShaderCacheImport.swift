@@ -122,7 +122,7 @@ enum ShaderCacheImport {
         case Int(CEMU_CACHE_STATUS_TITLE_RUNNING.rawValue):
             return Outcome(message: "Close the game first, then import.", failed: true)
         case -2:
-            return Outcome(message: "This game's own cache file was saved by a different version of the cache format, so nothing was changed. Clear this game's shaders in its options, then import again.", failed: true)
+            return Outcome(message: "This game's own cache file was saved by a different version of the cache format, so nothing was changed. Clear this game's shaders on its page in the library, then import again.", failed: true)
         case -1:
             return Outcome(message: "This game's own cache file couldn't be opened or created, so nothing was changed. If storage is full, free some up and try again.", failed: true)
         default:
