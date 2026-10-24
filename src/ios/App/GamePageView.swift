@@ -49,7 +49,7 @@ struct GamePageView: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     private enum PageSheet: String, Identifiable {
-        case settings, cover, rename
+        case cover, rename
         var id: String { rawValue }
     }
 
@@ -94,6 +94,8 @@ struct GamePageView: View {
                     filesSection
                     GameContentSection(game: live)
                     GameShaderCacheSection(game: live)
+                    GameShaderImportSection(game: live, libraryGames: gameManager.games)
+                    GameSavesSection(game: live)
                     saveStatesSection
                     removeSection
                 }.muffinGlassRows()}.muffinGlassFormGround()
@@ -108,8 +110,6 @@ struct GamePageView: View {
             }
             .sheet(item: $sheet) { which in
                 switch which {
-                case .settings:
-                    GameOptionsView(game: live, store: store, libraryGames: gameManager.games)
                 case .cover:
                     CoverArtPickerView(game: live, gameManager: gameManager)
                 case .rename:
@@ -301,8 +301,12 @@ struct GamePageView: View {
 
     private var manageSection: some View {
         Section {
-            Button { sheet = .settings } label: {
-                rowLabel("Game settings", systemImage: "slider.horizontal.3", chevron: true)
+            // Pushed inside this page rather than opened as another sheet on top of it, so Back
+            // returns here.
+            NavigationLink {
+                GameOptionsView(game: live, store: store)
+            } label: {
+                rowLabel("Game settings", systemImage: "slider.horizontal.3")
             }
             Toggle(isOn: Binding(
                 get: { live.isFavorite },

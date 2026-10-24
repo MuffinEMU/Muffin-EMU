@@ -42,7 +42,7 @@ struct SettingsBackupSection: View {
                 InfoButton.footer(
                     "Writes every setting and every game's own options to one file you can keep or move to another device.",
                     title: "Back up settings",
-                    text: "Export settings saves your settings and each game's own options to one .json file in Files. It doesn't include your library, favourites, Wii U keys, accounts, theme or Premium.\n\nImport settings reads such a file, checks it, and asks before replacing anything. Your settings and per-game options are replaced by the file's, and anything the file doesn't mention goes back to its default. Some changes apply the next time you start a game.")
+                    text: "Export settings saves your settings and each game's own settings to one .json file in Files. It doesn't include your library, favourites, Wii U keys, accounts, theme or Premium.\n\nImport settings reads such a file, checks it, and asks before replacing anything. Your settings and each game's settings are replaced by the file's, and anything the file doesn't mention goes back to its default. Some changes apply the next time you start a game.")
             }
             .foregroundColor(MuffinTheme.brownDarkest)
             .confirmationDialog("Replace your settings?", isPresented: $confirmImport, titleVisibility: .visible) {
