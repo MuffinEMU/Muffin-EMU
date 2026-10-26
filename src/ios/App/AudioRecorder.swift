@@ -201,7 +201,7 @@ struct RecordingIndicator: View {
         let spoken = isScreen
             ? String(format: "Recording screen, %d seconds".localized, seconds)
             : String(format: "Recording audio, %d seconds".localized, seconds)
-        HStack(spacing: 6) {
+        return HStack(spacing: 6) {
             Circle()
                 .fill(Color.white)
                 .frame(width: 7, height: 7)

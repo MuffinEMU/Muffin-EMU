@@ -14,7 +14,8 @@ import json, os, re, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, 'App', 'Localization')
-SPEC = re.compile(r'%(?:\d+\$)?[-+ #0]*\d*(?:\.\d+)?(?:hh|h|ll|l|q|z|t|j)?[@dDiuUxXoOfFeEgGcCsSpaA%]')
+# The specifiers the app's format strings use. Narrow on purpose: "70% of" is a percent sign, not "% o".
+SPEC = re.compile(r'%(?:\d+\$)?(?:\.\d+)?(?:ll|l)?[@dfs]|%%')
 INFOPLIST = ['NSMicrophoneUsageDescription', 'NSLocalNetworkUsageDescription']
 
 def specs(s):
@@ -38,8 +39,9 @@ def main():
     tdir = os.path.join(ROOT, 'l10n', 'translations')
     status = 0
     for name in sorted(os.listdir(tdir)):
-        if not name.endswith('.json'): continue
         code = name[:-5]
+        # <code>.json only: translators keep part files (<code>.part01.json) here while they work.
+        if not name.endswith('.json') or '.' in code: continue
         t = json.load(open(os.path.join(tdir, name), encoding='utf-8'))
         pairs, missing, bad = [], 0, []
         for k in keys:

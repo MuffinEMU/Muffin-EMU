@@ -118,7 +118,8 @@ def main():
                 text = unescape(multiline_value(body, m.group(2)))
                 if is_text(text): keys.setdefault(text, f'{rel}:{src.count(chr(10), 0, m.start()) + 1}')
             for m in HELPERS.finditer(src):
-                for lm in re.finditer(LIT, call_args(src, m.end())):
+                args = re.sub(r'\b(?:icon|systemImage|accent):\s*' + LIT, '', call_args(src, m.end()))
+                for lm in re.finditer(LIT, args):
                     raw = lm.group(1)
                     if '\\(' in raw: continue
                     text = unescape(raw)
