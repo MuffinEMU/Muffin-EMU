@@ -52,7 +52,7 @@ final class ExternalLibrary: ObservableObject, @unchecked Sendable {
     private var resolved: [String: URL] = [:]
     private let fileURL: URL
 
-    static let unavailableMessage = "Connect the drive to play"
+    static let unavailableMessage = "Connect the drive to play".localized
 
     private init() {
         let base = (try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true))
@@ -169,13 +169,13 @@ final class ExternalLibrary: ObservableObject, @unchecked Sendable {
         var errorDescription: String? {
             switch self {
             case .accessDenied:
-                return "Couldn't access that location."
+                return "Couldn't access that location.".localized
             case .notReadable(let name):
-                return "MuffinEMU can't read \"\(name)\". If it's on a drive, make sure the drive is connected."
+                return String(format: "MuffinEMU can't read \"%@\". If it's on a drive, make sure the drive is connected.".localized, name)
             case .unsupportedFile(let name):
-                return "\"\(name)\" isn't a Wii U game file MuffinEMU can read. It accepts .wua, .wux, .wud, .iso, .rpx, .elf and .wuhb files."
+                return String(format: "\"%@\" isn't a Wii U game file MuffinEMU can read. It accepts .wua, .wux, .wud, .iso, .rpx, .elf and .wuhb files.".localized, name)
             case .bookmarkFailed(let error):
-                return "Couldn't keep access to that location: \(error.localizedDescription)"
+                return String(format: "Couldn't keep access to that location: %@".localized, error.localizedDescription)
             }
         }
     }

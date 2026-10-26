@@ -146,12 +146,12 @@ struct DisplaySettingsSection: View {
             .tint(MuffinTheme.accentText)
 
         } header: {
-            SettingsSectionHeader("Display", icon: "rectangle.on.rectangle", accent: .io)
+            SettingsSectionHeader("Display".localized, icon: "rectangle.on.rectangle", accent: .io)
         } footer: {
             InfoButton.footer(
-                "Screen Layout arranges the TV and GamePad on this device. A TV or second screen is under External display.",
-                title: "Display",
-                text: "The Wii U has two screens: the TV and the GamePad.\n\nScreen Layout: Single Screen shows one at a time with a swap button; Adaptive shows both, stacked in portrait and side by side in landscape; Both Screens (GamePad Top Right) keeps the TV full size with a small GamePad inset.\n\nWith Single Screen, Pause the TV screen and Pause the GamePad screen stop drawing whichever screen is out of sight, to save heat and battery. The game keeps running. They are under Performance too.\n\nStretch picture to fill the screen fills the screen's own shape instead of keeping the Wii U's 1280x720 proportions, which otherwise letterboxes with bars on two sides. Off keeps the picture undistorted; on trades that for using every pixel. Takes effect on the very next frame.\n\nFlip screen upside down (Advanced mode) turns both Wii U screens vertically before they reach the screen. Off for everyone except a panel or capture rig that presents the image inverted.\n\nAllow portrait during games (iPhone): hold the phone upright and the picture goes along the top with the controls below it. Menus stay in landscape. Turn it off if you'd rather a game never turns when the phone tilts; the iOS rotation lock works too.")
+                "Screen Layout arranges the TV and GamePad on this device. A TV or second screen is under External display.".localized,
+                title: "Display".localized,
+                text: "The Wii U has two screens: the TV and the GamePad.\n\nScreen Layout: Single Screen shows one at a time with a swap button; Adaptive shows both, stacked in portrait and side by side in landscape; Both Screens (GamePad Top Right) keeps the TV full size with a small GamePad inset.\n\nWith Single Screen, Pause the TV screen and Pause the GamePad screen stop drawing whichever screen is out of sight, to save heat and battery. The game keeps running. They are under Performance too.\n\nStretch picture to fill the screen fills the screen's own shape instead of keeping the Wii U's 1280x720 proportions, which otherwise letterboxes with bars on two sides. Off keeps the picture undistorted; on trades that for using every pixel. Takes effect on the very next frame.\n\nFlip screen upside down (Advanced mode) turns both Wii U screens vertically before they reach the screen. Off for everyone except a panel or capture rig that presents the image inverted.\n\nAllow portrait during games (iPhone): hold the phone upright and the picture goes along the top with the controls below it. Menus stay in landscape. Turn it off if you'd rather a game never turns when the phone tilts; the iOS rotation lock works too.".localized)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }

@@ -35,13 +35,13 @@ struct CustomServerAddresses {
 
     /// Why the form can't be saved yet, or nil when it can.
     var problem: String? {
-        if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Give the server a name." }
+        if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Give the server a name.".localized }
         let filled = pairs.map { $0.1.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
-        if filled.isEmpty { return "Enter at least one server address." }
+        if filled.isEmpty { return "Enter at least one server address.".localized }
         for value in filled {
             guard let url = URL(string: value), let scheme = url.scheme?.lowercased(),
                   scheme == "http" || scheme == "https", url.host?.isEmpty == false else {
-                return "\(value) isn't a web address. Addresses start with http:// or https://."
+                return String(format: "%@ isn't a web address. Addresses start with http:// or https://.".localized, value)
             }
         }
         return nil
@@ -101,7 +101,7 @@ enum CustomServerStore {
         return files.filter { $0.pathExtension == "xml" }.compactMap { file in
             guard let data = try? Data(contentsOf: file) else { return nil }
             let id = file.deletingPathExtension().lastPathComponent
-            return CustomServer(id: id, name: name(of: data, fallback: "Custom server"), url: file)
+            return CustomServer(id: id, name: name(of: data, fallback: "Custom server".localized), url: file)
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
@@ -119,9 +119,9 @@ enum CustomServerStore {
     static func validate(_ data: Data) -> String? {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("check-\(UUID().uuidString).xml")
         defer { try? FileManager.default.removeItem(at: temp) }
-        guard (try? data.write(to: temp)) != nil else { return "Couldn't read that file." }
+        guard (try? data.write(to: temp)) != nil else { return "Couldn't read that file.".localized }
         let ok = temp.path.withCString { cemu_bridge_network_services_xml_is_valid($0) }
-        return ok ? nil : "That isn't a usable network_services.xml. It needs a <content> element with a <urls> list of web addresses."
+        return ok ? nil : "That isn't a usable network_services.xml. It needs a <content> element with a <urls> list of web addresses.".localized
     }
 
     /// Saves a copy in the server list.
@@ -132,7 +132,7 @@ enum CustomServerStore {
         let id = UUID().uuidString
         let file = folder.appendingPathComponent("\(id).xml")
         try data.write(to: file, options: .atomic)
-        return CustomServer(id: id, name: name(of: data, fallback: "Custom server"), url: file)
+        return CustomServer(id: id, name: name(of: data, fallback: "Custom server".localized), url: file)
     }
 
     /// Makes a saved server the active network_services.xml and has the engine read it again.
@@ -245,9 +245,9 @@ struct CustomServersSettingsSection: View {
     private func use(_ server: CustomServer) {
         do {
             try CustomServerStore.activate(server)
-            message = "\(server.name) is now the active Custom server. Pick Custom under Network Service to use it."
+            message = String(format: "%@ is now the active Custom server. Pick Custom under Network Service to use it.".localized, server.name)
         } catch {
-            message = "Couldn't make that server active: \(error.localizedDescription)"
+            message = String(format: "Couldn't make that server active: %@".localized, error.localizedDescription)
         }
         reload()
     }
@@ -255,12 +255,12 @@ struct CustomServersSettingsSection: View {
     private func importXML(_ result: Result<URL, Error>) {
         switch result {
         case .failure(let error):
-            message = "Couldn't import: \(error.localizedDescription)"
+            message = String(format: "Couldn't import: %@".localized, error.localizedDescription)
         case .success(let url):
             let scoped = url.startAccessingSecurityScopedResource()
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
             guard let data = try? Data(contentsOf: url) else {
-                message = "Couldn't read that file."
+                message = "Couldn't read that file.".localized
                 return
             }
             if let problem = CustomServerStore.validate(data) {
@@ -270,9 +270,9 @@ struct CustomServersSettingsSection: View {
             do {
                 let saved = try CustomServerStore.save(data)
                 try CustomServerStore.activate(saved)
-                message = "Added \(saved.name) and made it the active Custom server. Pick Custom under Network Service to use it."
+                message = String(format: "Added %@ and made it the active Custom server. Pick Custom under Network Service to use it.".localized, saved.name)
             } catch {
-                message = "Couldn't save that server: \(error.localizedDescription)"
+                message = String(format: "Couldn't save that server: %@".localized, error.localizedDescription)
             }
             reload()
         }
@@ -329,11 +329,11 @@ struct CustomServerFormView: View {
                     TextField("Server name", text: $addresses.name)
                 }
                 Section {
-                    field("Account (act)", $addresses.act)
-                    field("Miiverse (olv)", $addresses.olv)
-                    field("Messages (boss)", $addresses.boss)
-                    field("Icons (idbe)", $addresses.idbe)
-                    field("Updates (tagaya)", $addresses.tagaya)
+                    field("Account (act)".localized, $addresses.act)
+                    field("Miiverse (olv)".localized, $addresses.olv)
+                    field("Messages (boss)".localized, $addresses.boss)
+                    field("Icons (idbe)".localized, $addresses.idbe)
+                    field("Updates (tagaya)".localized, $addresses.tagaya)
                     DisclosureGroup("Shop addresses", isExpanded: $showAdvanced) {
                         field("ecs", $addresses.ecs)
                         field("nus", $addresses.nus)
@@ -369,7 +369,7 @@ struct CustomServerFormView: View {
             try CustomServerStore.activate(saved)
             dismiss()
         } catch {
-            errorMessage = "Couldn't save that server: \(error.localizedDescription)"
+            errorMessage = String(format: "Couldn't save that server: %@".localized, error.localizedDescription)
         }
     }
 }

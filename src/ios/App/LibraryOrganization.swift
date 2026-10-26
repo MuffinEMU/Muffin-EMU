@@ -27,21 +27,21 @@ enum LibraryCardStyle: String, CaseIterable, Hashable, Identifiable {
 
     var title: String {
         switch self {
-        case .standard: return "Cards"
-        case .largeCovers: return "Large covers"
-        case .compact: return "Compact grid"
-        case .list: return "List"
-        case .box3d: return "3D boxes"
+        case .standard: return "Cards".localized
+        case .largeCovers: return "Large covers".localized
+        case .compact: return "Compact grid".localized
+        case .list: return "List".localized
+        case .box3d: return "3D boxes".localized
         }
     }
 
     var detail: String {
         switch self {
-        case .standard: return "Cover, name and a Play button"
-        case .largeCovers: return "Bigger covers, tap a cover to play"
-        case .compact: return "Many small covers on screen at once"
-        case .list: return "One game per row, with details"
-        case .box3d: return "Box art standing free, 3D when a pack has it"
+        case .standard: return "Cover, name and a Play button".localized
+        case .largeCovers: return "Bigger covers, tap a cover to play".localized
+        case .compact: return "Many small covers on screen at once".localized
+        case .list: return "One game per row, with details".localized
+        case .box3d: return "Box art standing free, 3D when a pack has it".localized
         }
     }
 
@@ -117,10 +117,10 @@ enum LibraryGrouping: String, CaseIterable, Hashable, Identifiable {
 
     var title: String {
         switch self {
-        case .none: return "No groups"
-        case .favorites: return "Favourites and the rest"
-        case .recentlyPlayed: return "Recently played"
-        case .alphabet: return "A to Z"
+        case .none: return "No groups".localized
+        case .favorites: return "Favourites and the rest".localized
+        case .recentlyPlayed: return "Recently played".localized
+        case .alphabet: return "A to Z".localized
         }
     }
 
@@ -149,10 +149,10 @@ enum LibraryFilter: String, CaseIterable, Hashable, Identifiable {
 
     var title: String {
         switch self {
-        case .all: return "All games"
-        case .favorites: return "Favourites only"
-        case .played: return "Played before"
-        case .neverPlayed: return "Never played"
+        case .all: return "All games".localized
+        case .favorites: return "Favourites only".localized
+        case .played: return "Played before".localized
+        case .neverPlayed: return "Never played".localized
         }
     }
 
@@ -192,8 +192,8 @@ extension LibraryGrouping {
             let favs = games.filter { $0.isFavorite }
             let rest = games.filter { !$0.isFavorite }
             return [
-                LibrarySection(id: "favorites", title: "Favourites", games: favs),
-                LibrarySection(id: "rest", title: favs.isEmpty ? nil : "Other games", games: rest),
+                LibrarySection(id: "favorites", title: "Favourites".localized, games: favs),
+                LibrarySection(id: "rest", title: favs.isEmpty ? nil : "Other games".localized, games: rest),
             ].filter { !$0.games.isEmpty }
         case .recentlyPlayed:
             let recentIDs = Set(stats.recentIDs(limit: 8))
@@ -201,8 +201,8 @@ extension LibraryGrouping {
                 .sorted { (stats.entry(for: $0.id)?.last ?? .distantPast) > (stats.entry(for: $1.id)?.last ?? .distantPast) }
             let rest = games.filter { !recentIDs.contains($0.id) }
             return [
-                LibrarySection(id: "recent", title: "Recently played", games: recent),
-                LibrarySection(id: "rest", title: recent.isEmpty ? nil : "Everything else", games: rest),
+                LibrarySection(id: "recent", title: "Recently played".localized, games: recent),
+                LibrarySection(id: "rest", title: recent.isEmpty ? nil : "Everything else".localized, games: rest),
             ].filter { !$0.games.isEmpty }
         case .alphabet:
             var order: [String] = []
@@ -305,8 +305,8 @@ struct LibraryRenameSheet: View {
                     TextField("Name", text: $text)
                         .autocapitalization(.words)
                 } footer: {
-                    Text("Only changes how the game is named in your library. Original title: \(originalTitle)"
-                         + (installDescription.isEmpty ? "" : "\nInstall: \(installDescription)"))
+                    Text(String(format: "Only changes how the game is named in your library. Original title: %@".localized, originalTitle)
+                         + (installDescription.isEmpty ? "" : "\n" + String(format: "Install: %@".localized, installDescription)))
                 }
                 if LibraryCustomNames.shared.name(for: game.installKey) != nil {
                     Section {
@@ -425,7 +425,7 @@ struct LibrarySectionHeader: View {
             Text(title)
                 .font(.system(size: 15, weight: .bold, design: .rounded))
                 .foregroundColor(MuffinTheme.brownDarkest)
-            Text("\(count)")
+            Text(verbatim: "\(count)")
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .foregroundColor(MuffinTheme.brownMid)
             Spacer()
@@ -478,7 +478,7 @@ private struct LibraryHeartButton: View {
                 .frame(minWidth: 44, minHeight: 44)
                 .contentShape(Rectangle())
         }
-        .accessibilityLabel(isFavorite ? "Remove from favourites" : "Add to favourites")
+        .accessibilityLabel(isFavorite ? "Remove from favourites".localized : "Add to favourites".localized)
     }
 }
 
@@ -501,7 +501,7 @@ private struct LibraryOptionsButton<Options: View>: View {
                 .frame(minWidth: 44, minHeight: 44)
                 .contentShape(Rectangle())
         }
-        .accessibilityLabel("More options for \(name)")
+        .accessibilityLabel(String(format: "More options for %@".localized, name))
     }
 }
 
@@ -576,7 +576,7 @@ struct LibraryLargeCoverCard<Options: View>: View {
                             .aspectRatio(3 / 4, contentMode: .fit)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Play \(name.name)")
+                    .accessibilityLabel(String(format: "Play %@".localized, name.name))
                     LibraryHeartButton(isFavorite: game.isFavorite, size: 34, action: onFavoriteTap)
                         .padding(4)
                 }
@@ -622,7 +622,7 @@ struct LibraryCompactCard<Options: View>: View {
                         .aspectRatio(3 / 4, contentMode: .fit)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Play \(name.name)")
+                .accessibilityLabel(String(format: "Play %@".localized, name.name))
                 LibraryHeartButton(isFavorite: game.isFavorite, size: 26, action: onFavoriteTap)
                     .padding(.top, -6)
                     .padding(.trailing, -6)
@@ -666,10 +666,10 @@ struct LibraryListRow<Options: View>: View {
         if let entry = stats.entry(for: game.id) {
             let relative = RelativeDateTimeFormatter()
             relative.unitsStyle = .short
-            parts.append("Played " + relative.localizedString(for: entry.last, relativeTo: Date()))
-            if entry.count > 1 { parts.append("\(entry.count) launches") }
+            parts.append(String(format: "Played %@".localized, relative.localizedString(for: entry.last, relativeTo: Date())))
+            if entry.count > 1 { parts.append(String(format: "%d launches".localized, entry.count)) }
         } else {
-            parts.append("Not played yet")
+            parts.append("Not played yet".localized)
         }
         return parts.joined(separator: "  \u{2022}  ")
     }
@@ -708,7 +708,7 @@ struct LibraryListRow<Options: View>: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Play \(name.name)")
+                .accessibilityLabel(String(format: "Play %@".localized, name.name))
 
                 Menu {
                     options
@@ -719,7 +719,7 @@ struct LibraryListRow<Options: View>: View {
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
-                .accessibilityLabel("More options for \(name.name)")
+                .accessibilityLabel(String(format: "More options for %@".localized, name.name))
 
                 Button(action: onFavoriteTap) {
                     Image(systemName: game.isFavorite ? "heart.fill" : "heart")
@@ -728,7 +728,7 @@ struct LibraryListRow<Options: View>: View {
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
-                .accessibilityLabel(game.isFavorite ? "Remove from favourites" : "Add to favourites")
+                .accessibilityLabel(game.isFavorite ? "Remove from favourites".localized : "Add to favourites".localized)
             }
             .padding(.leading, 10)
             .padding(.trailing, 4)
@@ -819,14 +819,14 @@ struct LibraryExternalLine: View {
 
     var body: some View {
         if game.isExternal {
-            Label(game.isUnavailable ? ExternalLibrary.unavailableMessage : "External",
+            Label(game.isUnavailable ? ExternalLibrary.unavailableMessage : "External".localized,
                   systemImage: game.isUnavailable ? "externaldrive.badge.exclamationmark" : "externaldrive")
                 .font(.system(size: size, weight: .medium, design: .rounded))
                 .foregroundColor(game.isUnavailable ? MuffinTheme.alertText : MuffinTheme.brownMid)
                 .lineLimit(2)
                 .multilineTextAlignment(centered ? .center : .leading)
                 .frame(maxWidth: centered ? .infinity : nil, alignment: centered ? .center : .leading)
-                .accessibilityLabel(game.isUnavailable ? ExternalLibrary.unavailableMessage : "Stored outside MuffinEMU, played in place")
+                .accessibilityLabel(game.isUnavailable ? ExternalLibrary.unavailableMessage : "Stored outside MuffinEMU, played in place".localized)
         }
     }
 }
@@ -846,8 +846,8 @@ final class DuplicateInstalls {
         case "wua": return "WUA"
         case "wud": return "WUD"
         case "wux": return "WUX"
-        case "rpx", "tmd": return "Folder"
-        default: return ext.isEmpty ? "Folder" : ext.uppercased()
+        case "rpx", "tmd": return "Folder".localized
+        default: return ext.isEmpty ? "Folder".localized : ext.uppercased()
         }
     }
 
@@ -927,7 +927,7 @@ struct LibraryBox3DCard<Options: View>: View {
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Play \(name.name)")
+                .accessibilityLabel(String(format: "Play %@".localized, name.name))
                 LibraryHeartButton(isFavorite: game.isFavorite, size: 30, action: onFavoriteTap)
                     .padding(.top, -4)
                     .padding(.trailing, -4)

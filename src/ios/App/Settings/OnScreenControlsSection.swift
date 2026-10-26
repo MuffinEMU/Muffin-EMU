@@ -102,8 +102,8 @@ struct OnScreenControlsSection: View {
                         Text("Use Melo-Controller")
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
                         Text(useMeloControls
-                             ? "Melo-Controller by stossy11, with its own layout editor. The options below are for MuffinEMU's pad."
-                             : "MuffinEMU's measured GamePad layout.")
+                             ? "Melo-Controller by stossy11, with its own layout editor. The options below are for MuffinEMU's pad.".localized
+                             : "MuffinEMU's measured GamePad layout.".localized)
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
                     }
@@ -117,8 +117,8 @@ struct OnScreenControlsSection: View {
                         Text("Add analog sticks")
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
                         Text(joystickMode
-                             ? "Both sticks shown alongside the d-pad and face buttons, not instead of them."
-                             : "Just the d-pad and face buttons, from the measured layout.")
+                             ? "Both sticks shown alongside the d-pad and face buttons, not instead of them.".localized
+                             : "Just the d-pad and face buttons, from the measured layout.".localized)
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
                     }
@@ -128,8 +128,8 @@ struct OnScreenControlsSection: View {
 
             // The rest is grouped on pages of its own, so this section stays a short list you can
             // read at a glance: what each page holds is said under its name.
-            subPageLink("Size and feel", systemImage: "hand.point.up.left", summary: sizeAndFeelSummary) {
-                subPage("Size and feel", footer: "Reset to default, on the On-screen Controls list, puts these back.") {
+            subPageLink("Size and feel".localized, systemImage: "hand.point.up.left", summary: sizeAndFeelSummary) {
+                subPage("Size and feel".localized, footer: "Reset to default, on the On-screen Controls list, puts these back.".localized) {
                     sizeAndFeelRows
                 }
             }
@@ -138,22 +138,22 @@ struct OnScreenControlsSection: View {
             // under a d-pad is a control with nothing behind it. The TouchLab styles always
             // have sticks, and read the same gate, deadzone and curve.
             if joystickMode || usingTouchLab || previewPadEnabled {
-                subPageLink("Stick tuning", systemImage: "dial.medium",
-                            summary: "Calibration, spacing and how the sticks feel. Applies to every control style.") {
-                    subPage("Stick tuning", footer: "Calibration applies to every control style: this pad, the new pad system (preview) and each TouchLab style.") {
+                subPageLink("Stick tuning".localized, systemImage: "dial.medium",
+                            summary: "Calibration, spacing and how the sticks feel. Applies to every control style.".localized) {
+                    subPage("Stick tuning".localized, footer: "Calibration applies to every control style: this pad, the new pad system (preview) and each TouchLab style.".localized) {
                         joystickOptions
                     }
                 }
             }
 
-            subPageLink("During play", systemImage: "play.rectangle",
-                        summary: "The top bar, and when the controls hide or pause the game.") {
-                subPage("During play", footer: "To move buttons, start a game and tap the move button in the top bar.") {
+            subPageLink("During play".localized, systemImage: "play.rectangle",
+                        summary: "The top bar, and when the controls hide or pause the game.".localized) {
+                subPage("During play".localized, footer: "To move buttons, start a game and tap the move button in the top bar.".localized) {
                     duringPlayRows
                 }
             }
 
-            subPageLink("New pad system (preview)", systemImage: "sparkles", summary: "Try the pad that's being built.") {
+            subPageLink("New pad system (preview)".localized, systemImage: "sparkles", summary: "Try the pad that's being built.".localized) {
                 ZStack {
                     MuffinTheme.backgroundGradient.ignoresSafeArea()
                     Form { PreviewPadSection() }
@@ -166,13 +166,13 @@ struct OnScreenControlsSection: View {
             // Resets MuffinEMU's own pad (size, opacity, stick spacing, moved buttons), which is
             // also what the TouchLab styles read for size, opacity and stick spacing.
             Button(role: .destructive, action: { showingResetLayoutConfirmation = true }) {
-                DestructiveSettingsLabel(title: "Reset controls to default", systemImage: "arrow.uturn.backward")
+                DestructiveSettingsLabel(title: "Reset controls to default".localized, systemImage: "arrow.uturn.backward")
             }
 
             // Separate from the reset above: that moves buttons on screen, this repairs what
             // a press is wired to.
             Button(role: .destructive, action: { showingResetBindingsConfirmation = true }) {
-                DestructiveSettingsLabel(title: "Reset controller bindings", systemImage: "gamecontroller.fill")
+                DestructiveSettingsLabel(title: "Reset controller bindings".localized, systemImage: "gamecontroller.fill")
             }
 
             if let bindingsResetResult {
@@ -182,11 +182,11 @@ struct OnScreenControlsSection: View {
             }
             }
         } header: {
-            SettingsSectionHeader("On-screen Controls", icon: "gamecontroller", accent: .io)
+            SettingsSectionHeader("On-screen Controls".localized, icon: "gamecontroller", accent: .io)
         } footer: {
             InfoButton.footer(
-                "Sticks are analog like the real GamePad. Comfort controls move the shoulder buttons onto the sticks.",
-                title: "On-screen Controls",
+                "Sticks are analog like the real GamePad. Comfort controls move the shoulder buttons onto the sticks.".localized,
+                title: "On-screen Controls".localized,
                 text: fullText)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
@@ -203,10 +203,10 @@ struct OnScreenControlsSection: View {
                 let ok = cemu_bridge_reset_controller_bindings()
                 let count = Int(cemu_bridge_input_button_mapping_count())
                 bindingsResetResult = ok
-                    ? "Reset. The GamePad now has \(count) button bindings."
+                    ? String(format: "Reset. The GamePad now has %d button bindings.".localized, count)
                     : (count < 0
-                        ? "No GamePad is wired yet - start a game, then try again."
-                        : "Reset, but the GamePad still has no button bindings.")
+                        ? "No GamePad is wired yet - start a game, then try again.".localized
+                        : "Reset, but the GamePad still has no button bindings.".localized)
             }
             Button("Cancel", role: .cancel) { }
         } message: {
@@ -218,8 +218,8 @@ struct OnScreenControlsSection: View {
 
     private var sizeAndFeelSummary: String {
         ControllerLayoutSettings.supportsShoulderOffset
-            ? "Button size, opacity, haptic feedback and shoulder button height."
-            : "Button size, opacity and haptic feedback."
+            ? "Button size, opacity, haptic feedback and shoulder button height.".localized
+            : "Button size, opacity and haptic feedback.".localized
     }
 
     /// A row that opens one of this section's pages, with a line saying what's on it.
@@ -390,7 +390,7 @@ struct OnScreenControlsSection: View {
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
             Picker("Top bar hides after", selection: $topBarHideDelay) {
                 ForEach(TopBarAutoHide.hideDelayChoices, id: \.self) { seconds in
-                    Text("\(seconds) s").tag(seconds)
+                    Text(String(format: "%d s".localized, seconds)).tag(seconds)
                 }
             }
             .pickerStyle(.segmented)
@@ -423,15 +423,15 @@ struct OnScreenControlsSection: View {
                 Label("Calibrate sticks", systemImage: "scope")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                 Text(calibrationLeft.isEmpty && calibrationRight.isEmpty
-                     ? "Rest your thumb, push to every edge, let go. Matches the sticks to your reach, in every control style."
-                     : "Calibrated. Applies to every control style.")
+                     ? "Rest your thumb, push to every edge, let go. Matches the sticks to your reach, in every control style.".localized
+                     : "Calibrated. Applies to every control style.".localized)
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
             }
         }
         if !(calibrationLeft.isEmpty && calibrationRight.isEmpty) {
             Button(role: .destructive) { SharedStick.resetCalibration() } label: {
-                DestructiveSettingsLabel(title: "Reset stick calibration", systemImage: "arrow.uturn.backward")
+                DestructiveSettingsLabel(title: "Reset stick calibration".localized, systemImage: "arrow.uturn.backward")
             }
         }
 
@@ -481,8 +481,8 @@ struct OnScreenControlsSection: View {
                     Text("Comfort controls")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text(comfortControls
-                         ? "L, ZL and minus sit on the left stick; R, ZR and plus sit on the right stick."
-                         : "L, ZL and minus stay on the d-pad; R, ZR and plus stay on A/B/X/Y.")
+                         ? "L, ZL and minus sit on the left stick; R, ZR and plus sit on the right stick.".localized
+                         : "L, ZL and minus stay on the d-pad; R, ZR and plus stay on A/B/X/Y.".localized)
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
@@ -549,8 +549,8 @@ struct OnScreenControlsSection: View {
                     // "how much exactly" is the question being asked, and a bare slider
                     // cannot answer it.
                     Text(stickDeadzone <= 0.0005
-                         ? "off"
-                         : "\(Int((stickDeadzone * 100).rounded()))%")
+                         ? "off".localized
+                         : String(format: "%d%%".localized, Int((stickDeadzone * 100).rounded())))
                         .font(.system(size: 13, design: .monospaced))
                         .foregroundColor(.secondary)
                 }
@@ -585,6 +585,6 @@ struct OnScreenControlsSection: View {
     }
 
     private var fullText: String {
-        "The list holds the control style, Add analog sticks and the resets. Size and feel (button size, opacity, haptics and, on iPad, shoulder height), Stick tuning and During play (the top bar and when the controls hide) are pages of their own.\n\nAdd analog sticks puts both sticks on screen alongside the d-pad and face buttons. Push further for more speed.\n\nGate is the shape the stick can reach. Octagon matches the real GamePad; Round reaches full travel in every direction.\n\nCalibrate sticks has you rest your thumb, push to every edge and let go, then sets where full push is and ignores the wobble of your resting thumb. It applies to every control style.\n\nDeadzone is how far you can move before the game notices. Turn it up only if a resting thumb makes the game drift.\n\nFine control makes small movements gentler: at linear, halfway is half speed; higher values make halfway slower.\n\nIn Advanced mode, Stick fine-tuning sets each stick on its own: inner deadzone, outer deadzone (where full push is reached), anti-deadzone (the least the game is sent once past the deadzone, for games with their own), fine control, horizontal and vertical sensitivity, and invert. Its test circle shows what the game is sent. It is also in the move-controls panel in a game. The Deadzone and Fine control sliders set both sticks.\n\nStick spacing moves both sticks closer together or further apart, for smaller or bigger hands. On a narrow screen it stops before the sticks would touch.\n\nOn iPad, L, R, ZL and ZR height moves the four shoulder buttons up or down together, stopping before they would leave the screen or touch a stick or button.\n\nButton size and opacity adjust the size MuffinEMU picks for your screen.\n\nHide the top bar while playing fades the Back and pause bar out a few seconds after you last touch it, so it stops covering the picture. A small handle stays at the top centre of the screen: tap it, or swipe down from it, to bring the bar back. The bar stays up while the game is paused, a menu is open, or VoiceOver is on.\n\nIn Advanced mode, Top bar hides after sets the wait (2, 4 or 8 seconds) and Reveal handle sets the size of the area you tap to bring the bar back. Normal is the default; Large is easier to hit but can take touches meant for the GamePad screen at the top of the picture.\n\nHide on-screen controls when a controller is connected takes the controls off the screen while a controller is paired, and puts them back when it disconnects. It is off by default. The GamePad's screen stays visible and touchable either way.\n\nThese settings apply to every game. Two things are kept per game instead: Adaptive remembers where your thumbs land, and Melo-Controller remembers where you moved its buttons.\n\nTo move a cluster, start a game and tap the move button in the top bar. There you can also switch control style without leaving the game."
+        "The list holds the control style, Add analog sticks and the resets. Size and feel (button size, opacity, haptics and, on iPad, shoulder height), Stick tuning and During play (the top bar and when the controls hide) are pages of their own.\n\nAdd analog sticks puts both sticks on screen alongside the d-pad and face buttons. Push further for more speed.\n\nGate is the shape the stick can reach. Octagon matches the real GamePad; Round reaches full travel in every direction.\n\nCalibrate sticks has you rest your thumb, push to every edge and let go, then sets where full push is and ignores the wobble of your resting thumb. It applies to every control style.\n\nDeadzone is how far you can move before the game notices. Turn it up only if a resting thumb makes the game drift.\n\nFine control makes small movements gentler: at linear, halfway is half speed; higher values make halfway slower.\n\nIn Advanced mode, Stick fine-tuning sets each stick on its own: inner deadzone, outer deadzone (where full push is reached), anti-deadzone (the least the game is sent once past the deadzone, for games with their own), fine control, horizontal and vertical sensitivity, and invert. Its test circle shows what the game is sent. It is also in the move-controls panel in a game. The Deadzone and Fine control sliders set both sticks.\n\nStick spacing moves both sticks closer together or further apart, for smaller or bigger hands. On a narrow screen it stops before the sticks would touch.\n\nOn iPad, L, R, ZL and ZR height moves the four shoulder buttons up or down together, stopping before they would leave the screen or touch a stick or button.\n\nButton size and opacity adjust the size MuffinEMU picks for your screen.\n\nHide the top bar while playing fades the Back and pause bar out a few seconds after you last touch it, so it stops covering the picture. A small handle stays at the top centre of the screen: tap it, or swipe down from it, to bring the bar back. The bar stays up while the game is paused, a menu is open, or VoiceOver is on.\n\nIn Advanced mode, Top bar hides after sets the wait (2, 4 or 8 seconds) and Reveal handle sets the size of the area you tap to bring the bar back. Normal is the default; Large is easier to hit but can take touches meant for the GamePad screen at the top of the picture.\n\nHide on-screen controls when a controller is connected takes the controls off the screen while a controller is paired, and puts them back when it disconnects. It is off by default. The GamePad's screen stays visible and touchable either way.\n\nThese settings apply to every game. Two things are kept per game instead: Adaptive remembers where your thumbs land, and Melo-Controller remembers where you moved its buttons.\n\nTo move a cluster, start a game and tap the move button in the top bar. There you can also switch control style without leaving the game.".localized
     }
 }

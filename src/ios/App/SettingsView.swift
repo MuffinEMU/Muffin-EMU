@@ -9,7 +9,7 @@ import SwiftUI
 /// index that places it on a page and makes it searchable. Moving a section between pages never
 /// touches its storage keys.
 enum SettingsItem: String, CaseIterable, Identifiable {
-    case settingsMode, changedSettings, appearance, about
+    case language, settingsMode, changedSettings, appearance, about
     case performance, cpu, jit, graphics, shaderCache, emulatedClock
     case onScreenControls, motion, emulatedDevices
     case display, externalDisplay, audio, overlay, notifications
@@ -22,36 +22,37 @@ enum SettingsItem: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .settingsMode: return "Settings mode"
-        case .changedSettings: return "Changed from default"
-        case .appearance: return "Appearance"
-        case .about: return "About"
-        case .performance: return "Performance"
-        case .cpu: return "CPU"
-        case .jit: return "JIT"
-        case .graphics: return "Graphics"
-        case .shaderCache: return "Shaders"
-        case .emulatedClock: return "Emulated Clock"
-        case .onScreenControls: return "On-screen Controls"
-        case .motion: return "Motion & Aiming"
-        case .emulatedDevices: return "Emulated Devices"
-        case .display: return "Display"
-        case .externalDisplay: return "External Display"
-        case .audio: return "Audio"
-        case .overlay: return "Performance Overlay"
-        case .notifications: return "Notifications"
-        case .library: return "Library"
-        case .coverArt: return "Cover + data scraping"
-        case .keys: return "Wii U Keys"
-        case .wiiUMenu: return "Wii U Menu"
-        case .account: return "Account"
-        case .network: return "Network Service"
-        case .premium: return "Premium"
-        case .files: return "Your Files"
-        case .backup: return "Back up settings"
-        case .migration: return "Move to the new MuffinEMU"
-        case .deviceReport: return "This Device"
-        case .diagnostics: return "Diagnostics"
+        case .language: return "Language".localized
+        case .settingsMode: return "Settings mode".localized
+        case .changedSettings: return "Changed from default".localized
+        case .appearance: return "Appearance".localized
+        case .about: return "About".localized
+        case .performance: return "Performance".localized
+        case .cpu: return "CPU".localized
+        case .jit: return "JIT".localized
+        case .graphics: return "Graphics".localized
+        case .shaderCache: return "Shaders".localized
+        case .emulatedClock: return "Emulated Clock".localized
+        case .onScreenControls: return "On-screen Controls".localized
+        case .motion: return "Motion & Aiming".localized
+        case .emulatedDevices: return "Emulated Devices".localized
+        case .display: return "Display".localized
+        case .externalDisplay: return "External Display".localized
+        case .audio: return "Audio".localized
+        case .overlay: return "Performance Overlay".localized
+        case .notifications: return "Notifications".localized
+        case .library: return "Library".localized
+        case .coverArt: return "Cover + data scraping".localized
+        case .keys: return "Wii U Keys".localized
+        case .wiiUMenu: return "Wii U Menu".localized
+        case .account: return "Account".localized
+        case .network: return "Network Service".localized
+        case .premium: return "Premium".localized
+        case .files: return "Your Files".localized
+        case .backup: return "Back up settings".localized
+        case .migration: return "Move to the new MuffinEMU".localized
+        case .deviceReport: return "This Device".localized
+        case .diagnostics: return "Diagnostics".localized
         }
     }
 
@@ -59,42 +60,44 @@ enum SettingsItem: String, CaseIterable, Identifiable {
     /// tell which one you want before opening it.
     var summary: String {
         switch self {
-        case .settingsMode: return "Basic or Advanced: how many options Settings shows."
-        case .changedSettings: return "Every setting you've changed, and games with settings of their own."
-        case .appearance: return "Theme, app icon, Flat surfaces and Classic UI."
-        case .about: return "Version, credits, licences and reset."
-        case .performance: return "The performance profile, pausing a hidden screen, and cooling down."
-        case .cpu: return "What the CPU runs, CPU cores and memory."
-        case .jit: return "The recompiler, whether JIT is on, and the enabler that turns it on."
-        case .graphics: return "Renderer, resolution, filtering, frame rate and graphic packs."
-        case .shaderCache: return "Compiling in the background, cache size and clearing."
-        case .emulatedClock: return "The emulated console's clock speed."
-        case .onScreenControls: return "The touch pad: size, opacity, sticks and when it hides."
-        case .motion: return "Aiming by tilting this device or a controller."
-        case .emulatedDevices: return "Skylanders, Disney Infinity and LEGO Dimensions."
-        case .display: return "Screen layout, stretching, portrait and brightness."
-        case .externalDisplay: return "A TV or second screen."
-        case .audio: return "TV and GamePad sound, the microphone and recording."
-        case .overlay: return "The FPS and usage readout over the game: what it lists, and where."
-        case .notifications: return "Pop-ups during games: which ones, and where."
-        case .library: return "How the library looks, and linked folders and files."
-        case .coverArt: return "Cover style, art packs and data scraping."
-        case .keys: return "The keys.txt encrypted games need."
-        case .wiiUMenu: return "The Wii U Menu and its system files."
-        case .account: return "Your Wii U accounts."
-        case .network: return "Which servers games connect to."
-        case .premium: return "The pro app icons."
-        case .files: return "Where MuffinEMU keeps its files."
-        case .backup: return "Export or import your settings."
-        case .migration: return "Export everything, or import from the old MuffinEMU."
-        case .deviceReport: return "Copy a device report to send with a bug report."
-        case .diagnostics: return "The launch intro, launch log and controls diagnostic."
+        case .language: return "The language MuffinEMU's menus are in.".localized
+        case .settingsMode: return "Basic or Advanced: how many options Settings shows.".localized
+        case .changedSettings: return "Every setting you've changed, and games with settings of their own.".localized
+        case .appearance: return "Theme, app icon, Flat surfaces and Classic UI.".localized
+        case .about: return "Version, credits, licences and reset.".localized
+        case .performance: return "The performance profile, pausing a hidden screen, and cooling down.".localized
+        case .cpu: return "What the CPU runs, CPU cores and memory.".localized
+        case .jit: return "The recompiler, whether JIT is on, and the enabler that turns it on.".localized
+        case .graphics: return "Renderer, resolution, filtering, frame rate and graphic packs.".localized
+        case .shaderCache: return "Compiling in the background, cache size and clearing.".localized
+        case .emulatedClock: return "The emulated console's clock speed.".localized
+        case .onScreenControls: return "The touch pad: size, opacity, sticks and when it hides.".localized
+        case .motion: return "Aiming by tilting this device or a controller.".localized
+        case .emulatedDevices: return "Skylanders, Disney Infinity and LEGO Dimensions.".localized
+        case .display: return "Screen layout, stretching, portrait and brightness.".localized
+        case .externalDisplay: return "A TV or second screen.".localized
+        case .audio: return "TV and GamePad sound, the microphone and recording.".localized
+        case .overlay: return "The FPS and usage readout over the game: what it lists, and where.".localized
+        case .notifications: return "Pop-ups during games: which ones, and where.".localized
+        case .library: return "How the library looks, and linked folders and files.".localized
+        case .coverArt: return "Cover style, art packs and data scraping.".localized
+        case .keys: return "The keys.txt encrypted games need.".localized
+        case .wiiUMenu: return "The Wii U Menu and its system files.".localized
+        case .account: return "Your Wii U accounts.".localized
+        case .network: return "Which servers games connect to.".localized
+        case .premium: return "The pro app icons.".localized
+        case .files: return "Where MuffinEMU keeps its files.".localized
+        case .backup: return "Export or import your settings.".localized
+        case .migration: return "Export everything, or import from the old MuffinEMU.".localized
+        case .deviceReport: return "Copy a device report to send with a bug report.".localized
+        case .diagnostics: return "The launch intro, launch log and controls diagnostic.".localized
         }
     }
 
     /// Words people search for besides the title.
     var keywords: String {
         switch self {
+        case .language: return "language translation translate idioma langue sprache lingua"
         case .settingsMode: return "basic advanced simple more options hidden"
         case .changedSettings: return "changed modified custom different defaults per game overrides"
         case .appearance: return "theme colours colors icon dark light classic flat look"
@@ -142,42 +145,42 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .general: return "General"
-        case .emulation: return "Performance and graphics"
-        case .controls: return "Controls"
-        case .screenAndSound: return "Screen and sound"
-        case .library: return "Games and library"
-        case .accountOnline: return "Account and online"
-        case .storage: return "Storage and backup"
-        case .support: return "Help"
+        case .general: return "General".localized
+        case .emulation: return "Performance and graphics".localized
+        case .controls: return "Controls".localized
+        case .screenAndSound: return "Screen and sound".localized
+        case .library: return "Games and library".localized
+        case .accountOnline: return "Account and online".localized
+        case .storage: return "Storage and backup".localized
+        case .support: return "Help".localized
         }
     }
 
     /// The line under the title on the one-column list of pages.
     var blurb: String {
         switch self {
-        case .general: return "Settings mode, how MuffinEMU looks, Premium and About."
-        case .emulation: return "How fast games run and how they look: the performance profile, JIT, CPU, resolution and shaders."
-        case .controls: return "The on-screen pad, motion aiming and figure portals."
-        case .screenAndSound: return "Screen layout, a TV or second screen, audio, the performance overlay and alerts."
-        case .library: return "Wii U keys, how the library looks and cover art."
-        case .accountOnline: return "Your Wii U accounts, online play and the Wii U Menu."
-        case .storage: return "Where files live, settings backups and moving to the new MuffinEMU."
-        case .support: return "This device's report for bug reports, and diagnostics."
+        case .general: return "Language, Settings mode, how MuffinEMU looks, Premium and About.".localized
+        case .emulation: return "How fast games run and how they look: the performance profile, JIT, CPU, resolution and shaders.".localized
+        case .controls: return "The on-screen pad, motion aiming and figure portals.".localized
+        case .screenAndSound: return "Screen layout, a TV or second screen, audio, the performance overlay and alerts.".localized
+        case .library: return "Wii U keys, how the library looks and cover art.".localized
+        case .accountOnline: return "Your Wii U accounts, online play and the Wii U Menu.".localized
+        case .storage: return "Where files live, settings backups and moving to the new MuffinEMU.".localized
+        case .support: return "This device's report for bug reports, and diagnostics.".localized
         }
     }
 
     /// A short note at the top of the page about what matters there.
     var intro: String {
         switch self {
-        case .general: return "None of this changes how games run. Switch Settings mode to Advanced to see every option on the other pages."
-        case .emulation: return "The defaults suit most games, so change one thing at a time. Performance profile, at the top, is the quickest way to trade speed against accuracy or battery. A single game can have its own values: open it in the library, then Game settings."
-        case .controls: return "Button size, sticks and opacity are under On-screen Controls. Emulated Devices are the Skylanders, Disney Infinity and LEGO Dimensions portals."
-        case .screenAndSound: return "Display is this device's screen. External Display is a TV or second screen. Audio, the performance overlay and pop-up notifications are here too."
-        case .library: return "Encrypted games need Wii U keys, so they come first. Then how your games look and where cover art comes from."
-        case .accountOnline: return "An account is only needed for online play. Network Service decides which servers games connect to. The Wii U Menu is the console's own home screen and system files."
-        case .storage: return "Back up your settings before a big change or an update. Move to the new MuffinEMU exports your saves and settings, and your games if you choose."
-        case .support: return "Copy device report lists your chip, memory and app build. Send it with any bug report."
+        case .general: return "None of this changes how games run. Switch Settings mode to Advanced to see every option on the other pages.".localized
+        case .emulation: return "The defaults suit most games, so change one thing at a time. Performance profile, at the top, is the quickest way to trade speed against accuracy or battery. A single game can have its own values: open it in the library, then Game settings.".localized
+        case .controls: return "Button size, sticks and opacity are under On-screen Controls. Emulated Devices are the Skylanders, Disney Infinity and LEGO Dimensions portals.".localized
+        case .screenAndSound: return "Display is this device's screen. External Display is a TV or second screen. Audio, the performance overlay and pop-up notifications are here too.".localized
+        case .library: return "Encrypted games need Wii U keys, so they come first. Then how your games look and where cover art comes from.".localized
+        case .accountOnline: return "An account is only needed for online play. Network Service decides which servers games connect to. The Wii U Menu is the console's own home screen and system files.".localized
+        case .storage: return "Back up your settings before a big change or an update. Move to the new MuffinEMU exports your saves and settings, and your games if you choose.".localized
+        case .support: return "Copy device report lists your chip, memory and app build. Send it with any bug report.".localized
         }
     }
 
@@ -206,7 +209,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 
     var items: [SettingsItem] {
         switch self {
-        case .general: return [.settingsMode, .changedSettings, .appearance, .premium, .about]
+        case .general: return [.language, .settingsMode, .changedSettings, .appearance, .premium, .about]
         case .emulation: return [.performance, .cpu, .jit, .graphics, .shaderCache, .emulatedClock]
         case .controls: return [.onScreenControls, .motion, .emulatedDevices]
         case .screenAndSound: return [.display, .externalDisplay, .audio, .overlay, .notifications]
@@ -223,9 +226,9 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 
     /// The titled groups under General.
     static let groups: [(title: String, categories: [SettingsCategory])] = [
-        ("Playing", [.emulation, .controls, .screenAndSound]),
-        ("Your games", [.library, .accountOnline]),
-        ("This app", [.storage, .support]),
+        ("Playing".localized, [.emulation, .controls, .screenAndSound]),
+        ("Your games".localized, [.library, .accountOnline]),
+        ("This app".localized, [.storage, .support]),
     ]
 
     /// Something on this page that needs the player's attention, shown in place of the blurb: the two
@@ -233,8 +236,8 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     @MainActor
     var attention: String? {
         switch self {
-        case .emulation: return JITStatus.isActive ? nil : "JIT is off, so games run slower. Open to set it up."
-        case .library: return WiiUKeys.keysFileExists() ? nil : "No keys.txt yet, so encrypted games won't start."
+        case .emulation: return JITStatus.isActive ? nil : "JIT is off, so games run slower. Open to set it up.".localized
+        case .library: return WiiUKeys.keysFileExists() ? nil : "No keys.txt yet, so encrypted games won't start.".localized
         default: return nil
         }
     }
@@ -307,6 +310,7 @@ struct SettingsView: View {
 
     @ViewBuilder private func sectionView(_ item: SettingsItem) -> some View {
         switch item {
+        case .language: LanguageSettingsSection()
         case .settingsMode: SettingsModeSection()
         case .changedSettings: ChangedSettingsSection(open: { AnyView(sectionPage($0)) })
         case .appearance:
@@ -426,7 +430,7 @@ struct SettingsView: View {
         let category = SettingsCategory.category(of: item)
         return pageBackground(item.title) {
             Section {
-                Label("In \(category.title)", systemImage: category.icon)
+                Label(String(format: "In %@".localized, category.title), systemImage: category.icon)
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
                     .foregroundColor(MuffinTheme.secondaryText)
             }
@@ -465,6 +469,7 @@ struct SettingsView: View {
         return SettingsItem.allCases.filter { item in
             guard isAdvanced || !item.advancedOnly else { return false }
             return item.title.lowercased().contains(q)
+                || item.summary.lowercased().contains(q)
                 || item.keywords.contains(q)
                 || SettingsCategory.category(of: item).title.lowercased().contains(q)
         }
@@ -479,13 +484,13 @@ struct SettingsView: View {
     }
 
     private func path(of entry: SettingEntry) -> String {
-        "\(SettingsCategory.category(of: entry.item).title) \u{203A} \(entry.item.title)"
+        String(format: "%@ \u{203A} %@".localized, SettingsCategory.category(of: entry.item).title, entry.item.title)
     }
 
     private var isSearching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
 
     private var noResults: some View {
-        Text("Nothing in Settings matches \"\(query)\".")
+        Text(String(format: "Nothing in Settings matches \"%@\".".localized, query))
             .font(.system(size: 13))
             .foregroundColor(.secondary)
     }
@@ -528,7 +533,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.title)
                         .font(.system(size: 16, weight: .semibold, design: .rounded))
-                    Text("In \(category.title)")
+                    Text(String(format: "In %@".localized, category.title))
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
@@ -585,7 +590,7 @@ struct SettingsView: View {
                 Text(category.title)
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                 if category == .general {
-                    Text(isAdvanced ? "Advanced mode · theme · about" : "Basic mode · theme · about")
+                    Text(isAdvanced ? "Advanced mode · theme · about".localized : "Basic mode · theme · about".localized)
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                         .lineLimit(1)
@@ -614,7 +619,7 @@ struct SettingsView: View {
         .padding(.leading, 16)
         .padding(.vertical, 1)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(item.title), in \(category.title)")
+        .accessibilityLabel(String(format: "%@, in %@".localized, item.title, category.title))
     }
 
     /// A setting found by search: its name, and the page and section it's in.
@@ -636,7 +641,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.title)
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
-                Text("In \(category.title)")
+                Text(String(format: "In %@".localized, category.title))
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .lineLimit(1)

@@ -25,7 +25,7 @@ struct JITEnablerSection: View {
             HStack {
                 Text("Status")
                 Spacer()
-                Text(active ? "JIT is active" : "JIT is not active")
+                Text(active ? "JIT is active".localized : "JIT is not active".localized)
                     .foregroundColor(active ? MuffinTheme.accentText : MuffinTheme.cautionText)
             }
 
@@ -70,7 +70,7 @@ struct JITEnablerSection: View {
                 }
             }
         } header: {
-            SettingsSectionHeader("JIT", icon: "bolt.fill", accent: .core)
+            SettingsSectionHeader("JIT".localized, icon: "bolt.fill", accent: .core)
         } footer: {
             Text("When JIT isn't active, MuffinEMU asks once each time it opens, and offers to open the enabler. It never asks during a game. A custom link is filled in with MuffinEMU's bundle ID wherever it says {bundleId}.")
         }
@@ -91,14 +91,14 @@ struct JITEnablerSection: View {
 
     private func test() {
         guard let url = JITEnabler.url(for: enabler, custom: customURL) else {
-            testNote = "That link isn't valid."
+            testNote = "That link isn't valid.".localized
             return
         }
         UIApplication.shared.open(url, options: [:]) { opened in
             Task { @MainActor in
                 testNote = opened
-                    ? "Opened \(enabler.name). Come back to MuffinEMU to see the status."
-                    : "MuffinEMU couldn't open that link. Check that \(enabler.name) is installed."
+                    ? String(format: "Opened %@. Come back to MuffinEMU to see the status.".localized, enabler.name)
+                    : String(format: "MuffinEMU couldn't open that link. Check that %@ is installed.".localized, enabler.name)
             }
         }
     }

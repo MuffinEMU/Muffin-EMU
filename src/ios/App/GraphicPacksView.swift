@@ -57,7 +57,7 @@ struct GraphicPacksView: View {
 
     @ViewBuilder var body: some View {
         if game == nil {
-            list.searchable(text: $search, prompt: "Search games and packs")
+            list.searchable(text: $search, prompt: Text("Search games and packs"))
         } else {
             list
         }
@@ -67,7 +67,7 @@ struct GraphicPacksView: View {
 
     private var runningCallout: some View {
         Section {
-            ScreenStatusCallout(tone: .info, message: "A game is running. You can browse packs, but they can only be changed after you close it.")
+            ScreenStatusCallout(tone: .info, message: "A game is running. You can browse packs, but they can only be changed after you close it.".localized)
         }
         .listRowBackground(Color.clear)
     }
@@ -77,24 +77,24 @@ struct GraphicPacksView: View {
     @ViewBuilder private func gameSections(_ game: GameMetadata) -> some View {
         if game.titleId == nil {
             Section {
-                ScreenStatusCallout(tone: .info, message: "MuffinEMU couldn't read this game's title ID, so it can't pick out its packs. Browse all packs instead.")
+                ScreenStatusCallout(tone: .info, message: "MuffinEMU couldn't read this game's title ID, so it can't pick out its packs. Browse all packs instead.".localized)
             }
             .listRowBackground(Color.clear)
         } else if gamePacks.isEmpty && universalPacks.isEmpty {
             Section {
                 ScreenEmptyState(
                     systemImage: "square.stack.3d.up",
-                    headline: store.packs.isEmpty ? "No packs yet" : "No packs for this game",
+                    headline: store.packs.isEmpty ? "No packs yet".localized : "No packs for this game".localized,
                     message: store.packs.isEmpty
-                        ? "Download the community packs above, then come back."
-                        : "The community packs don't include one for \(game.title). You can still import your own below."
+                        ? "Download the community packs above, then come back.".localized
+                        : String(format: "The community packs don't include one for %@. You can still import your own below.".localized, game.title)
                 )
             }
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
         } else {
             Section {
-                ScreenStatusCallout(tone: .info, message: "Nothing turns on by itself. Higher resolutions and shadow options cost speed and memory, so raise them one step at a time. \(profile.summary)")
+                ScreenStatusCallout(tone: .info, message: "Nothing turns on by itself. Higher resolutions and shadow options cost speed and memory, so raise them one step at a time.".localized + " " + profile.summary)
             }
             .listRowBackground(Color.clear)
 
@@ -102,7 +102,7 @@ struct GraphicPacksView: View {
 
             if !universalPacks.isEmpty {
                 GraphicPackCategorySections(packs: universalPacks, store: store, profile: profile,
-                                            suggestWorkarounds: false, headerPrefix: "All games \u{00B7} ")
+                                            suggestWorkarounds: false, headerPrefix: "All games".localized + " \u{00B7} ")
             }
         }
 
@@ -124,8 +124,8 @@ struct GraphicPacksView: View {
             Section {
                 ScreenEmptyState(
                     systemImage: "square.stack.3d.up",
-                    headline: store.isScanning ? "Looking for packs" : "No graphic packs yet",
-                    message: "Download the community packs above, or import your own from Files."
+                    headline: store.isScanning ? "Looking for packs".localized : "No graphic packs yet".localized,
+                    message: "Download the community packs above, or import your own from Files.".localized
                 )
             }
             .listRowBackground(Color.clear)
@@ -148,7 +148,7 @@ struct GraphicPacksView: View {
                         store.importPicked(url) { outcome in
                             switch outcome {
                             case .success(let done):
-                                importMessage = .init(text: "Imported \(done.packCount) pack\(done.packCount == 1 ? "" : "s") from \(done.folderName). Changes apply the next time you launch a game.", isError: false)
+                                importMessage = .init(text: (done.packCount == 1 ? String(format: "Imported 1 pack from %@.".localized, done.folderName) : String(format: "Imported %d packs from %@.".localized, done.packCount, done.folderName)) + " " + "Changes apply the next time you launch a game.".localized, isError: false)
                             case .failure(let error):
                                 importMessage = .init(text: error.localizedDescription, isError: true)
                             }
@@ -167,12 +167,12 @@ struct GraphicPacksView: View {
                 ScreenStatusCallout(tone: importMessage.isError ? .warning : .info, message: importMessage.text)
             }
         } header: {
-            SettingsSectionHeader("Your own packs", icon: "folder.badge.plus", accent: .content)
+            SettingsSectionHeader("Your own packs".localized, icon: "folder.badge.plus", accent: .content)
         } footer: {
             InfoButton.footer(
-                "A folder with a rules.txt, a folder of packs, or a zip of either.",
-                title: "Import packs",
-                text: "Pick a pack folder, a folder that holds several packs, or a zip of either. MuffinEMU checks that it really contains a pack (a rules.txt) before adding it.\n\nImported packs are kept apart from the community download, so updating the community packs never removes them. Importing the same folder name again replaces the earlier copy. To remove an imported pack, open it and choose Remove.\n\nYou can also drop pack folders into graphicPacks inside MuffinEMU's Documents folder in Files."
+                "A folder with a rules.txt, a folder of packs, or a zip of either.".localized,
+                title: "Import packs".localized,
+                text: "Pick a pack folder, a folder that holds several packs, or a zip of either. MuffinEMU checks that it really contains a pack (a rules.txt) before adding it.\n\nImported packs are kept apart from the community download, so updating the community packs never removes them. Importing the same folder name again replaces the earlier copy. To remove an imported pack, open it and choose Remove.\n\nYou can also drop pack folders into graphicPacks inside MuffinEMU's Documents folder in Files.".localized
             )
         }
         .foregroundColor(MuffinTheme.brownDarkest)
@@ -188,12 +188,12 @@ struct GraphicPacksView: View {
             }
             .tint(MuffinTheme.accentText)
         } header: {
-            SettingsSectionHeader("Credits", icon: "heart", accent: .identity)
+            SettingsSectionHeader("Credits".localized, icon: "heart", accent: .identity)
         } footer: {
             InfoButton.footer(
-                "The community packs are made by the Cemu graphic packs project and its contributors.",
-                title: "Where packs come from",
-                text: "The downloadable packs are the Cemu graphic packs project's community collection (github.com/cemu-project/cemu_graphic_packs), made and maintained by its many contributors and released under the CC0 1.0 public domain dedication. MuffinEMU downloads them straight from that project's releases and doesn't change them.\n\nPacks that replace shaders are written for OpenGL and Vulkan. The Metal renderer can't use those shaders, so such packs are marked. Packs made only of settings, presets and patches work with Metal."
+                "The community packs are made by the Cemu graphic packs project and its contributors.".localized,
+                title: "Where packs come from".localized,
+                text: "The downloadable packs are the Cemu graphic packs project's community collection (github.com/cemu-project/cemu_graphic_packs), made and maintained by its many contributors and released under the CC0 1.0 public domain dedication. MuffinEMU downloads them straight from that project's releases and doesn't change them.\n\nPacks that replace shaders are written for OpenGL and Vulkan. The Metal renderer can't use those shaders, so such packs are marked. Packs made only of settings, presets and patches work with Metal.".localized
             )
         }
         .foregroundColor(MuffinTheme.brownDarkest)
@@ -209,14 +209,14 @@ struct GraphicPackSourceSection: View {
 
     var body: some View {
         Section {
-            SettingsRow(label: "Installed", value: installedText, icon: "shippingbox")
+            SettingsRow(label: "Installed".localized, value: installedText, icon: "shippingbox")
 
             if store.updateAvailable, let latest = store.latest {
                 ScreenStatusCallout(
                     tone: .info,
                     message: store.installed == nil
-                        ? "Community packs are available (\(latest.name), \(GraphicPackStorage.describe(latest.size)) to download)."
-                        : "Update available: \(latest.name). Your choices are kept."
+                        ? String(format: "Community packs are available (%@, %@ to download).".localized, latest.name, GraphicPackStorage.describe(latest.size))
+                        : String(format: "Update available: %@. Your choices are kept.".localized, latest.name)
                 )
             }
 
@@ -226,30 +226,30 @@ struct GraphicPackSourceSection: View {
                 ScreenStatusCallout(tone: notice.isError ? .warning : .info, message: notice.text)
             }
         } header: {
-            SettingsSectionHeader("Community packs", icon: "arrow.down.circle", accent: .core)
+            SettingsSectionHeader("Community packs".localized, icon: "arrow.down.circle", accent: .core)
         } footer: {
             InfoButton.footer(
                 footerText,
-                title: "Community packs",
-                text: "The community packs are downloaded from the Cemu graphic packs project's latest release on GitHub. The download is verified (size and a checksum on every file) before it replaces anything, and it needs free space for the zip and the extracted copy. If it fails or is cancelled, the packs you already have stay as they were.\n\nMuffinEMU checks for a newer release when you open this screen, at most once a day, or when you tap Check for updates. Pack choices (which packs are on and their options) are kept across updates.\n\nThe download keeps going if you leave the app."
+                title: "Community packs".localized,
+                text: "The community packs are downloaded from the Cemu graphic packs project's latest release on GitHub. The download is verified (size and a checksum on every file) before it replaces anything, and it needs free space for the zip and the extracted copy. If it fails or is cancelled, the packs you already have stay as they were.\n\nMuffinEMU checks for a newer release when you open this screen, at most once a day, or when you tap Check for updates. Pack choices (which packs are on and their options) are kept across updates.\n\nThe download keeps going if you leave the app.".localized
             )
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }
 
     private var installedText: String {
-        guard let installed = store.installed else { return "Not downloaded" }
-        let count = installed.packCount > 0 ? " \u{00B7} \(installed.packCount) packs" : ""
+        guard let installed = store.installed else { return "Not downloaded".localized }
+        let count = installed.packCount > 0 ? " \u{00B7} " + String(format: "%d packs".localized, installed.packCount) : ""
         return installed.name.replacingOccurrences(of: "Cemu Graphic Packs: ", with: "") + count
     }
 
     private var footerText: String {
         var parts: [String] = []
         if let checked = store.lastChecked {
-            parts.append("Last checked \(checked.formatted(date: .abbreviated, time: .shortened)).")
+            parts.append(String(format: "Last checked %@.".localized, checked.formatted(date: .abbreviated, time: .shortened)))
         }
-        if let free = GraphicPackStorage.freeBytes() { parts.append("\(GraphicPackStorage.describe(free)) free on this device.") }
-        parts.append("Changes to packs apply the next time you launch a game.")
+        if let free = GraphicPackStorage.freeBytes() { parts.append(String(format: "%@ free on this device.".localized, GraphicPackStorage.describe(free))) }
+        parts.append("Changes to packs apply the next time you launch a game.".localized)
         return parts.joined(separator: " ")
     }
 
@@ -262,11 +262,11 @@ struct GraphicPackSourceSection: View {
                     .font(.system(size: 13, design: .rounded)).foregroundColor(MuffinTheme.secondaryText)
             }
         case .downloading(let fraction):
-            progressRow(title: "Downloading", fraction: fraction)
+            progressRow(title: "Downloading".localized, fraction: fraction)
         case .installing(let fraction):
-            progressRow(title: "Installing", fraction: fraction)
+            progressRow(title: "Installing".localized, fraction: fraction)
         case .waitingForGameToClose:
-            ScreenStatusCallout(tone: .info, message: "Downloaded. It installs when this screen is opened with no game running.")
+            ScreenStatusCallout(tone: .info, message: "Downloaded. It installs when this screen is opened with no game running.".localized)
         case .idle:
             actionButtons
         }
@@ -275,10 +275,10 @@ struct GraphicPackSourceSection: View {
     private func progressRow(title: String, fraction: Double) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("\(title)\u{2026}")
+                Text(String(format: "%@\u{2026}".localized, title))
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                 Spacer()
-                Text("\(Int((fraction * 100).rounded()))%")
+                Text(String(format: "%d%%".localized, Int((fraction * 100).rounded())))
                     .font(.system(size: 13, design: .monospaced)).foregroundColor(MuffinTheme.secondaryText)
             }
             ProgressView(value: fraction).tint(MuffinTheme.accentText)
@@ -295,7 +295,7 @@ struct GraphicPackSourceSection: View {
             Button {
                 store.startDownload()
             } label: {
-                Label(store.installed == nil ? "Download community packs" : "Update community packs",
+                Label(store.installed == nil ? "Download community packs".localized : "Update community packs".localized,
                       systemImage: "arrow.down.circle.fill")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
@@ -305,7 +305,7 @@ struct GraphicPackSourceSection: View {
             store.checkForUpdate(force: true)
             // First time, nothing is cached: check, then the download button above appears.
         } label: {
-            Label(store.latest == nil ? "Check for community packs" : "Check for updates", systemImage: "arrow.clockwise")
+            Label(store.latest == nil ? "Check for community packs".localized : "Check for updates".localized, systemImage: "arrow.clockwise")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
     }
@@ -352,13 +352,13 @@ struct GraphicPackGameListSection: View {
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 6)
                         let on = group.packs.filter(\.enabled).count
-                        if on > 0 { ScreenChip(text: "\(on) on", isMuted: false) }
+                        if on > 0 { ScreenChip(text: String(format: "%d on".localized, on), isMuted: false) }
                         ScreenChip(text: "\(group.packs.count)")
                     }
                 }
             }
         } header: {
-            SettingsSectionHeader("All games", icon: "square.grid.2x2", accent: .content)
+            SettingsSectionHeader("All games".localized, icon: "square.grid.2x2", accent: .content)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }
@@ -373,15 +373,15 @@ struct GraphicPackGameListView: View {
         List {
             if store.packs.isEmpty {
                 Section {
-                    ScreenEmptyState(systemImage: "square.stack.3d.up", headline: "No graphic packs yet",
-                                     message: "Download the community packs from the Graphic Packs screen.")
+                    ScreenEmptyState(systemImage: "square.stack.3d.up", headline: "No graphic packs yet".localized,
+                                     message: "Download the community packs from the Graphic Packs screen.".localized)
                 }
                 .listRowBackground(Color.clear)
             } else {
                 GraphicPackGameListSection(packs: store.packs, search: $search)
             }
         }
-        .searchable(text: $search, prompt: "Search games and packs")
+        .searchable(text: $search, prompt: Text("Search games and packs"))
         .navigationTitle("All Packs")
         .muffinOpaqueNavigationBar(MuffinTheme.formGround)
         #if os(iOS)
@@ -405,7 +405,7 @@ struct GraphicPackGameView: View {
         List {
             if store.gameRunning {
                 Section {
-                    ScreenStatusCallout(tone: .info, message: "A game is running. Packs can only be changed after you close it.")
+                    ScreenStatusCallout(tone: .info, message: "A game is running. Packs can only be changed after you close it.".localized)
                 }
                 .listRowBackground(Color.clear)
             }
@@ -487,7 +487,7 @@ struct GraphicPackCategorySections: View {
     private struct PackRef: Identifiable { let path: String; var id: String { path } }
 
     private var footerNote: some View {
-        InfoButton.footer("Changes apply the next time you launch a game.")
+        InfoButton.footer("Changes apply the next time you launch a game.".localized)
     }
 
     private func toggle(_ pack: GraphicPack, _ wantOn: Bool) {
@@ -500,8 +500,8 @@ struct GraphicPackCategorySections: View {
     }
 
     private func confirmTitle(for pack: GraphicPack) -> String {
-        if case .inactive = pack.support(on: api) { return "This pack won't activate" }
-        return api == .metal ? "Not fully supported on Metal" : "Not fully supported here"
+        if case .inactive = pack.support(on: api) { return "This pack won't activate".localized }
+        return api == .metal ? "Not fully supported on Metal".localized : "Not fully supported here".localized
     }
 
     private func confirmMessage(for pack: GraphicPack) -> String {
@@ -562,7 +562,7 @@ struct GraphicPackRow: View {
             chips
 
             Button(action: onDetails) {
-                Text(pack.presetCount > 0 ? "Options and details" : "Details")
+                Text(pack.presetCount > 0 ? "Options and details".localized : "Details".localized)
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .foregroundColor(MuffinTheme.accentText)
             }
@@ -574,15 +574,15 @@ struct GraphicPackRow: View {
     /// Wraps onto more lines on a narrow phone and sits on one line on an iPad.
     private var chips: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 6, alignment: .leading)], alignment: .leading, spacing: 6) {
-            if suggested { PackChip(text: "Suggested fix", style: .good) }
+            if suggested { PackChip(text: "Suggested fix".localized, style: .good) }
             switch support {
             case .full: EmptyView()
-            case .partial: PackChip(text: api == .metal ? "Shaders not supported on Metal" : "Some shaders skipped", style: .warning)
-            case .inactive: PackChip(text: "Won't activate here", style: .warning)
+            case .partial: PackChip(text: api == .metal ? "Shaders not supported on Metal".localized : "Some shaders skipped".localized, style: .warning)
+            case .inactive: PackChip(text: "Won't activate here".localized, style: .warning)
             }
-            if pack.canCostSpeed { PackChip(text: "Can cost speed", style: .neutral) }
-            if pack.raisesFrameRate { PackChip(text: "Needs speed to spare", style: .neutral) }
-            if pack.isImported { PackChip(text: "Imported", style: .neutral) }
+            if pack.canCostSpeed { PackChip(text: "Can cost speed".localized, style: .neutral) }
+            if pack.raisesFrameRate { PackChip(text: "Needs speed to spare".localized, style: .neutral) }
+            if pack.isImported { PackChip(text: "Imported".localized, style: .neutral) }
         }
     }
 }
@@ -643,7 +643,7 @@ struct GraphicPackDetailView: View {
                 MuffinTheme.backgroundGradient.ignoresSafeArea()
                 content
             }
-            .navigationTitle(pack?.displayName ?? "Pack")
+            .navigationTitle(pack?.displayName ?? "Pack".localized)
             .muffinOpaqueNavigationBar(MuffinTheme.formGround)
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -680,12 +680,12 @@ struct GraphicPackDetailView: View {
                     case .inactive(let why): ScreenStatusCallout(tone: .warning, message: why)
                     }
                     if store.gameRunning {
-                        ScreenStatusCallout(tone: .info, message: "A game is running. Close it to change this pack.")
+                        ScreenStatusCallout(tone: .info, message: "A game is running. Close it to change this pack.".localized)
                     }
                 } header: {
-                    SettingsSectionHeader(pack.game == GraphicPack.allGames ? "Every game" : pack.game, icon: GraphicPackCategorySections.icon(for: pack.category), accent: GraphicPackCategorySections.accent(for: pack.category))
+                    SettingsSectionHeader(pack.game == GraphicPack.allGames ? "Every game".localized : pack.game, icon: GraphicPackCategorySections.icon(for: pack.category), accent: GraphicPackCategorySections.accent(for: pack.category))
                 } footer: {
-                    InfoButton.footer("Changes apply the next time you launch a game.")
+                    InfoButton.footer("Changes apply the next time you launch a game.".localized)
                 }
                 .foregroundColor(MuffinTheme.brownDarkest)
 
@@ -696,7 +696,7 @@ struct GraphicPackDetailView: View {
                             .foregroundColor(MuffinTheme.brownDarkest)
                             .fixedSize(horizontal: false, vertical: true)
                     } header: {
-                        SettingsSectionHeader("About this pack", icon: "text.alignleft", accent: .system)
+                        SettingsSectionHeader("About this pack".localized, icon: "text.alignleft", accent: .system)
                     }
                 }
 
@@ -711,7 +711,7 @@ struct GraphicPackDetailView: View {
                                 .foregroundColor(MuffinTheme.brownMid)
                                 .fixedSize(horizontal: false, vertical: true)
                         } header: {
-                            SettingsSectionHeader("Resolution on this device", icon: "ipad.and.iphone", accent: .core)
+                            SettingsSectionHeader("Resolution on this device".localized, icon: "ipad.and.iphone", accent: .core)
                         }
                     }
                 }
@@ -749,8 +749,8 @@ struct GraphicPackDetailView: View {
                 Text("Its folder is deleted from MuffinEMU's graphicPacks/imported folder.")
             }
         } else {
-            ScreenEmptyState(systemImage: "questionmark.folder", headline: "Pack not found",
-                             message: "It was removed or the packs were rescanned.")
+            ScreenEmptyState(systemImage: "questionmark.folder", headline: "Pack not found".localized,
+                             message: "It was removed or the packs were rescanned.".localized)
         }
     }
 
@@ -764,7 +764,7 @@ struct GraphicPackDetailView: View {
                 Picker(selection: Binding(
                     get: { selected },
                     set: { name in store.setPreset(pack, category: category, preset: name) { details = $0 } }
-                ), label: Text(category.isEmpty ? "Option" : category).font(.system(size: 15, weight: .semibold, design: .rounded))) {
+                ), label: Text(category.isEmpty ? "Option".localized : category).font(.system(size: 15, weight: .semibold, design: .rounded))) {
                     ForEach(choices, id: \.name) { preset in
                         Text(label(for: preset, isResolution: isResolution, suggestion: suggestion)).tag(preset.name)
                     }
@@ -777,16 +777,16 @@ struct GraphicPackDetailView: View {
                     Button {
                         store.setPreset(pack, category: category, preset: suggestion.name) { details = $0 }
                     } label: {
-                        Label("Use the suggested setting (\(suggestion.name))", systemImage: "checkmark.circle")
+                        Label(String(format: "Use the suggested setting (%@)".localized, suggestion.name), systemImage: "checkmark.circle")
                             .font(.system(size: 13, weight: .semibold, design: .rounded))
                     }
                     .disabled(store.gameRunning)
                 }
             } header: {
-                SettingsSectionHeader(category.isEmpty ? "Options" : category, icon: isResolution ? "arrow.up.left.and.arrow.down.right" : "slider.horizontal.3", accent: .core)
+                SettingsSectionHeader(category.isEmpty ? "Options".localized : category, icon: isResolution ? "arrow.up.left.and.arrow.down.right" : "slider.horizontal.3", accent: .core)
             } footer: {
                 if isResolution {
-                    InfoButton.footer("Higher resolutions cost speed and memory.")
+                    InfoButton.footer("Higher resolutions cost speed and memory.".localized)
                 }
             }
             .foregroundColor(MuffinTheme.brownDarkest)
@@ -796,8 +796,8 @@ struct GraphicPackDetailView: View {
     private func label(for preset: GraphicPackPreset, isResolution: Bool, suggestion: GraphicPackPreset?) -> String {
         guard isResolution else { return preset.name }
         var text = preset.name
-        if let height = preset.height, height > profile.suggestedMaxHeight { text += "  \u{2022} heavy here" }
-        if preset == suggestion { text += "  \u{2022} suggested" }
+        if let height = preset.height, height > profile.suggestedMaxHeight { text += "  \u{2022} " + "heavy here".localized }
+        if preset == suggestion { text += "  \u{2022} " + "suggested".localized }
         return text
     }
 

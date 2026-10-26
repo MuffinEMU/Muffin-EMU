@@ -13,12 +13,12 @@ struct FilesSettingsSection: View {
                 .foregroundColor(MuffinTheme.secondaryText)
                 .textSelection(.enabled)
         } header: {
-            SettingsSectionHeader("Your Files", icon: "folder", accent: .system)
+            SettingsSectionHeader("Your Files".localized, icon: "folder", accent: .system)
         } footer: {
             InfoButton.footer(
-                "ROMs, saves, shader caches and keys.txt live in this folder.",
-                title: "Your Files",
-                text: "Normally this is Files \u{2192} On My iPhone/iPad \u{2192} MuffinEMU. If you installed through LiveContainer, iOS lists the folder under LiveContainer instead; use the path shown above to find it.")
+                "ROMs, saves, shader caches and keys.txt live in this folder.".localized,
+                title: "Your Files".localized,
+                text: "Normally this is Files \u{2192} On My iPhone/iPad \u{2192} MuffinEMU. If you installed through LiveContainer, iOS lists the folder under LiveContainer instead; use the path shown above to find it.".localized)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }
@@ -27,7 +27,7 @@ struct FilesSettingsSection: View {
     /// sideloaded installs differ).
     private static var documentsPathHint: String {
         guard let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
-            return "Could not resolve a Documents folder for this install."
+            return "Could not resolve a Documents folder for this install.".localized
         }
         return url.path
     }

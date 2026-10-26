@@ -56,11 +56,11 @@ struct CreateAccountView: View {
                                 .focused($nameFocused)
                                 .submitLabel(.done)
                             // Names are limited to ten characters.
-                            Text("\(miiName.count)/10")
+                            Text(verbatim: "\(miiName.count)/10")
                                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                                 .foregroundColor(miiName.count >= 10 ? MuffinTheme.alertText : MuffinTheme.brownMid)
                                 .monospacedDigit()
-                                .accessibilityLabel("\(miiName.count) of 10 characters used")
+                                .accessibilityLabel(String(format: "%d of 10 characters used".localized, miiName.count))
                         }
                         .onChange(of: miiName) { newValue in
                             let trimmedName = String(newValue.prefix(10))
@@ -142,36 +142,36 @@ struct CreateAccountView: View {
     private func createAccount() {
         let idString = persistentIdText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !idString.isEmpty else {
-            errorMessage = "Enter a persistent ID."
+            errorMessage = "Enter a persistent ID.".localized
             return
         }
 
         guard !cemu_bridge_accounts_locked() else {
-            errorMessage = "Close the running game before creating an account."
+            errorMessage = "Close the running game before creating an account.".localized
             return
         }
         guard cemu_bridge_accounts_has_free_slot() else {
-            errorMessage = "You've reached the maximum number of accounts."
+            errorMessage = "You've reached the maximum number of accounts.".localized
             return
         }
         guard let persistentId = UInt32(idString, radix: 16) else {
-            errorMessage = "The persistent ID must be hexadecimal (0-9, A-F)."
+            errorMessage = "The persistent ID must be hexadecimal (0-9, A-F).".localized
             return
         }
         let minimumPersistentId = cemu_bridge_accounts_min_persistent_id()
         guard persistentId >= minimumPersistentId else {
-            errorMessage = "The persistent ID must be \(String(minimumPersistentId, radix: 16)) or higher."
+            errorMessage = String(format: "The persistent ID must be %@ or higher.".localized, String(minimumPersistentId, radix: 16))
             return
         }
 
         let existingAccounts = Account.loadAll()
         if let existing = existingAccounts.first(where: { $0.persistentId == persistentId }) {
-            errorMessage = "That ID is already used by account \(existing.displayName)."
+            errorMessage = String(format: "That ID is already used by account %@.".localized, existing.displayName)
             return
         }
 
         guard !miiName.isEmpty else {
-            errorMessage = "Enter a Mii name."
+            errorMessage = "Enter a Mii name.".localized
             return
         }
 
@@ -192,7 +192,7 @@ struct CreateAccountView: View {
         }
 
         guard created else {
-            errorMessage = "Couldn't create that account."
+            errorMessage = "Couldn't create that account.".localized
             return
         }
 

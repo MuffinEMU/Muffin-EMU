@@ -37,7 +37,7 @@ struct SettingEntry: Identifiable, Hashable {
     }
 
     func matches(_ query: String) -> Bool {
-        title.lowercased().contains(query) || keywords.contains(query)
+        title.lowercased().contains(query) || title.localized.lowercased().contains(query) || keywords.contains(query)
     }
 }
 
@@ -58,6 +58,7 @@ enum SettingsIndex {
     static let entries: [SettingEntry] = general + emulation + controls + screenAndSound + library + accountOnline + housekeeping
 
     private static let general: [SettingEntry] = [
+        stored("Language", .language, AppLanguage.storageKey, AppLanguage.system.rawValue, "translation"),
         row("Settings mode", .settingsMode, "basic advanced"),
         row("Theme", .appearance, "colours colors"),
         row("App Icon", .appearance, "icon pro"),
@@ -314,7 +315,7 @@ struct PerGameOverrideNote: View {
             NavigationLink {
                 GamesWithOwnSettingsList(games: list, store: store)
             } label: {
-                Label("Set differently for \(list.count) game\(list.count == 1 ? "" : "s")", systemImage: "gamecontroller")
+                Label(list.count == 1 ? "Set differently for 1 game".localized : String(format: "Set differently for %d games".localized, list.count), systemImage: "gamecontroller")
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .foregroundColor(MuffinTheme.accentText)
             }
@@ -340,14 +341,14 @@ struct GamesWithOwnSettingsList: View {
                                 Text(game.cardName.name)
                                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                                 let count = store.activeOverrides(for: game.settingsKey).customCount
-                                Text("\(count) setting\(count == 1 ? "" : "s") of its own")
+                                Text(count == 1 ? "1 setting of its own".localized : String(format: "%d settings of its own".localized, count))
                                     .font(.system(size: 12))
                                     .foregroundColor(MuffinTheme.secondaryText)
                             }
                         }
                     }
                 } footer: {
-                    InfoButton.footer("Each of these games keeps its own value instead of following Settings. Open one to change it or reset it.")
+                    InfoButton.footer("Each of these games keeps its own value instead of following Settings. Open one to change it or reset it.".localized)
                 }
             }
         }
@@ -383,9 +384,9 @@ struct ChangedSettingsSection: View {
                     open(entry.item)
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(entry.title)
+                        Text(verbatim: entry.title.localized)
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        Text("\(SettingsCategory.category(of: entry.item).title) \u{203A} \(entry.item.title)")
+                        Text(String(format: "%@ \u{203A} %@".localized, SettingsCategory.category(of: entry.item).title.localized, entry.item.title.localized))
                             .font(.system(size: 12))
                             .foregroundColor(MuffinTheme.secondaryText)
                     }
@@ -396,14 +397,14 @@ struct ChangedSettingsSection: View {
                 NavigationLink {
                     GamesWithOwnSettingsList(games: own, store: store)
                 } label: {
-                    Label("\(own.count) game\(own.count == 1 ? " has" : "s have") settings of its own", systemImage: "gamecontroller")
+                    Label(own.count == 1 ? "1 game has settings of its own".localized : String(format: "%d games have settings of their own".localized, own.count), systemImage: "gamecontroller")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                 }
             }
         } header: {
-            SettingsSectionHeader("Changed from default", icon: "slider.horizontal.3", accent: .system)
+            SettingsSectionHeader("Changed from default".localized, icon: "slider.horizontal.3", accent: .system)
         } footer: {
-            InfoButton.footer("Every setting you've changed, wherever it is. Tap one to go to it.")
+            InfoButton.footer("Every setting you've changed, wherever it is. Tap one to go to it.".localized)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         .onAppear { changed = SettingsIndex.changed() }

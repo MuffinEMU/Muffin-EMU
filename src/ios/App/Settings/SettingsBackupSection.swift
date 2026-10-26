@@ -35,19 +35,19 @@ struct SettingsBackupSection: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         } header: {
-            SettingsSectionHeader("Back up settings", icon: "doc.text", accent: .system)
+            SettingsSectionHeader("Back up settings".localized, icon: "doc.text", accent: .system)
         } footer: {
             InfoButton.footer(
-                "Saves every setting and every game's own options to one file you can keep or move to another device.",
-                title: "Back up settings",
-                text: "Export all settings writes one .json file to Files: every setting, and the settings you've set for individual games. It never includes your library, favourites, Wii U keys, accounts, theme or premium unlock.\n\nImport settings reads such a file, checks it, and asks before it replaces anything. Importing replaces all your settings and every game's own options with what the file holds, and anything the file doesn't mention goes back to its default. Some changes apply the next time you start a game.")
+                "Saves every setting and every game's own options to one file you can keep or move to another device.".localized,
+                title: "Back up settings".localized,
+                text: "Export all settings writes one .json file to Files: every setting, and the settings you've set for individual games. It never includes your library, favourites, Wii U keys, accounts, theme or premium unlock.\n\nImport settings reads such a file, checks it, and asks before it replaces anything. Importing replaces all your settings and every game's own options with what the file holds, and anything the file doesn't mention goes back to its default. Some changes apply the next time you start a game.".localized)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         .confirmationDialog("Replace your settings?", isPresented: $confirmImport, titleVisibility: .visible) {
             Button("Import and replace", role: .destructive) {
                 guard let pending else { return }
                 SettingsBackup.apply(pending)
-                message = "Settings imported. Some changes apply the next time you start a game."
+                message = "Settings imported. Some changes apply the next time you start a game.".localized
                 messageIsError = false
                 self.pending = nil
             }
@@ -59,10 +59,10 @@ struct SettingsBackupSection: View {
 
     private var confirmationText: String {
         guard let pending else { return "" }
-        let games = pending.gameCount == 1 ? "1 game's own options" : "\(pending.gameCount) games' own options"
-        var text = "This file has \(pending.settingCount) settings and \(games). Importing replaces all of your settings and every game's own options. Your library, keys, accounts and premium unlock are not touched."
+        let games = pending.gameCount == 1 ? "1 game's own options".localized : String(format: "%d games' own options".localized, pending.gameCount)
+        var text = String(format: "This file has %d settings and %@. Importing replaces all of your settings and every game's own options. Your library, keys, accounts and premium unlock are not touched.".localized, pending.settingCount, games)
         if pending.skippedCount > 0 {
-            text += " \(pending.skippedCount) entries in the file can't be used and are skipped."
+            text += " " + String(format: "%d entries in the file can't be used and are skipped.".localized, pending.skippedCount)
         }
         return text
     }
@@ -75,7 +75,7 @@ struct SettingsBackupSection: View {
                 case .success(let urls):
                     // An empty array is a cancel, not a failure.
                     guard let saved = urls.first else { return }
-                    message = "Saved \(saved.lastPathComponent)."
+                    message = String(format: "Saved %@.".localized, saved.lastPathComponent)
                     messageIsError = false
                 case .failure(let error):
                     message = error.localizedDescription
@@ -83,7 +83,7 @@ struct SettingsBackupSection: View {
                 }
             }
         } catch {
-            message = "Couldn't write the settings file. \(error.localizedDescription)"
+            message = String(format: "Couldn't write the settings file. %@".localized, error.localizedDescription)
             messageIsError = true
         }
     }

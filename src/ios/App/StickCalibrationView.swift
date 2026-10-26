@@ -36,7 +36,7 @@ struct StickCalibrationView: View {
             let base = ControllerGeometry.stickBaseDiameter * unit
             let travel = ControllerGeometry.stickTravel(ringDiameter: base)
             VStack(spacing: 18) {
-                Text(step == .done ? (saved.isEmpty ? "Nothing calibrated" : "Sticks calibrated") : (isLeft ? "Left stick" : "Right stick"))
+                Text(step == .done ? (saved.isEmpty ? "Nothing calibrated".localized : "Sticks calibrated".localized) : (isLeft ? "Left stick".localized : "Right stick".localized))
                     .font(.system(size: 22, weight: .bold, design: .rounded))
                 Text(prompt)
                     .font(.system(size: 15))
@@ -57,7 +57,7 @@ struct StickCalibrationView: View {
                     } else if step == .right {
                         Button("Skip right") { advance() }
                     }
-                    Button(step == .done ? "Done" : "Cancel") { presentation.wrappedValue.dismiss() }
+                    Button(step == .done ? "Done".localized : "Cancel".localized) { presentation.wrappedValue.dismiss() }
                         .font(.system(size: 15, weight: .semibold))
                 }
             }
@@ -72,12 +72,12 @@ struct StickCalibrationView: View {
     }
 
     private var prompt: String {
-        if step == .done && saved.isEmpty { return "Both sticks were skipped, so your calibration didn't change. Run it again any time." }
-        if step == .done { return "Every control style now uses your calibration. Run it again any time, or reset it from the stick settings." }
+        if step == .done && saved.isEmpty { return "Both sticks were skipped, so your calibration didn't change. Run it again any time.".localized }
+        if step == .done { return "Every control style now uses your calibration. Run it again any time, or reset it from the stick settings.".localized }
         switch session.phase {
-        case .waiting: return "Put your thumb on the stick and hold it still for a moment."
-        case .rest: return "Hold still..."
-        case .sweep: return "Now push to every edge, all the way around. Let go when the ring is lit."
+        case .waiting: return "Put your thumb on the stick and hold it still for a moment.".localized
+        case .rest: return "Hold still...".localized
+        case .sweep: return "Now push to every edge, all the way around. Let go when the ring is lit.".localized
         case .finished: return ""
         }
     }
@@ -128,21 +128,22 @@ struct StickCalibrationView: View {
                         notice = nil
                         advance()
                     } else {
-                        notice = "That one didn't cover enough of the ring. Try again."
+                        notice = "That one didn't cover enough of the ring. Try again.".localized
                         session = StickCalibrationSession(travel: travel, gate: gate)
                     }
                 }
         )
-        .accessibilityLabel(isLeft ? "Left stick calibration area" : "Right stick calibration area")
+        .accessibilityLabel(isLeft ? "Left stick calibration area".localized : "Right stick calibration area".localized)
     }
 
     private var summary: some View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach([true, false], id: \.self) { left in
                 let cal = saved[left] ?? SharedStick.calibration(left: left)
-                Text("\(left ? "Left" : "Right"): " + (cal.isIdentity
-                     ? "not calibrated"
-                     : "full output at \(Int((cal.fullThrow * 100).rounded()))% of the ring"))
+                Text(cal.isIdentity
+                     ? (left ? "Left: not calibrated".localized : "Right: not calibrated".localized)
+                     : String(format: left ? "Left: full output at %d%% of the ring".localized : "Right: full output at %d%% of the ring".localized,
+                              Int((cal.fullThrow * 100).rounded())))
                     .font(.system(size: 15, design: .rounded))
             }
         }

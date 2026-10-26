@@ -25,11 +25,11 @@ struct MiniZip {
 
         var errorDescription: String? {
             switch self {
-            case .notAZip: return "The file isn't a valid zip archive."
-            case .unsupported(let what): return "The zip uses a feature MuffinEMU can't read (\(what))."
-            case .corrupt(let what): return "The zip is damaged (\(what))."
-            case .unsafePath(let name): return "The zip contains a path outside its own folder (\(name))."
-            case .tooLarge: return "The zip is larger than graphic packs should be."
+            case .notAZip: return "The file isn't a valid zip archive.".localized
+            case .unsupported(let what): return String(format: "The zip uses a feature MuffinEMU can't read (%@).".localized, what)
+            case .corrupt(let what): return String(format: "The zip is damaged (%@).".localized, what)
+            case .unsafePath(let name): return String(format: "The zip contains a path outside its own folder (%@).".localized, name)
+            case .tooLarge: return "The zip is larger than graphic packs should be.".localized
             }
         }
     }
@@ -108,17 +108,17 @@ struct MiniZip {
         let count = u16(d, eocd + 10)
         let cdSize = u32(d, eocd + 12)
         let cdOffset = u32(d, eocd + 16)
-        guard disk == 0, cdDisk == 0, countOnDisk == count else { throw ZipError.unsupported("multi-disk archive") }
+        guard disk == 0, cdDisk == 0, countOnDisk == count else { throw ZipError.unsupported("multi-disk archive".localized) }
         if count == 0xFFFF || cdSize == 0xFFFF_FFFF || cdOffset == 0xFFFF_FFFF { throw ZipError.unsupported("Zip64") }
-        guard count > 0, count <= limits.maxEntries else { throw ZipError.corrupt("entry count") }
-        guard cdOffset + cdSize <= eocd, cdOffset >= 0 else { throw ZipError.corrupt("directory position") }
+        guard count > 0, count <= limits.maxEntries else { throw ZipError.corrupt("entry count".localized) }
+        guard cdOffset + cdSize <= eocd, cdOffset >= 0 else { throw ZipError.corrupt("directory position".localized) }
 
         var entries: [Entry] = []
         entries.reserveCapacity(count)
         var p = cdOffset
         var total = 0
         for _ in 0..<count {
-            guard p + 46 <= cdOffset + cdSize, u32(d, p) == 0x02014b50 else { throw ZipError.corrupt("directory entry") }
+            guard p + 46 <= cdOffset + cdSize, u32(d, p) == 0x02014b50 else { throw ZipError.corrupt("directory entry".localized) }
             let flags = u16(d, p + 8)
             let method = UInt16(u16(d, p + 10))
             let crc = UInt32(u32(d, p + 16))
@@ -129,15 +129,15 @@ struct MiniZip {
             let commentLen = u16(d, p + 32)
             let externalAttrs = u32(d, p + 38)
             let localOffset = u32(d, p + 42)
-            guard p + 46 + nameLen + extraLen + commentLen <= cdOffset + cdSize else { throw ZipError.corrupt("directory entry length") }
-            if flags & 0x1 != 0 { throw ZipError.unsupported("encryption") }
+            guard p + 46 + nameLen + extraLen + commentLen <= cdOffset + cdSize else { throw ZipError.corrupt("directory entry length".localized) }
+            if flags & 0x1 != 0 { throw ZipError.unsupported("encryption".localized) }
             if csize == 0xFFFF_FFFF || size == 0xFFFF_FFFF || localOffset == 0xFFFF_FFFF { throw ZipError.unsupported("Zip64") }
 
             let nameStart = d.startIndex + p + 46
             let nameData = d.subdata(in: nameStart..<(nameStart + nameLen))
             // Bit 11 marks UTF-8; most writers use UTF-8 regardless, so it is the fallback either way.
             guard let name = String(data: nameData, encoding: .utf8) ?? String(data: nameData, encoding: .isoLatin1) else {
-                throw ZipError.corrupt("entry name")
+                throw ZipError.corrupt("entry name".localized)
             }
             let isDir = name.hasSuffix("/")
             let mode = (externalAttrs >> 16) & 0xF000
@@ -207,18 +207,18 @@ struct MiniZip {
     /// The decompressed bytes of one entry, verified against its recorded size and CRC-32.
     func read(_ entry: Entry) throws -> Data {
         let o = entry.localHeaderOffset
-        guard o + 30 <= data.count, MiniZip.u32(data, o) == 0x04034b50 else { throw ZipError.corrupt("local header of \(entry.name)") }
+        guard o + 30 <= data.count, MiniZip.u32(data, o) == 0x04034b50 else { throw ZipError.corrupt(String(format: "local header of %@".localized, entry.name)) }
         let nameLen = MiniZip.u16(data, o + 26)
         let extraLen = MiniZip.u16(data, o + 28)
         let start = o + 30 + nameLen + extraLen
-        guard start + entry.compressedSize <= data.count else { throw ZipError.corrupt("\(entry.name) is cut short") }
+        guard start + entry.compressedSize <= data.count else { throw ZipError.corrupt(String(format: "%@ is cut short".localized, entry.name)) }
         let begin = data.startIndex + start
         let raw = data[begin..<(begin + entry.compressedSize)]
 
         let output: Data
         switch entry.method {
         case 0:
-            guard entry.compressedSize == entry.size else { throw ZipError.corrupt("size of \(entry.name)") }
+            guard entry.compressedSize == entry.size else { throw ZipError.corrupt(String(format: "size of %@".localized, entry.name)) }
             output = Data(raw)
         case 8:
             if entry.size == 0 {
@@ -232,14 +232,14 @@ struct MiniZip {
                         return compression_decode_buffer(d, entry.size, s, entry.compressedSize, nil, COMPRESSION_ZLIB)
                     }
                 }
-                guard produced == entry.size else { throw ZipError.corrupt("\(entry.name) won't decompress") }
+                guard produced == entry.size else { throw ZipError.corrupt(String(format: "%@ won't decompress".localized, entry.name)) }
                 output = buffer
             }
         default:
-            throw ZipError.unsupported("compression method \(entry.method)")
+            throw ZipError.unsupported(String(format: "compression method %d".localized, Int(entry.method)))
         }
 
-        guard MiniZip.crc32(output) == entry.crc32 else { throw ZipError.corrupt("checksum of \(entry.name)") }
+        guard MiniZip.crc32(output) == entry.crc32 else { throw ZipError.corrupt(String(format: "checksum of %@".localized, entry.name)) }
         return output
     }
 

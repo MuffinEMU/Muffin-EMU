@@ -220,7 +220,7 @@ struct GameContextMenu: View {
         Button {
             gameManager.toggleFavorite(game)
         } label: {
-            Label(game.isFavorite ? "Unfavourite" : "Favourite",
+            Label(game.isFavorite ? "Unfavourite".localized : "Favourite".localized,
                   systemImage: game.isFavorite ? "heart.slash" : "heart")
         }
         Button(action: onRename) {
@@ -241,14 +241,14 @@ enum OverrideChoice: Hashable {
     /// The menu for an on/off row. The first option says what Settings has, so the row shows what
     /// applies without a caption under it.
     @ViewBuilder static func options(settingsHas value: Bool) -> some View {
-        Text("Same as Settings (\(value ? "On" : "Off"))").tag(OverrideChoice.followSettings)
+        Text(sameAsSettings(value ? "On".localized : "Off".localized)).tag(OverrideChoice.followSettings)
         Text("On").tag(OverrideChoice.on)
         Text("Off").tag(OverrideChoice.off)
     }
 }
 
 /// The label of a per-game menu's first option, naming what Settings has now.
-func sameAsSettings(_ value: String) -> String { "Same as Settings (\(value))" }
+func sameAsSettings(_ value: String) -> String { String(format: "Same as Settings (%@)".localized, value.localized) }
 
 /// One per-game choice: the setting's name, a dot while this game has its own value, its menu, and a
 /// note under it only when there is something to warn about.
@@ -274,7 +274,7 @@ struct GameOverrideRow<Selection: Hashable, Options: View>: View {
                 options
             } label: {
                 HStack(spacing: 6) {
-                    Text(title)
+                    Text(verbatim: title.localized)
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     if isCustom {
                         Circle()
@@ -283,12 +283,12 @@ struct GameOverrideRow<Selection: Hashable, Options: View>: View {
                     }
                 }
                 .accessibilityElement(children: .combine)
-                .accessibilityValue(isCustom ? "Set for this game" : "")
+                .accessibilityValue(isCustom ? "Set for this game".localized : "")
             }
             .pickerStyle(.menu)
             .tint(MuffinTheme.accentText)
             if let note {
-                Text(note)
+                Text(verbatim: note.localized)
                     .font(.system(size: 12))
                     .foregroundColor(MuffinTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
@@ -381,13 +381,13 @@ struct GameOptionsView: View {
     /// Only said when something else decides the core count, or the choice may not work here.
     private var coreModeNote: String? {
         let effective = store.effectiveCoreMode(for: key)
-        if !effective.isAvailable { return "May not work on this device." }
+        if !effective.isAvailable { return "May not work on this device.".localized }
         guard effective != .single else { return nil }
         if store.effectiveFavourAccuracy(for: key) {
-            return "The Accuracy profile runs this game on one core whatever this says."
+            return "The Accuracy profile runs this game on one core whatever this says.".localized
         }
         if store.effectiveOneCoreMode(for: key) {
-            return "The Battery saver profile runs this game on one core whatever this says."
+            return "The Battery saver profile runs this game on one core whatever this says.".localized
         }
         return nil
     }
@@ -433,30 +433,32 @@ struct GameOptionsView: View {
                 Button(role: .destructive) {
                     confirmReset = true
                 } label: {
-                    DestructiveSettingsLabel(title: "Reset this game's settings", systemImage: "arrow.uturn.backward")
+                    DestructiveSettingsLabel(title: "Reset this game's settings".localized, systemImage: "arrow.uturn.backward")
                 }
             }
         } footer: {
             InfoButton.footer(
-                "Changes apply the next time you start the game.",
-                title: "Game settings",
-                text: "Every menu here starts with \"Same as Settings\", which follows the matching setting in Settings, even if you change it later. Picking anything else sets it for this game only and puts a dot beside it.\n\nScreen layout and Hide on-screen controls when a controller is connected are put in place when the game starts, and your own choices come back when it stops. A layout change you make during the game is not kept.\n\nPerformance overlay On uses the corner chosen in Settings, or the top left if Settings has it off.\n\nChanges apply the next time you start the game.")
+                "Changes apply the next time you start the game.".localized,
+                title: "Game settings".localized,
+                text: "Every menu here starts with \"Same as Settings\", which follows the matching setting in Settings, even if you change it later. Picking anything else sets it for this game only and puts a dot beside it.\n\nScreen layout and Hide on-screen controls when a controller is connected are put in place when the game starts, and your own choices come back when it stops. A layout change you make during the game is not kept.\n\nPerformance overlay On uses the corner chosen in Settings, or the top left if Settings has it off.\n\nChanges apply the next time you start the game.".localized)
         }
     }
 
     private var summaryLine: String {
         let count = active.customCount
-        if count == 0 { return "Follows Settings for everything. Pick a value below to set it for this game only." }
-        return "\(count) setting\(count == 1 ? "" : "s") set for this game only, marked with a dot. Everything else follows Settings."
+        if count == 0 { return "Follows Settings for everything. Pick a value below to set it for this game only.".localized }
+        return count == 1
+            ? "1 setting set for this game only, marked with a dot. Everything else follows Settings.".localized
+            : String(format: "%d settings set for this game only, marked with a dot. Everything else follows Settings.".localized, count)
     }
 
     private var performanceSection: some View {
         Section {
-            GameOverrideRow("Compile shaders in the background", isCustom: own.preCompileShaders != nil,
+            GameOverrideRow("Compile shaders in the background".localized, isCustom: own.preCompileShaders != nil,
                             selection: store.onOffChoice(\.preCompileShaders, for: key)) {
                 OverrideChoice.options(settingsHas: store.globalPreCompileShaders)
             }
-            GameOverrideRow("Performance profile", isCustom: profileIsCustom, note: profileNote, selection: profileChoice) {
+            GameOverrideRow("Performance profile".localized, isCustom: profileIsCustom, note: profileNote, selection: profileChoice) {
                 Text(sameAsSettings(PerformanceProfile.current.title)).tag("")
                 ForEach(PerformanceProfile.choices(including: ownProfile ?? .balanced)) { choice in
                     Text(choice.title).tag(choice.rawValue)
@@ -465,10 +467,10 @@ struct GameOptionsView: View {
             resolutionRow
             // The rest are Advanced mode only, like their rows in Settings.
             if isAdvanced {
-                GameOverrideRow("CPU cores", isCustom: own.coreMode != nil, note: coreModeNote, selection: coreModeChoice) {
+                GameOverrideRow("CPU cores".localized, isCustom: own.coreMode != nil, note: coreModeNote, selection: coreModeChoice) {
                     Text(sameAsSettings(CoreMode.current.title)).tag("")
                     ForEach(CoreMode.listed) { mode in
-                        Text(mode.isAvailable ? mode.title : mode.title + ", may not work").tag(mode.rawValue)
+                        Text(mode.isAvailable ? mode.title : String(format: "%@, may not work".localized, mode.title)).tag(mode.rawValue)
                     }
                 }
                 graphicsRows
@@ -484,20 +486,20 @@ struct GameOptionsView: View {
         } footer: {
             if isAdvanced {
                 InfoButton.footer(
-                    "How fast this game runs and how it looks.",
-                    title: "Performance and graphics",
-                    text: "Compile shaders in the background builds shaders while the game keeps running. Most games want this on; Nano Assault Neo breaks with it.\n\nPerformance profile picks the trade-off for this game: Speed, Accuracy (slower but more accurate, on one CPU core; can fix a game that glitches or crashes) or Battery saver (one CPU core).\n\nResolution and the two scaling filters change how the picture is drawn for this game.\n\nCPU cores picks how many cores run the game. Auto decides for each game and device.")
+                    "How fast this game runs and how it looks.".localized,
+                    title: "Performance and graphics".localized,
+                    text: "Compile shaders in the background builds shaders while the game keeps running. Most games want this on; Nano Assault Neo breaks with it.\n\nPerformance profile picks the trade-off for this game: Speed, Accuracy (slower but more accurate, on one CPU core; can fix a game that glitches or crashes) or Battery saver (one CPU core).\n\nResolution and the two scaling filters change how the picture is drawn for this game.\n\nCPU cores picks how many cores run the game. Auto decides for each game and device.".localized)
             } else {
                 InfoButton.footer(
-                    "CPU cores, the scaling filters and Steady frame rate can be set per game too when Settings mode is Advanced (Settings > General).",
-                    title: "Performance and graphics",
-                    text: "Compile shaders in the background builds shaders while the game keeps running. Most games want this on; Nano Assault Neo breaks with it, so it can be set per game.\n\nPerformance profile picks the trade-off for this game: Speed, Accuracy (slower but more accurate, on one CPU core; can fix a game that glitches or crashes) or Battery saver (one CPU core).\n\nResolution changes how large the picture is drawn for this game.\n\nSwitch Settings mode to Advanced on Settings > General to set CPU cores, the scaling filters and Steady frame rate for this game too.")
+                    "CPU cores, the scaling filters and Steady frame rate can be set per game too when Settings mode is Advanced (Settings > General).".localized,
+                    title: "Performance and graphics".localized,
+                    text: "Compile shaders in the background builds shaders while the game keeps running. Most games want this on; Nano Assault Neo breaks with it, so it can be set per game.\n\nPerformance profile picks the trade-off for this game: Speed, Accuracy (slower but more accurate, on one CPU core; can fix a game that glitches or crashes) or Battery saver (one CPU core).\n\nResolution changes how large the picture is drawn for this game.\n\nSwitch Settings mode to Advanced on Settings > General to set CPU cores, the scaling filters and Steady frame rate for this game too.".localized)
             }
         }
     }
 
     private var resolutionRow: some View {
-        GameOverrideRow("Resolution", isCustom: own.renderScale != nil,
+        GameOverrideRow("Resolution".localized, isCustom: own.renderScale != nil,
                         selection: store.textChoice(\.renderScale, known: RenderScale.allCases.map(\.rawValue), for: key)) {
             Text(sameAsSettings(RenderScale.storedChoice.title)).tag("")
             ForEach(RenderScale.allCases) { scale in
@@ -507,14 +509,14 @@ struct GameOptionsView: View {
     }
 
     @ViewBuilder private var graphicsRows: some View {
-        GameOverrideRow("Filter when enlarging", isCustom: own.upscaleFilter != nil,
+        GameOverrideRow("Filter when enlarging".localized, isCustom: own.upscaleFilter != nil,
                         selection: store.numberChoice(\.upscaleFilter, known: ScaleFilter.allCases.map(\.rawValue), for: key)) {
             Text(sameAsSettings(store.globalUpscaleFilter.title)).tag(-1)
             ForEach(ScaleFilter.allCases) { filter in
                 Text(filter.title).tag(filter.rawValue)
             }
         }
-        GameOverrideRow("Filter when shrinking", isCustom: own.downscaleFilter != nil,
+        GameOverrideRow("Filter when shrinking".localized, isCustom: own.downscaleFilter != nil,
                         note: favourPerformanceNote,
                         selection: store.numberChoice(\.downscaleFilter, known: ScaleFilter.allCases.map(\.rawValue), for: key)) {
             Text(sameAsSettings(store.globalDownscaleFilter.title)).tag(-1)
@@ -522,12 +524,12 @@ struct GameOptionsView: View {
                 Text(filter.title).tag(filter.rawValue)
             }
         }
-        GameOverrideRow("Steady frame rate", isCustom: own.fullSpeedRenders != nil,
+        GameOverrideRow("Steady frame rate".localized, isCustom: own.fullSpeedRenders != nil,
                         selection: store.onOffChoice(\.fullSpeedRenders, for: key)) {
             OverrideChoice.options(settingsHas: store.globalFullSpeedRenders)
         }
         if own.fullSpeedRenders ?? store.globalFullSpeedRenders {
-            GameOverrideRow("First time a new effect appears", isCustom: own.fullSpeedShaderMode != nil,
+            GameOverrideRow("First time a new effect appears".localized, isCustom: own.fullSpeedShaderMode != nil,
                             selection: store.numberChoice(\.fullSpeedShaderMode,
                                                           known: FullSpeedRenders.ShaderMode.allCases.map(\.rawValue), for: key)) {
                 Text(sameAsSettings(store.globalFullSpeedShaderMode.title)).tag(-1)
@@ -542,20 +544,20 @@ struct GameOptionsView: View {
     /// above are overridden at launch (filtersToPush).
     private var favourPerformanceNote: String? {
         store.effectiveFavourPerformance(for: key) && !store.effectiveFavourAccuracy(for: key)
-            ? "The Speed profile is on for this game, so the picture is drawn at Balanced at most, with linear scaling."
+            ? "The Speed profile is on for this game, so the picture is drawn at Balanced at most, with linear scaling.".localized
             : nil
     }
 
     private var screenSection: some View {
         Section {
-            GameOverrideRow("Screen layout", isCustom: own.screenLayout != nil,
+            GameOverrideRow("Screen layout".localized, isCustom: own.screenLayout != nil,
                             selection: store.textChoice(\.screenLayout, known: ScreenLayout.allCases.map(\.rawValue), for: key)) {
                 Text(sameAsSettings(store.globalScreenLayout.string)).tag("")
                 ForEach(ScreenLayout.allCases) { layout in
                     Text(layout.string).tag(layout.rawValue)
                 }
             }
-            GameOverrideRow("Performance overlay", isCustom: own.performanceOverlay != nil,
+            GameOverrideRow("Performance overlay".localized, isCustom: own.performanceOverlay != nil,
                             selection: store.onOffChoice(\.performanceOverlay, for: key)) {
                 OverrideChoice.options(settingsHas: store.globalOverlayPosition != .disabled)
             }
@@ -570,7 +572,7 @@ struct GameOptionsView: View {
 
     private var controlsSection: some View {
         Section {
-            GameOverrideRow("Hide on-screen controls when a controller is connected", isCustom: own.autoHideControls != nil,
+            GameOverrideRow("Hide on-screen controls when a controller is connected".localized, isCustom: own.autoHideControls != nil,
                             selection: store.onOffChoice(\.autoHideControls, for: key)) {
                 OverrideChoice.options(settingsHas: store.globalAutoHideControls)
             }
@@ -591,12 +593,12 @@ struct GameOptionsView: View {
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
         } header: {
-            SettingsSectionHeader("Graphic packs", icon: "paintpalette", accent: .core)
+            SettingsSectionHeader("Graphic packs".localized, icon: "paintpalette", accent: .core)
         } footer: {
             InfoButton.footer(
-                "Resolution, frame rate, fixes and mods for this game. They apply the next time you start it.",
-                title: "Graphic packs",
-                text: "Graphic packs change how a game looks or plays: higher resolutions, frame-rate patches, fixes for known glitches and mods. Download the community packs, turn on the ones you want for this game, and pick their options. Nothing is turned on automatically.\n\nHigher resolutions cost speed and memory, and what is reasonable depends on the device, so the options show a suggestion for this one.\n\nPacks listed under All games apply to every game, not just this one. Packs apply the next time you start the game."
+                "Resolution, frame rate, fixes and mods for this game. They apply the next time you start it.".localized,
+                title: "Graphic packs".localized,
+                text: "Graphic packs change how a game looks or plays: higher resolutions, frame-rate patches, fixes for known glitches and mods. Download the community packs, turn on the ones you want for this game, and pick their options. Nothing is turned on automatically.\n\nHigher resolutions cost speed and memory, and what is reasonable depends on the device, so the options show a suggestion for this one.\n\nPacks listed under All games apply to every game, not just this one. Packs apply the next time you start the game.".localized
             )
         }
     }
@@ -618,7 +620,7 @@ struct GameOptionsView: View {
             Button("Reset", role: .destructive) { store.clearOverrides(for: key) }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("\(game.cardName.name) goes back to following Settings for everything.")
+            Text(String(format: "%@ goes back to following Settings for everything.".localized, game.cardName.name))
         }
         .alert("May not work on this device", isPresented: Binding(
             get: { coreWarning != nil },

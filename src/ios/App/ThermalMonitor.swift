@@ -31,15 +31,15 @@ enum ThermalSettings {
 
         var title: String {
             switch self {
-            case .serious:  return "Serious"
-            case .critical: return "Critical"
+            case .serious:  return "Serious".localized
+            case .critical: return "Critical".localized
             }
         }
 
         var summary: String {
             switch self {
-            case .serious:  return "Cools down as soon as iOS starts slowing the device."
-            case .critical: return "Waits until iOS is slowing the device hard. The game keeps its quality longer, and may stutter or run hot first."
+            case .serious:  return "Cools down as soon as iOS starts slowing the device.".localized
+            case .critical: return "Waits until iOS is slowing the device hard. The game keeps its quality longer, and may stutter or run hot first.".localized
             }
         }
     }
@@ -183,7 +183,7 @@ final class ThermalMonitor: ObservableObject {
             cemu_bridge_log_line("iOS thermal: reduced render scale to battery saver while hot")
             // Already on battery saver: the picture didn't change, so there's nothing to tell the player.
             if userChosenScale != .battery {
-                onNotice?("The device is hot, so MuffinEMU made the picture softer to keep the game running. It goes back when the device cools.")
+                onNotice?("The device is hot, so MuffinEMU made the picture softer to keep the game running. It goes back when the device cools.".localized)
             }
             cooldownTask?.cancel()
             cooldownTask = nil
@@ -200,7 +200,7 @@ final class ThermalMonitor: ObservableObject {
                 // different Resolution while it was hot (their choice stands).
                 let pictureReturns = self.userChosenScale.map { $0 != .battery } == true && RenderScale.storedChoice == .battery
                 self.unwind(reason: "cooled to \(self.description)")
-                if pictureReturns { self.onNotice?("The device has cooled down. The picture is back to normal.") }
+                if pictureReturns { self.onNotice?("The device has cooled down. The picture is back to normal.".localized) }
             }
         }
     }

@@ -53,9 +53,9 @@ enum TouchLabSettings {
     static let defaultRacingItemPlacement = RacingPad.ItemPlacement.centre.rawValue
     static let racingLargeItemKey = "muffin.touchlab.racing.largeItem"
     static let racingItemPlacementOptions: [(value: String, title: String)] = [
-        (RacingPad.ItemPlacement.centre.rawValue, "Centre"),
-        (RacingPad.ItemPlacement.aboveSteering.rawValue, "Above steering"),
-        (RacingPad.ItemPlacement.abovePedals.rawValue, "Above pedals"),
+        (RacingPad.ItemPlacement.centre.rawValue, "Centre".localized),
+        (RacingPad.ItemPlacement.aboveSteering.rawValue, "Above steering".localized),
+        (RacingPad.ItemPlacement.abovePedals.rawValue, "Above pedals".localized),
     ]
 
     /// "Showcase style": the polished look on Zone, Float, Adaptive, Frame, Racing and Arc. Off keeps the
@@ -159,7 +159,7 @@ enum TouchLabSettings {
         let summary: String
     }
 
-    static let styles: [Style] = schemes.map { Style(id: $0.id, name: $0.name, summary: $0.summary) }
+    static let styles: [Style] = schemes.map { Style(id: $0.id, name: $0.name, summary: $0.summary.localized) }
 
     static func summary(_ id: String) -> String {
         styles.first { $0.id == id }?.summary ?? ""
@@ -221,12 +221,12 @@ enum TouchLabSettings {
     static let classicColourOptions: [(value: String, title: String)] =
         [(defaultClassicColour, PadStyle.name(nil))] + presetColourOptions
     static let showcaseDisplayOptions: [(value: String, title: String)] =
-        ShowcaseLayout.DisplayMode.allCases.map { ($0.rawValue, $0.title) }
+        ShowcaseLayout.DisplayMode.allCases.map { ($0.rawValue, $0.title.localized) }
 
     /// Float's right-hand side options: stored value and label.
     static let cameraOptions: [(value: String, title: String)] = [
-        (FloatPad.Camera.stick.rawValue, "Floating stick"),
-        (FloatPad.Camera.swipe.rawValue, "Swipe"),
+        (FloatPad.Camera.stick.rawValue, "Floating stick".localized),
+        (FloatPad.Camera.swipe.rawValue, "Swipe".localized),
     ]
 }
 

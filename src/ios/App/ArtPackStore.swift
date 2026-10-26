@@ -40,9 +40,9 @@ struct ArtPack: Codable, Identifiable {
     var downloadBytes: Int64 { files.reduce(0) { $0 + $1.size } }
     var styleTitle: String {
         switch style {
-        case "3d": return "3D box"
-        case "disc": return "Disc"
-        default: return "2D cover"
+        case "3d": return "3D box".localized
+        case "disc": return "Disc".localized
+        default: return "2D cover".localized
         }
     }
 }
@@ -222,13 +222,13 @@ enum ArtPackError: LocalizedError {
         let fmt = { (b: Int64) in ByteCountFormatter.string(fromByteCount: b, countStyle: .file) }
         switch self {
         case .notEnoughSpace(let need, let have):
-            return "Not enough free space. This pack needs about \(fmt(need)) while it installs (the download plus the unpacked images), and this device has \(fmt(have)) free. Free some space and try again."
+            return String(format: "Not enough free space. This pack needs about %@ while it installs (the download plus the unpacked images), and this device has %@ free. Free some space and try again.".localized, fmt(need), fmt(have))
         case .badChecksum(let name):
-            return "The download of \(name) didn't match its checksum, so it was thrown away. Try again."
+            return String(format: "The download of %@ didn't match its checksum, so it was thrown away. Try again.".localized, name)
         case .http(let code):
-            return "The download server answered with error \(code)."
+            return String(format: "The download server answered with error %d.".localized, code)
         case .noManifest:
-            return "The art pack list couldn't be loaded. Check your connection and try again."
+            return "The art pack list couldn't be loaded. Check your connection and try again.".localized
         case .failed(let message):
             return message
         }
@@ -294,8 +294,8 @@ final class ArtPackStore: ObservableObject {
                 await MainActor.run {
                     self.isLoadingManifest = false
                     self.manifestError = self.manifest == nil
-                        ? "Couldn't load the art pack list: \(error.localizedDescription)"
-                        : "Couldn't check for new packs. Showing the last list MuffinEMU saved."
+                        ? String(format: "Couldn't load the art pack list: %@".localized, error.localizedDescription)
+                        : "Couldn't check for new packs. Showing the last list MuffinEMU saved.".localized
                 }
             }
         }
@@ -319,7 +319,7 @@ final class ArtPackStore: ObservableObject {
         errors[pack.id] = nil
         let flag = CancelFlag()
         flags[pack.id] = flag
-        progress[pack.id] = PackProgress(phase: "Starting", fraction: 0)
+        progress[pack.id] = PackProgress(phase: "Starting".localized, fraction: 0)
         let order = manifest?.packs.firstIndex { $0.id == pack.id } ?? 0
         let entries = manifest?.index.filter { $0.pack == pack.id } ?? []
 
@@ -365,7 +365,7 @@ final class ArtPackStore: ObservableObject {
         var imageCount = 0
         let totalFiles = max(pack.files.count, 1)
         for (n, file) in pack.files.enumerated() {
-            guard let url = URL(string: file.url) else { throw ArtPackError.failed("The pack's download address is invalid.") }
+            guard let url = URL(string: file.url) else { throw ArtPackError.failed("The pack's download address is invalid.".localized) }
             let zip = ArtLocations.downloadsDirectory.appendingPathComponent("\(pack.id)-\(n).zip")
             try? fm.removeItem(at: zip)
             defer { try? fm.removeItem(at: zip) }
@@ -373,7 +373,7 @@ final class ArtPackStore: ObservableObject {
             // 1. Download
             let downloader = PackDownload(url: url, destination: zip) { [weak self] done, total in
                 let expected = total > 0 ? total : file.size
-                self?.setProgress(pack.id, "Downloading", expected > 0 ? Double(done) / Double(expected) : 0)
+                self?.setProgress(pack.id, "Downloading".localized, expected > 0 ? Double(done) / Double(expected) : 0)
             }
             await MainActor.run { self.downloaders[pack.id] = downloader }
             try await downloader.start()
@@ -382,8 +382,8 @@ final class ArtPackStore: ObservableObject {
             // 2. Verify and 3. unpack, off the main thread
             let pid = pack.id
             imageCount += try await Task.detached(priority: .utility) { [weak self] () -> Int in
-                self?.setProgress(pid, "Checking", 0)
-                let digest = try Self.sha256(of: zip, isCancelled: { flag.isSet }) { f in self?.setProgress(pid, "Checking", f) }
+                self?.setProgress(pid, "Checking".localized, 0)
+                let digest = try Self.sha256(of: zip, isCancelled: { flag.isSet }) { f in self?.setProgress(pid, "Checking".localized, f) }
                 guard digest.caseInsensitiveCompare(file.sha256) == .orderedSame else { throw ArtPackError.badChecksum(file.name) }
                 let archive = try MiniZip(url: zip, limits: .artPack(zipBytes: file.size))
                 // Unpacking needs room for every image while the zip is still on disk.
@@ -392,16 +392,16 @@ final class ArtPackStore: ObservableObject {
                     throw ArtPackError.notEnoughSpace(need: need, have: have)
                 }
                 let count = try archive.extract(to: files, progress: { f in
-                    self?.setProgress(pid, "Unpacking", (Double(n) + f) / Double(totalFiles))
+                    self?.setProgress(pid, "Unpacking".localized, (Double(n) + f) / Double(totalFiles))
                 }, isCancelled: { flag.isSet })
                 return count
             }.value
         }
 
         // 4. Index
-        setProgress(pack.id, "Indexing", 1)
+        setProgress(pack.id, "Indexing".localized, 1)
         let records = Self.buildIndex(in: files, manifestEntries: entries)
-        guard !records.isEmpty else { throw ArtPackError.failed("The pack unpacked, but no images were found in it.") }
+        guard !records.isEmpty else { throw ArtPackError.failed("The pack unpacked, but no images were found in it.".localized) }
         try JSONEncoder().encode(records).write(to: partial.appendingPathComponent("index.json"), options: .atomic)
         let meta = InstalledPackMeta(
             id: pack.id, name: pack.name, style: pack.style, credits: pack.credits, imageCount: records.count,

@@ -47,9 +47,9 @@ enum DeviceScreenMode: String, CaseIterable, Identifiable {
 
     var string: String {
         switch self {
-        case .otherScreen: return "The other screen"
-        case .sameScreen: return "The same screen as the TV"
-        case .nothing: return "Nothing (controls only)"
+        case .otherScreen: return "The other screen".localized
+        case .sameScreen: return "The same screen as the TV".localized
+        case .nothing: return "Nothing (controls only)".localized
         }
     }
 
@@ -87,20 +87,20 @@ enum ScreenLayout: String, CaseIterable, Identifiable {
 
     var string: String {
         switch self {
-        case .singleScreen: return "Single Screen"
-        case .bothScreens: return "Adaptive (Both Screens)"
-        case .smallGamePadTopRight: return "Both Screens (GamePad Top Right)"
+        case .singleScreen: return "Single Screen".localized
+        case .bothScreens: return "Adaptive (Both Screens)".localized
+        case .smallGamePadTopRight: return "Both Screens (GamePad Top Right)".localized
         }
     }
 
     var description: String {
         switch self {
         case .singleScreen:
-            return "Shows one screen at a time. Switch between TV and GamePad with Swap TV and GamePad in the HOME menu, or the swap button if it's on."
+            return "Shows one screen at a time. Switch between TV and GamePad with Swap TV and GamePad in the HOME menu, or the swap button if it's on.".localized
         case .bothScreens:
-            return "Shows both screens: stacked in portrait, side by side in landscape."
+            return "Shows both screens: stacked in portrait, side by side in landscape.".localized
         case .smallGamePadTopRight:
-            return "Shows the TV screen with a small GamePad screen in the top-right corner."
+            return "Shows the TV screen with a small GamePad screen in the top-right corner.".localized
         }
     }
 

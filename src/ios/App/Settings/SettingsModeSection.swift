@@ -41,13 +41,15 @@ struct SettingsModeSection: View {
                 }
                 .pickerStyle(.segmented)
                 Text(SettingsMode.isAdvanced(raw: modeRaw)
-                     ? "Everything is shown, including the settings most people never need."
-                     : "Only the settings most people need. The advanced ones run at their defaults until you switch back.")
+                     ? "Everything is shown, including the settings most people never need.".localized
+                     : "Only the settings most people need. The advanced ones run at their defaults until you switch back.".localized)
                     .font(.system(size: 12))
                     .foregroundColor(MuffinTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 if !SettingsMode.isAdvanced(raw: modeRaw) && pausedCount > 0 {
-                    Label("\(pausedCount) advanced setting\(pausedCount == 1 ? " is" : "s are") paused. Switch to Advanced to bring \(pausedCount == 1 ? "it" : "them") back.",
+                    Label(pausedCount == 1
+                          ? "1 advanced setting is paused. Switch to Advanced to bring it back.".localized
+                          : String(format: "%d advanced settings are paused. Switch to Advanced to bring them back.".localized, pausedCount),
                           systemImage: "pause.circle")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(MuffinTheme.accentText)
@@ -56,9 +58,9 @@ struct SettingsModeSection: View {
             }
         } footer: {
             InfoButton.footer(
-                "Basic hides the advanced settings and runs them at their defaults until you switch back.",
-                title: "Settings mode",
-                text: "Basic keeps Settings short. The advanced settings run at their defaults and their rows are hidden.\n\nAdvanced shows all of them: the renderer, scaling filters, gamma, Steady frame rate, CPU cores, when cooling down starts, the emulated clock, overlay details, stick feel, audio channels, diagnostics, and a game's own CPU cores, filters and Steady frame rate. The performance profile, motion aiming, library grouping and settings backups are in both.\n\nWhen you switch to Basic, MuffinEMU sets your advanced settings, and each game's, aside and uses the defaults. Switching back to Advanced puts them all back as they were.\n\nReset settings to defaults (under About) also puts this back to Basic and forgets the saved values.")
+                "Basic hides the advanced settings and runs them at their defaults until you switch back.".localized,
+                title: "Settings mode".localized,
+                text: "Basic keeps Settings short. The advanced settings run at their defaults and their rows are hidden.\n\nAdvanced shows all of them: the renderer, scaling filters, gamma, Steady frame rate, CPU cores, when cooling down starts, the emulated clock, overlay details, stick feel, audio channels, diagnostics, and a game's own CPU cores, filters and Steady frame rate. The performance profile, motion aiming, library grouping and settings backups are in both.\n\nWhen you switch to Basic, MuffinEMU sets your advanced settings, and each game's, aside and uses the defaults. Switching back to Advanced puts them all back as they were.\n\nReset settings to defaults (under About) also puts this back to Basic and forgets the saved values.".localized)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         .onReceive(NotificationCenter.default.publisher(for: .muffinSettingsWereReset)) { _ in

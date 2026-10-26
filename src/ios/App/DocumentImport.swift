@@ -99,7 +99,7 @@ enum DocumentImport {
         var errorDescription: String? {
             switch self {
             case .noPresenter:
-                return "Couldn't open the file picker - the app had no visible window to open it from."
+                return "Couldn't open the file picker - the app had no visible window to open it from.".localized
             }
         }
     }

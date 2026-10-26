@@ -201,9 +201,9 @@ struct BootFailureView: View {
     }
 
     private var title: String {
-        if needsCleanRestart { return "Restart needed before \(name)" }
-        if driveWasLost { return "\(name) stopped: drive disconnected" }
-        return endedWhileRunning ? "\(name) stopped" : "Couldn't start \(name)"
+        if needsCleanRestart { return String(format: "Restart needed before %@".localized, name) }
+        if driveWasLost { return String(format: "%@ stopped: drive disconnected".localized, name) }
+        return String(format: endedWhileRunning ? "%@ stopped".localized : "Couldn't start %@".localized, name)
     }
 
     /// Keys the player added from this screen. Nil until they do.
@@ -219,12 +219,16 @@ struct BootFailureView: View {
 
     /// What to do next, in plain words. The engine's own message and the log paths are under Details.
     private var plainLine: String {
-        if needsCleanRestart { return "Close MuffinEMU and open it again from your Home Screen, then start a game." }
-        if driveWasLost { return "The drive or folder this game is stored on was disconnected. Connect it again, go back and start the game again." }
-        if endedWhileRunning { return "The game stopped. Go back and try it again. If it keeps happening, close and reopen MuffinEMU." }
-        if needsKeys { return "This game is encrypted, so it needs a keys.txt file to start." }
-        if let keysAdded { return "Added \(keysAdded) key\(keysAdded == 1 ? "" : "s"). Go back and start the game again. If it still won't start, close and reopen MuffinEMU." }
-        return "This game didn't start. Try again. If it keeps happening, close and reopen MuffinEMU."
+        if needsCleanRestart { return "Close MuffinEMU and open it again from your Home Screen, then start a game.".localized }
+        if driveWasLost { return "The drive or folder this game is stored on was disconnected. Connect it again, go back and start the game again.".localized }
+        if endedWhileRunning { return "The game stopped. Go back and try it again. If it keeps happening, close and reopen MuffinEMU.".localized }
+        if needsKeys { return "This game is encrypted, so it needs a keys.txt file to start.".localized }
+        if let keysAdded {
+            return keysAdded == 1
+                ? "Added 1 key. Go back and start the game again. If it still won't start, close and reopen MuffinEMU.".localized
+                : String(format: "Added %d keys. Go back and start the game again. If it still won't start, close and reopen MuffinEMU.".localized, keysAdded)
+        }
+        return "This game didn't start. Try again. If it keeps happening, close and reopen MuffinEMU.".localized
     }
 
     var body: some View {
@@ -302,7 +306,7 @@ struct BootFailureView: View {
             // anything, which is itself worth seeing rather than papering over. The logs go out through Share diagnostics.
             DisclosureGroup("Details") {
                 VStack(spacing: 10) {
-                    Text(message.isEmpty ? "The engine didn't report a reason." : message)
+                    Text(message.isEmpty ? "The engine didn't report a reason.".localized : message)
                         .font(.system(.footnote, design: .rounded))
                         .foregroundColor(.white.opacity(0.75))
                         .multilineTextAlignment(.center)
@@ -362,11 +366,11 @@ enum LibrarySortOrder: String, CaseIterable, Hashable {
 
     var title: String {
         switch self {
-        case .title: return "Title"
-        case .recentlyAdded: return "Recently added"
-        case .favoritesFirst: return "Favourites first"
-        case .lastPlayed: return "Last played"
-        case .mostPlayed: return "Most played"
+        case .title: return "Title".localized
+        case .recentlyAdded: return "Recently added".localized
+        case .favoritesFirst: return "Favourites first".localized
+        case .lastPlayed: return "Last played".localized
+        case .mostPlayed: return "Most played".localized
         }
     }
 
@@ -733,7 +737,7 @@ struct GameBrowserView: View {
                     }
                     .buttonStyle(MuffinSecondaryButtonStyle())
                     .frame(minWidth: 44, minHeight: 44)
-                    .accessibilityLabel(showingFavorites ? "Show all games" : "Show favourites only")
+                    .accessibilityLabel(showingFavorites ? "Show all games".localized : "Show favourites only".localized)
 
                     Menu {
                         Button {
@@ -816,7 +820,7 @@ struct GameBrowserView: View {
                     // and 10pt straight on the gradient, which no theme could keep readable
                     // across the whole width of an iPad.
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text("\(filteredGames.count)")
+                        Text(verbatim: "\(filteredGames.count)")
                             .font(.system(size: 14, weight: .bold, design: .rounded))
                             .foregroundColor(MuffinTheme.brownDarkest)
                         Text("games")
@@ -928,7 +932,7 @@ struct GameBrowserView: View {
         .onDrop(of: [UTType.item], isTargeted: nil, perform: handleDrop)
         .overlay(alignment: .top) {
             if case .copying(let name) = gameManager.importState {
-                LibraryActivityBanner(text: "Importing \(name)…")
+                LibraryActivityBanner(text: String(format: "Importing %@…".localized, name))
                     .padding(.top, 8)
             } else if let removingContentMessage {
                 LibraryActivityBanner(text: removingContentMessage)
@@ -978,7 +982,7 @@ struct GameBrowserView: View {
 
     private func removeGameNow(_ game: GameMetadata) {
         pendingGameRemoval = nil
-        removingContentMessage = "Removing \"\(game.cardName.name)\"\u{2026}"
+        removingContentMessage = String(format: "Removing \"%@\"\u{2026}".localized, game.cardName.name)
         Task {
             do {
                 try await gameManager.removeGame(game)
@@ -1061,13 +1065,13 @@ struct GameBrowserView: View {
                 isPresented: dismissBinding(pendingManualMatchConfirmation != nil, clear: { pendingManualMatchConfirmation = nil }),
                 presenting: pendingManualMatchConfirmation
             ) { pending in
-                Button("Add to \"\(pending.game.title)\"") {
+                Button(String(format: "Add to \"%@\"".localized, pending.game.title)) {
                     pendingManualMatchConfirmation = nil
                     runDlcUpdateImport(from: pending.source, kind: pending.kind, longPressedGame: pending.game, manualMatch: pending.game)
                 }
                 Button("Cancel", role: .cancel) { pendingManualMatchConfirmation = nil }
             } message: { pending in
-                Text("Couldn't automatically match this \(pending.kind.displayName) to a game already in your library. Add it to \"\(pending.game.title)\", the game you picked?")
+                Text(String(format: "Couldn't automatically match this %@ to a game already in your library. Add it to \"%@\", the game you picked?".localized, pending.kind.displayName, pending.game.title))
             }
             .confirmationDialog(
                 "Remove content?",
@@ -1077,7 +1081,7 @@ struct GameBrowserView: View {
             ) { pending in
                 Button("Remove", role: .destructive) {
                     pendingRemoval = nil
-                    removingContentMessage = "Removing \(pending.kind.displayName) for \"\(pending.game.title)\"…"
+                    removingContentMessage = String(format: "Removing %@ for \"%@\"…".localized, pending.kind.displayName, pending.game.title)
                     Task {
                         // DlcUpdateImport.remove() is a recursive delete of whatever's
                         // installed - on a real DLC pack that's real disk I/O, and running
@@ -1096,10 +1100,10 @@ struct GameBrowserView: View {
                 }
                 Button("Cancel", role: .cancel) { pendingRemoval = nil }
             } message: { pending in
-                Text("Remove the \(pending.kind.displayName) installed for \"\(pending.game.title)\"? This can't be undone - you'll need to import it again.")
+                Text(String(format: "Remove the %@ installed for \"%@\"? This can't be undone - you'll need to import it again.".localized, pending.kind.displayName, pending.game.title))
             }
             .confirmationDialog(
-                pendingGameRemoval?.removeConfirmTitle ?? "Remove this game?",
+                pendingGameRemoval?.removeConfirmTitle ?? "Remove this game?".localized,
                 isPresented: dismissBinding(pendingGameRemoval != nil, clear: { pendingGameRemoval = nil }),
                 titleVisibility: .visible,
                 presenting: pendingGameRemoval
@@ -1138,7 +1142,7 @@ struct GameBrowserView: View {
                     resume(false)
                 }
             } message: { pending in
-                Text("\"\(pending.name)\" already exists in your library. Replacing it can't be undone.")
+                Text(String(format: "\"%@\" already exists in your library. Replacing it can't be undone.".localized, pending.name))
             }
     }
 
@@ -1151,7 +1155,9 @@ struct GameBrowserView: View {
                 guard let url = urls.first else { return }
                 do {
                     let count = try WiiUKeys.importKeys(from: url)
-                    dlcUpdateSuccessMessage = "Added \(count) key\(count == 1 ? "" : "s"). Games use them the next time you start one. If you've already started a game since opening MuffinEMU, close and reopen MuffinEMU first."
+                    dlcUpdateSuccessMessage = count == 1
+                        ? "Added 1 key. Games use them the next time you start one. If you've already started a game since opening MuffinEMU, close and reopen MuffinEMU first.".localized
+                        : String(format: "Added %d keys. Games use them the next time you start one. If you've already started a game since opening MuffinEMU, close and reopen MuffinEMU first.".localized, count)
                 } catch {
                     dlcImportErrorMessage = error.localizedDescription
                 }
@@ -1274,7 +1280,7 @@ struct GameBrowserView: View {
                 // outside. Naming which game it landed on matters most here since
                 // whoever started this from the general menu never picked one.
                 if let matched = result.matchedGame {
-                    dlcUpdateSuccessMessage = "Added \(kind.displayName) for \"\(matched.title)\"."
+                    dlcUpdateSuccessMessage = String(format: "Added %@ for \"%@\".".localized, kind.displayName, matched.title)
                 }
             } catch DlcUpdateImport.ImportError.noBaseGameMatch {
                 // Auto-matching by title ID came up empty. A long-pressed game gets a
@@ -1317,7 +1323,7 @@ struct DlcUpdateGamePickerSheet: View {
                     }
                 }
             }
-            .navigationTitle("Add \(kind.displayName) to which game?")
+            .navigationTitle(String(format: "Add %@ to which game?".localized, kind.displayName))
             .muffinOpaqueNavigationBar(MuffinTheme.formGround)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1398,7 +1404,7 @@ struct GameCardOptimized<Options: View>: View {
                                 .frame(width: 44, height: 44)
                                 .contentShape(Rectangle())
                         }
-                        .accessibilityLabel("More options for \(cardName.name)")
+                        .accessibilityLabel(String(format: "More options for %@".localized, cardName.name))
                         .padding(8)
                         Spacer()
                         Button(action: onFavoriteTap) {
@@ -1416,7 +1422,7 @@ struct GameCardOptimized<Options: View>: View {
                                 .frame(width: 44, height: 44)
                                 .contentShape(Rectangle())
                         }
-                        .accessibilityLabel(game.isFavorite ? "Remove from favourites" : "Add to favourites")
+                        .accessibilityLabel(game.isFavorite ? "Remove from favourites".localized : "Add to favourites".localized)
                         .padding(8)
                     }
                     Spacer()
@@ -1563,21 +1569,21 @@ struct EmptyGamesView: View {
 
     private var heading: String {
         switch kind {
-        case .emptyLibrary: return "No Games Yet"
-        case .noFavourites: return "No Favourites Yet"
-        case .noSearchMatch: return "No Matches"
+        case .emptyLibrary: return "No Games Yet".localized
+        case .noFavourites: return "No Favourites Yet".localized
+        case .noSearchMatch: return "No Matches".localized
         }
     }
 
     private var lines: [String] {
         switch kind {
         case .emptyLibrary:
-            return ["Tap Import a Game, or put game files in Files > On My iPad > MuffinEMU > Roms.",
-                    "Games you add there show up when you come back to MuffinEMU."]
+            return ["Tap Import a Game, or put game files in Files > On My iPad > MuffinEMU > Roms.".localized,
+                    "Games you add there show up when you come back to MuffinEMU.".localized]
         case .noFavourites:
-            return ["Tap the heart on a game to add it here."]
+            return ["Tap the heart on a game to add it here.".localized]
         case .noSearchMatch(let text):
-            return ["Nothing matches \"\(text)\"."]
+            return [String(format: "Nothing matches \"%@\".".localized, text)]
         }
     }
 
@@ -1835,9 +1841,11 @@ struct EmulatorViewOptimized: View {
         skylanderPortalEnabled || infinityBaseEnabled || dimensionsToypadEnabled
     }
 
-    /// What the pad button switches back to when Melo-Controller is on.
-    private var otherPadName: String {
-        TouchLabSettings.isTouchLab(touchLabScheme) ? "the \(TouchLabSettings.name(touchLabScheme)) controls" : "MuffinEMU's controls"
+    /// What the pad button switches back to when Melo-Controller is on, as the "Switch to ..." label.
+    private var switchToOtherPadLabel: String {
+        TouchLabSettings.isTouchLab(touchLabScheme)
+            ? String(format: "Switch to the %@ controls".localized, TouchLabSettings.name(touchLabScheme))
+            : "Switch to MuffinEMU's controls".localized
     }
 
     /// Which control system is live. One decision, made once.
@@ -2015,8 +2023,8 @@ struct EmulatorViewOptimized: View {
         }
         if atStart && gameManager.launchNotice != nil { return }
         gameManager.showLaunchNotice(hide
-            ? "Controller connected. On-screen controls hidden. Press HOME for the menu."
-            : "Controller disconnected. On-screen controls shown.")
+            ? "Controller connected. On-screen controls hidden. Press HOME for the menu.".localized
+            : "Controller disconnected. On-screen controls shown.".localized)
     }
 
     // MARK: HOME menu
@@ -2212,7 +2220,7 @@ struct EmulatorViewOptimized: View {
                     // report can't answer from the outside. Temporary, and gone the
                     // moment the real bug is found - not something to leave shipping.
                     VStack {
-                        Text("PAD DEBUG: \(PadDiagnostics.shared.lastInput) / \(PadDiagnostics.shared.lastStick)")
+                        Text(verbatim: "PAD DEBUG: \(PadDiagnostics.shared.lastInput) / \(PadDiagnostics.shared.lastStick)")
                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
                             .foregroundColor(.yellow)
                             .padding(6)
@@ -2262,7 +2270,7 @@ struct EmulatorViewOptimized: View {
                     // to this button, and from the in-game top bar it could fail to appear, leaving Back
                     // doing nothing. An alert always presents.
                     .alert(
-                        "Quit \(gameName)?",
+                        String(format: "Quit %@?".localized, gameName),
                         isPresented: $showingBackConfirmation
                     ) {
                         Button("Quit", role: .destructive) {
@@ -2315,7 +2323,7 @@ struct EmulatorViewOptimized: View {
                                     .font(.system(size: 12, weight: .semibold))
                             }
                             .buttonStyle(MuffinBarButtonStyle())
-                            .accessibilityLabel(useMeloControls ? "Switch to \(otherPadName)" : "Switch to Melo-Controller")
+                            .accessibilityLabel(useMeloControls ? switchToOtherPadLabel : "Switch to Melo-Controller".localized)
                         }
 
                         // Reachable without leaving the game, same reasoning as the
@@ -2369,7 +2377,7 @@ struct EmulatorViewOptimized: View {
                             }
                             .buttonStyle(MuffinBarButtonStyle())
                             .accessibilityLabel("Swap TV and GamePad")
-                        .accessibilityValue(localSwapped ? "Showing the GamePad screen" : "Showing the TV screen")
+                        .accessibilityValue(localSwapped ? "Showing the GamePad screen".localized : "Showing the TV screen".localized)
                         }
 
                         // Dual screen: which Wii U screen is on the external display. Lives
@@ -2406,7 +2414,7 @@ struct EmulatorViewOptimized: View {
                                     .font(.system(size: 12, weight: .semibold))
                             }
                             .buttonStyle(MuffinBarButtonStyle())
-                            .accessibilityLabel(padControlsHidden ? "Show controls" : "Hide controls to touch the GamePad screen")
+                            .accessibilityLabel(padControlsHidden ? "Show controls".localized : "Hide controls to touch the GamePad screen".localized)
                         }
                         #endif
 
@@ -2437,7 +2445,7 @@ struct EmulatorViewOptimized: View {
                         // while it boots is dropped, which left the screen saying PAUSED over a game
                         // that was running.
                         .disabled(gameManager.emulationState != .running)
-                        .accessibilityLabel(isPaused ? "Resume" : "Pause")
+                        .accessibilityLabel(isPaused ? "Resume".localized : "Pause".localized)
 
                         // Reachable without leaving the game, because the only way to
                         // tell whether the pad is in the right place is to have the
@@ -2462,7 +2470,7 @@ struct EmulatorViewOptimized: View {
                                 .font(.system(size: 12, weight: .semibold))
                         }
                         .buttonStyle(MuffinBarButtonStyle())
-                        .accessibilityLabel(isEditingControlLayout ? "Done moving controls" : "Move controls")
+                        .accessibilityLabel(isEditingControlLayout ? "Done moving controls".localized : "Move controls".localized)
 
                         frameRatePill
                     }
@@ -2658,7 +2666,7 @@ struct EmulatorViewOptimized: View {
                 VStack(spacing: 12) {
                     ProgressView()
                         .tint(.white)
-                    Text("Starting \(gameName)…")
+                    Text(String(format: "Starting %@…".localized, gameName))
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
                         .foregroundColor(.white.opacity(0.8))
                         .multilineTextAlignment(.center)
@@ -2942,7 +2950,7 @@ struct EmulatorViewOptimized: View {
                 saveStateBusySlot = nil
                 saveStateSlots = SaveStateStore.slots(for: gameID)
                 reportSaveState(ok
-                    ? SaveStateStatus(message: "Slot \(slot) saved.", isWarning: false)
+                    ? SaveStateStatus(message: String(format: "Slot %d saved.".localized, slot), isWarning: false)
                     : SaveStateStatus(message: Self.saveStateFailureMessage("save", slot: slot, reason: reason), isWarning: true))
             }
         }
@@ -2965,7 +2973,7 @@ struct EmulatorViewOptimized: View {
                 saveStateBusySlot = nil
                 saveStateSlots = SaveStateStore.slots(for: gameID)
                 reportSaveState(ok
-                    ? SaveStateStatus(message: "Slot \(slot) loaded. Some textures may look wrong for a moment.", isWarning: false)
+                    ? SaveStateStatus(message: String(format: "Slot %d loaded. Some textures may look wrong for a moment.".localized, slot), isWarning: false)
                     : SaveStateStatus(message: Self.saveStateFailureMessage("load", slot: slot, reason: reason), isWarning: true))
             }
         }
@@ -3027,7 +3035,7 @@ struct EmulatorViewOptimized: View {
         try? await Task.sleep(nanoseconds: TopBarAutoHide.hideDelayNanoseconds)
         guard !Task.isCancelled else { return }
         setTopBarHidden(true)
-        showHintOnce(Self.topBarHintKey, "Tap the top edge to bring the bar back.")
+        showHintOnce(Self.topBarHintKey, "Tap the top edge to bring the bar back.".localized)
     }
 
     // MARK: One-time hints
@@ -3054,7 +3062,7 @@ struct EmulatorViewOptimized: View {
     /// The first time a GamePad screen is on this device during a running game.
     private func showGamePadHintIfNeeded() {
         #if os(iOS)
-        showHintOnce(Self.gamePadHintKey, "Tap the GamePad screen to use it in the game.", ready: {
+        showHintOnce(Self.gamePadHintKey, "Tap the GamePad screen to use it in the game.".localized, ready: {
             gameManager.emulationState == .running && (isPadViewVisible || padIsOnDeviceInDualScreen)
         })
         #endif
@@ -3136,8 +3144,11 @@ struct EmulatorViewOptimized: View {
     /// wrong, not a guess that covers every case. A bridge that gave none still gets a plain line.
     private static func saveStateFailureMessage(_ action: String, slot: Int, reason: String) -> String {
         let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "Couldn't \(action) Slot \(slot)." }
-        return "Couldn't \(action) Slot \(slot). \(trimmed)"
+        let isSave = action == "save"
+        guard !trimmed.isEmpty else {
+            return isSave ? String(format: "Couldn't save Slot %d.".localized, slot) : String(format: "Couldn't load Slot %d.".localized, slot)
+        }
+        return isSave ? String(format: "Couldn't save Slot %d. %@".localized, slot, trimmed) : String(format: "Couldn't load Slot %d. %@".localized, slot, trimmed)
     }
 
     /// Whether the picture-stopped card is up: while the watchdog says the picture has stopped, and
@@ -3149,29 +3160,29 @@ struct EmulatorViewOptimized: View {
 
     private var stallTitle: String {
         switch gameManager.videoStallKind {
-        case 0: return saveStateBusySlot != nil ? "Saving the game" : (saveStateStatus?.isWarning == true ? "Couldn't save" : "Saved")
-        case 2: return "Graphics stopped working"
-        case 3: return "Out of memory for the picture"
-        case 4: return "Memory is running low"
-        case 5: return "The screen stopped updating"
-        default: return "The picture froze"
+        case 0: return saveStateBusySlot != nil ? "Saving the game".localized : (saveStateStatus?.isWarning == true ? "Couldn't save".localized : "Saved".localized)
+        case 2: return "Graphics stopped working".localized
+        case 3: return "Out of memory for the picture".localized
+        case 4: return "Memory is running low".localized
+        case 5: return "The screen stopped updating".localized
+        default: return "The picture froze".localized
         }
     }
 
     private var stallAdvice: String {
         switch gameManager.videoStallKind {
-        case 2: return "iOS stopped running this game's graphics. Tap Quit Game. MuffinEMU will then ask you to close and reopen it before the next game."
-        case 3: return "Tap Quit Game and reopen MuffinEMU. After you quit, a lower Resolution (in Settings, Graphics) uses less memory."
-        case 4: return "iOS may close MuffinEMU soon. Save in the game now if you can. After you quit, a lower Resolution (in Settings, Graphics) uses less memory."
-        case 5: return "The game is still running but the screen isn't taking frames. This goes away by itself if it recovers. If it doesn't, tap Quit Game and reopen MuffinEMU."
-        default: return "The picture has stopped while the game keeps running. This goes away by itself if the picture comes back."
+        case 2: return "iOS stopped running this game's graphics. Tap Quit Game. MuffinEMU will then ask you to close and reopen it before the next game.".localized
+        case 3: return "Tap Quit Game and reopen MuffinEMU. After you quit, a lower Resolution (in Settings, Graphics) uses less memory.".localized
+        case 4: return "iOS may close MuffinEMU soon. Save in the game now if you can. After you quit, a lower Resolution (in Settings, Graphics) uses less memory.".localized
+        case 5: return "The game is still running but the screen isn't taking frames. This goes away by itself if it recovers. If it doesn't, tap Quit Game and reopen MuffinEMU.".localized
+        default: return "The picture has stopped while the game keeps running. This goes away by itself if the picture comes back.".localized
         }
     }
 
     /// Only a problem that can clear by itself is worth waiting on; the others are a decision to dismiss.
     private var stallDismissTitle: String {
         let kind = gameManager.videoStallKind
-        return (kind == 1 || kind == 5) ? "Keep waiting" : "Dismiss"
+        return (kind == 1 || kind == 5) ? "Keep waiting".localized : "Dismiss".localized
     }
 
     /// Small card shown while the picture is stopped. The game's audio and input keep running
@@ -3192,7 +3203,7 @@ struct EmulatorViewOptimized: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             if stallSaveRequested {
-                Text(saveStateBusySlot != nil ? "Saving..." : (saveStateStatus?.message ?? ""))
+                Text(saveStateBusySlot != nil ? "Saving...".localized : (saveStateStatus?.message ?? ""))
                     .font(.system(.caption, design: .rounded))
                     .foregroundColor(.white.opacity(0.85))
                     .multilineTextAlignment(.center)
@@ -3233,7 +3244,7 @@ struct EmulatorViewOptimized: View {
         let gameID = game.id
         SaveStateStore.delete(gameID: gameID, slot: slot)
         saveStateSlots = SaveStateStore.slots(for: gameID)
-        reportSaveState(SaveStateStatus(message: "Slot \(slot) deleted.", isWarning: false))
+        reportSaveState(SaveStateStatus(message: String(format: "Slot %d deleted.".localized, slot), isWarning: false))
     }
 
     /// Shows a save, load or delete result and says it aloud for VoiceOver, which would

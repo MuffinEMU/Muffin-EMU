@@ -30,13 +30,13 @@ enum TimebaseScale: Int, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .realTime:     return "Real time"
-        case .half:         return "1/2 speed"
-        case .quarter:      return "1/4 speed"
-        case .eighth:       return "1/8 speed"
-        case .sixteenth:    return "1/16 speed"
-        case .thirtySecond: return "1/32 speed"
-        case .sixtyFourth:  return "1/64 speed"
+        case .realTime:     return "Real time".localized
+        case .half:         return "1/2 speed".localized
+        case .quarter:      return "1/4 speed".localized
+        case .eighth:       return "1/8 speed".localized
+        case .sixteenth:    return "1/16 speed".localized
+        case .thirtySecond: return "1/32 speed".localized
+        case .sixtyFourth:  return "1/64 speed".localized
         }
     }
 
@@ -44,15 +44,15 @@ enum TimebaseScale: Int, CaseIterable, Identifiable {
     var summary: String {
         switch self {
         case .realTime:
-            return "Normal game speed. Right when the recompiler is running."
+            return "Normal game speed. Right when the recompiler is running.".localized
         case .half, .quarter:
-            return "Slows the game a little. Try this first if a game runs but stutters."
+            return "Slows the game a little. Try this first if a game runs but stutters.".localized
         case .eighth:
-            return "Slows the game a lot. Helps most games under the interpreter."
+            return "Slows the game a lot. Helps most games under the interpreter.".localized
         case .sixteenth, .thirtySecond:
-            return "For games that still won't advance at 1/8. Gameplay runs in slow motion."
+            return "For games that still won't advance at 1/8. Gameplay runs in slow motion.".localized
         case .sixtyFourth:
-            return "The slowest setting. If a game still won't move, the clock isn't the problem."
+            return "The slowest setting. If a game still won't move, the clock isn't the problem.".localized
         }
     }
 

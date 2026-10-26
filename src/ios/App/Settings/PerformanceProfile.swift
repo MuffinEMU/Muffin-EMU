@@ -18,21 +18,21 @@ enum PerformanceProfile: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .balanced: return "Balanced"
-        case .speed: return "Speed"
-        case .accuracy: return "Accuracy"
-        case .batterySaver: return "Battery saver"
-        case .custom: return "Custom"
+        case .balanced: return "Balanced".localized
+        case .speed: return "Speed".localized
+        case .accuracy: return "Accuracy".localized
+        case .batterySaver: return "Battery saver".localized
+        case .custom: return "Custom".localized
         }
     }
 
     var summary: String {
         switch self {
-        case .balanced: return "The normal balance of speed and picture quality."
-        case .speed: return "Faster, but the picture is softer and some games look wrong."
-        case .accuracy: return "Slower but more accurate, on one CPU core. Try it if a game glitches or crashes."
-        case .batterySaver: return "One CPU core whatever CPU cores says, for less heat and battery use. Costs some frame rate."
-        case .custom: return "Speed with one CPU core, set before this choice existed. Pick a profile to replace it."
+        case .balanced: return "The normal balance of speed and picture quality.".localized
+        case .speed: return "Faster, but the picture is softer and some games look wrong.".localized
+        case .accuracy: return "Slower but more accurate, on one CPU core. Try it if a game glitches or crashes.".localized
+        case .batterySaver: return "One CPU core whatever CPU cores says, for less heat and battery use. Costs some frame rate.".localized
+        case .custom: return "Speed with one CPU core, set before this choice existed. Pick a profile to replace it.".localized
         }
     }
 

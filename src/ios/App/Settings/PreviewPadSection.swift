@@ -24,7 +24,7 @@ struct PreviewPadSection: View {
     @State private var showingColourExporter = false
     @State private var showingColourImporter = false
     @State private var previewFileErrorMessage: String?
-    @State private var previewFileAlertTitle = "Error"
+    @State private var previewFileAlertTitle = "Error".localized
     @State private var showingResetAdjustmentsConfirmation = false
 
     private var previewLayoutPresetBinding: Binding<String> {
@@ -49,11 +49,11 @@ struct PreviewPadSection: View {
 
     private var toggleCaption: String {
         if previewPadEnabled && otherPadChosen {
-            return "Not showing: Melo-Controller or a control style is chosen under On-screen Controls, and wins over this."
+            return "Not showing: Melo-Controller or a control style is chosen under On-screen Controls, and wins over this.".localized
         }
         return previewPadEnabled
-            ? "Replaces the normal pad. If controls don't respond, turn this off."
-            : "Experimental. Replaces the normal pad while on."
+            ? "Replaces the normal pad. If controls don't respond, turn this off.".localized
+            : "Experimental. Replaces the normal pad while on.".localized
     }
 
     var body: some View {
@@ -118,12 +118,12 @@ struct PreviewPadSection: View {
     @ViewBuilder private var previewControls: some View {
         Picker("Layout", selection: previewLayoutPresetBinding) {
             ForEach(PreviewLayoutPreset.allCases) { preset in
-                Text(preset.title).tag(preset.rawValue)
+                Text(verbatim: preset.title.localized).tag(preset.rawValue)
             }
         }
         .pickerStyle(.menu)
         .tint(MuffinTheme.accentText)
-        Text(previewLayoutPreset.summary)
+        Text(verbatim: previewLayoutPreset.summary.localized)
             .font(.system(size: 12))
             .foregroundColor(MuffinTheme.secondaryText)
 
@@ -187,8 +187,8 @@ struct PreviewPadSection: View {
         do {
             let url = try result.get()
             guard url.startAccessingSecurityScopedResource() else {
-                previewFileAlertTitle = "Error"
-                previewFileErrorMessage = "Couldn't access that file."
+                previewFileAlertTitle = "Error".localized
+                previewFileErrorMessage = "Couldn't access that file.".localized
                 return
             }
             defer { url.stopAccessingSecurityScopedResource() }
@@ -196,8 +196,8 @@ struct PreviewPadSection: View {
             let file = try MuffinLayoutFile.decode(data)
             PreviewPadStore.shared.applyImportedLayout(file)
         } catch {
-            previewFileAlertTitle = "Error"
-            previewFileErrorMessage = "Couldn't import that .muffinlyt file: \(error.localizedDescription)"
+            previewFileAlertTitle = "Error".localized
+            previewFileErrorMessage = String(format: "Couldn't import that .muffinlyt file: %@".localized, error.localizedDescription)
         }
     }
 
@@ -205,8 +205,8 @@ struct PreviewPadSection: View {
         do {
             let url = try result.get()
             guard url.startAccessingSecurityScopedResource() else {
-                previewFileAlertTitle = "Error"
-                previewFileErrorMessage = "Couldn't access that file."
+                previewFileAlertTitle = "Error".localized
+                previewFileErrorMessage = "Couldn't access that file.".localized
                 return
             }
             defer { url.stopAccessingSecurityScopedResource() }
@@ -214,8 +214,8 @@ struct PreviewPadSection: View {
             let file = try MuffinColourFile.decode(data)
             PreviewPadStore.shared.applyImportedColours(file)
         } catch {
-            previewFileAlertTitle = "Error"
-            previewFileErrorMessage = "Couldn't import that .muffinclr file: \(error.localizedDescription)"
+            previewFileAlertTitle = "Error".localized
+            previewFileErrorMessage = String(format: "Couldn't import that .muffinclr file: %@".localized, error.localizedDescription)
         }
     }
 }

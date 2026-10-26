@@ -85,7 +85,7 @@ final class MigrationModel: ObservableObject {
             switch outcome {
             case .success(let result):
                 lastExport = (result.url, result.bytes)
-                say("Saved \(result.url.lastPathComponent) (\(MigrationArchive.format(result.bytes))). It's in Files under MuffinEMU, in the Migration folder.", error: false)
+                say(String(format: "Saved %@ (%@). It's in Files under MuffinEMU, in the Migration folder.".localized, result.url.lastPathComponent, MigrationArchive.format(result.bytes)), error: false)
             case .failure(let error):
                 say(Self.describe(error), error: true)
             }
@@ -96,7 +96,7 @@ final class MigrationModel: ObservableObject {
         guard let export = lastExport else { return }
         try? FileManager.default.removeItem(at: export.url)
         lastExport = MigrationArchive.existingExports().first
-        say("Deleted \(export.url.lastPathComponent).", error: false)
+        say(String(format: "Deleted %@.".localized, export.url.lastPathComponent), error: false)
     }
 
     func shareLastExport() {
@@ -174,26 +174,26 @@ final class MigrationModel: ObservableObject {
             analysis = nil
             switch outcome {
             case .success(let result):
-                var parts = ["Imported \(result.written) files (\(MigrationArchive.format(result.bytes)))."]
+                var parts = [String(format: "Imported %d files (%@).".localized, result.written, MigrationArchive.format(result.bytes))]
                 if result.keptNewer > 0 {
-                    parts.append("Kept \(result.keptNewer) newer files that were already here.")
+                    parts.append(String(format: "Kept %d newer files that were already here.".localized, result.keptNewer))
                 }
                 if let backup = result.savesBackup {
-                    parts.append("Saves that were replaced are in \(backup.lastPathComponent) under save-backups.")
+                    parts.append(String(format: "Saves that were replaced are in %@ under save-backups.".localized, backup.lastPathComponent))
                 }
                 if restoreSettings {
                     if let data = result.settingsData, let preview = try? SettingsBackup.preview(of: data) {
                         SettingsBackup.apply(preview)
-                        parts.append("Settings restored.")
+                        parts.append("Settings restored.".localized)
                     }
                     if let data = result.stateData, SettingsBackup.mergeState(data) > 0 {
-                        parts.append("Favourites and appearance restored.")
+                        parts.append("Favourites and appearance restored.".localized)
                     }
                 }
-                parts.append("Close MuffinEMU and open it again to finish.")
+                parts.append("Close MuffinEMU and open it again to finish.".localized)
                 say(parts.joined(separator: " "), error: false, fromImport: true)
             case .failure(let error):
-                say(Self.describe(error) + (error is MigrationArchive.MigrationError ? "" : " Files already copied are complete; you can run the import again."), error: true, fromImport: true)
+                say(Self.describe(error) + (error is MigrationArchive.MigrationError ? "" : " " + "Files already copied are complete; you can run the import again.".localized), error: true, fromImport: true)
             }
         }
     }
@@ -227,7 +227,7 @@ final class MigrationModel: ObservableObject {
     private func report(done: Int64, total: Int64, name: String) {
         guard phase == .exporting || phase == .importing else { return }
         progress = total > 0 ? Double(done) / Double(total) : 0
-        detail = "\(MigrationArchive.format(done)) of \(MigrationArchive.format(total))" + (name.isEmpty ? "" : "  \(name)")
+        detail = String(format: "%@ of %@".localized, MigrationArchive.format(done), MigrationArchive.format(total)) + (name.isEmpty ? "" : "  \(name)")
     }
 
     private func say(_ text: String, error: Bool, fromImport: Bool = false) {
@@ -238,7 +238,7 @@ final class MigrationModel: ObservableObject {
 
     private static func describe(_ error: Error) -> String {
         if let migration = error as? MigrationArchive.MigrationError, case .cancelled = migration {
-            return "Stopped. Nothing half-written was kept."
+            return "Stopped. Nothing half-written was kept.".localized
         }
         return error.localizedDescription
     }
@@ -290,19 +290,22 @@ struct MigrationSettingsSection: View {
             .disabled(model.isBusy)
 
             if model.plan != nil {
-                SettingsRow(label: "Export size", value: MigrationArchive.format(archiveBytes), icon: "archivebox")
-                SettingsRow(label: "Free space", value: freeBytes.map(MigrationArchive.format) ?? "unknown", icon: "internaldrive")
+                SettingsRow(label: "Export size".localized, value: MigrationArchive.format(archiveBytes), icon: "archivebox")
+                SettingsRow(label: "Free space".localized, value: freeBytes.map(MigrationArchive.format) ?? "unknown".localized, icon: "internaldrive")
             }
 
             if shortOfSpace {
-                Text("Not enough free space for this export. It needs about \(MigrationArchive.format(MigrationArchive.spaceNeeded(for: archiveBytes))). Free up space" + (includeGames ? ", or turn off Include games." : "."))
+                Text(String(format: includeGames
+                            ? "Not enough free space for this export. It needs about %@. Free up space, or turn off Include games.".localized
+                            : "Not enough free space for this export. It needs about %@. Free up space.".localized,
+                            MigrationArchive.format(MigrationArchive.spaceNeeded(for: archiveBytes))))
                     .font(.system(size: 12))
                     .foregroundColor(.red)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             if model.phase == .exporting {
-                runningRows(title: "Exporting")
+                runningRows(title: "Exporting".localized)
             } else {
                 Button {
                     model.export(includeGames: includeGames)
@@ -336,12 +339,12 @@ struct MigrationSettingsSection: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         } header: {
-            SettingsSectionHeader("Move to the new MuffinEMU", icon: "arrow.right.circle", accent: .system)
+            SettingsSectionHeader("Move to the new MuffinEMU".localized, icon: "arrow.right.circle", accent: .system)
         } footer: {
             InfoButton.footer(
-                "Keep MuffinEMU open on screen while it runs.",
-                title: "Move to the new MuffinEMU",
-                text: "Export everything writes one file to Files, in MuffinEMU > Migration. It holds your saves, installed updates and DLC, accounts, keys.txt, otp.bin and seeprom.bin, compiled shader caches, graphic packs, save states, settings, favourites and appearance.\n\nGames (the Roms folder, and base games installed into the Wii U storage) are left out unless you turn on Include games. Without them the export is much smaller, and you can copy your games into the new app in Files. Screen recordings, save backups, logs and other caches are never included. The premium unlock isn't carried over; enter it again in the new app.\n\nThe export runs only while MuffinEMU is open on screen, and keeps the screen awake. You can stop it at any time. Before it starts, MuffinEMU checks that there's enough free space, and the file is kept out of device backups.\n\nWhen it's done, share the file to the new MuffinEMU's Files folder or to another device, install the new MuffinEMU, and choose Import from the old MuffinEMU there. Delete the export afterwards to get the space back.")
+                "Keep MuffinEMU open on screen while it runs.".localized,
+                title: "Move to the new MuffinEMU".localized,
+                text: "Export everything writes one file to Files, in MuffinEMU > Migration. It holds your saves, installed updates and DLC, accounts, keys.txt, otp.bin and seeprom.bin, compiled shader caches, graphic packs, save states, settings, favourites and appearance.\n\nGames (the Roms folder, and base games installed into the Wii U storage) are left out unless you turn on Include games. Without them the export is much smaller, and you can copy your games into the new app in Files. Screen recordings, save backups, logs and other caches are never included. The premium unlock isn't carried over; enter it again in the new app.\n\nThe export runs only while MuffinEMU is open on screen, and keeps the screen awake. You can stop it at any time. Before it starts, MuffinEMU checks that there's enough free space, and the file is kept out of device backups.\n\nWhen it's done, share the file to the new MuffinEMU's Files folder or to another device, install the new MuffinEMU, and choose Import from the old MuffinEMU there. Delete the export afterwards to get the space back.".localized)
         }
         .confirmationDialog("Delete this export?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) { model.deleteLastExport() }
@@ -352,14 +355,14 @@ struct MigrationSettingsSection: View {
     }
 
     private var gamesCaption: String {
-        guard let plan = model.plan else { return "Off by default." }
-        return "Adds about \(MigrationArchive.format(plan.gameBytes)). Off by default."
+        guard let plan = model.plan else { return "Off by default.".localized }
+        return String(format: "Adds about %@. Off by default.".localized, MigrationArchive.format(plan.gameBytes))
     }
 
     private func runningRows(title: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             ProgressView(value: model.progress)
-            Text("\(title)\u{2026} \(Int(model.progress * 100))%")
+            Text(String(format: "%@\u{2026} %d%%".localized, title, Int(model.progress * 100)))
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
             Text(model.detail)
                 .font(.system(size: 11, design: .monospaced))
@@ -399,7 +402,7 @@ struct MigrationSettingsSection: View {
                     Button("Stop", role: .cancel) { model.cancel() }
                 }
             case .importing:
-                runningRows(title: "Importing")
+                runningRows(title: "Importing".localized)
             default:
                 Button {
                     model.choose()
@@ -417,12 +420,12 @@ struct MigrationSettingsSection: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         } header: {
-            SettingsSectionHeader("Import an export", icon: "tray.and.arrow.down", accent: .system)
+            SettingsSectionHeader("Import an export".localized, icon: "tray.and.arrow.down", accent: .system)
         } footer: {
             InfoButton.footer(
-                "Merges with what's here. A newer file is never replaced without asking.",
-                title: "Import an export",
-                text: "Pick the .muffinmove file you exported from the old MuffinEMU. It can be on this device or in iCloud Drive. This also works to restore your data after reinstalling MuffinEMU.\n\nMuffinEMU checks the file first and shows what it would change. Files that aren't here yet are added, and files that are older than the export's are updated. If a file here is newer than the export's copy, you choose whether to keep it or replace it; saves that are replaced are moved to save-backups first, not deleted. Every file is checked as it is copied, so a damaged export can't leave a half-written file behind, and an interrupted import can simply be run again.\n\nIt works only while MuffinEMU is open on screen. When it finishes, close MuffinEMU and open it again.")
+                "Merges with what's here. A newer file is never replaced without asking.".localized,
+                title: "Import an export".localized,
+                text: "Pick the .muffinmove file you exported from the old MuffinEMU. It can be on this device or in iCloud Drive. This also works to restore your data after reinstalling MuffinEMU.\n\nMuffinEMU checks the file first and shows what it would change. Files that aren't here yet are added, and files that are older than the export's are updated. If a file here is newer than the export's copy, you choose whether to keep it or replace it; saves that are replaced are moved to save-backups first, not deleted. Every file is checked as it is copied, so a damaged export can't leave a half-written file behind, and an interrupted import can simply be run again.\n\nIt works only while MuffinEMU is open on screen. When it finishes, close MuffinEMU and open it again.".localized)
         }
         .confirmationDialog("Import this export?", isPresented: confirming, titleVisibility: .visible) {
             if let found = model.analysis {
@@ -447,16 +450,16 @@ struct MigrationSettingsSection: View {
 
     private var confirmationText: String {
         guard let found = model.analysis else { return "" }
-        let source = found.isFromThisApp ? "this app" : "another MuffinEMU install"
-        var text = "Made by \(source), version \(found.manifest.appVersion). It adds \(found.newFiles.count) files and updates \(found.updatedFiles.count), about \(MigrationArchive.format(found.bytesToWrite)); \(found.identicalCount) are already here."
-        if !found.manifest.includesGames { text += " Games aren't in this export." }
+        let source = found.isFromThisApp ? "this app".localized : "another MuffinEMU install".localized
+        var text = String(format: "Made by %@, version %@. It adds %d files and updates %d, about %@; %d are already here.".localized, source, found.manifest.appVersion, found.newFiles.count, found.updatedFiles.count, MigrationArchive.format(found.bytesToWrite), found.identicalCount)
+        if !found.manifest.includesGames { text += " " + "Games aren't in this export.".localized }
         if !found.conflicts.isEmpty {
-            text += " \(found.conflicts.count) files here are newer than the export's copy (\(MigrationArchive.format(found.conflictBytes)))."
+            text += " " + String(format: "%d files here are newer than the export's copy (%@).".localized, found.conflicts.count, MigrationArchive.format(found.conflictBytes))
         }
         if found.blockedCount > 0 {
-            text += " \(found.blockedCount) can't be imported because a folder with the same name is in the way."
+            text += " " + String(format: "%d can't be imported because a folder with the same name is in the way.".localized, found.blockedCount)
         }
-        if restoreSettings && found.hasSettings { text += " Settings in the export replace the ones here." }
+        if restoreSettings && found.hasSettings { text += " " + "Settings in the export replace the ones here.".localized }
         return text
     }
 }

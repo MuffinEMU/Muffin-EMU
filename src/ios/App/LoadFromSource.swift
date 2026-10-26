@@ -90,19 +90,19 @@ final class LoadCoordinator: ObservableObject {
     static func describe(_ plan: Plan) -> String {
         var lines: [String] = []
         switch plan.finding.kind {
-        case .dumpFolder: lines.append("Decrypted game folder (code, content, meta).")
-        case .nusFolder: lines.append("Wii U title folder (title.tmd and .app files).")
-        case .gameCollection(let count): lines.append("A folder holding \(count) games.")
-        case .file(let ext): lines.append("A .\(ext) game file.")
+        case .dumpFolder: lines.append("Decrypted game folder (code, content, meta).".localized)
+        case .nusFolder: lines.append("Wii U title folder (title.tmd and .app files).".localized)
+        case .gameCollection(let count): lines.append(String(format: "A folder holding %d games.".localized, count))
+        case .file(let ext): lines.append(String(format: "A .%@ game file.".localized, ext))
         }
         lines.append(contentsOf: plan.finding.warnings)
         lines.append(plan.verdict.summary)
         lines.append(contentsOf: plan.verdict.reasons)
         lines.append(contentsOf: plan.verdict.notes)
         if plan.verdict.level != .good, plan.canCopy {
-            lines.append("Copying it into MuffinEMU is the dependable option. The original is never changed.")
+            lines.append("Copying it into MuffinEMU is the dependable option. The original is never changed.".localized)
         } else {
-            lines.append("The original is never changed.")
+            lines.append("The original is never changed.".localized)
         }
         return lines.joined(separator: "\n\n")
     }
@@ -118,7 +118,7 @@ struct LoadPrompts: ViewModifier {
                 if let name = coordinator.checking {
                     VStack(spacing: 8) {
                         ProgressView()
-                        Text("Checking \(name)\u{2026}").font(.footnote)
+                        Text(String(format: "Checking %@\u{2026}".localized, name)).font(.footnote)
                     }
                     .padding(16)
                     .background(.regularMaterial)
@@ -126,7 +126,7 @@ struct LoadPrompts: ViewModifier {
                 }
             })
             .background(Color.clear.confirmationDialog(
-                coordinator.plan.map { "Load \"\($0.finding.displayName)\"" } ?? "",
+                coordinator.plan.map { String(format: "Load \"%@\"".localized, $0.finding.displayName) } ?? "",
                 isPresented: Binding(get: { coordinator.plan != nil }, set: { if !$0 { coordinator.finish() } }),
                 titleVisibility: .visible,
                 presenting: coordinator.plan

@@ -15,9 +15,9 @@ import SwiftUI
 /// later needs no edit here.
 func touchLabStyleLabel(_ id: String) -> String {
     let isDefault = id == TouchLabSettings.defaultScheme
-    if id.isEmpty { return isDefault ? "MuffinEMU (default)" : "MuffinEMU (classic)" }
+    if id.isEmpty { return isDefault ? "MuffinEMU (default)".localized : "MuffinEMU (classic)".localized }
     let name = TouchLabSettings.styles.first { $0.id == id }?.name ?? id
-    return isDefault ? name + " (default)" : name
+    return isDefault ? String(format: "%@ (default)".localized, name) : name
 }
 
 /// The stored ids in picker order: MuffinEMU's own pad first, then the TouchLab styles.
@@ -71,7 +71,7 @@ struct TouchLabStyleSettingsRows: View {
 
             if TouchLabSettings.isTouchLab(scheme) {
                 if useMeloControls && MeloControlsSetting.isAvailable {
-                    Text("Melo-Controller is switched on below, so it is showing instead. Switch it off to use \(TouchLabSettings.name(scheme)).")
+                    Text(String(format: "Melo-Controller is switched on below, so it is showing instead. Switch it off to use %@.".localized, TouchLabSettings.name(scheme)))
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -146,13 +146,13 @@ struct TouchLabStyleSettingsRows: View {
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
                         Spacer()
                         Button(action: { aScale = TouchLabSettings.defaultAScale }) {
-                            Text("\(Int((aScale * 100).rounded()))%")
+                            Text(String(format: "%d%%".localized, Int((aScale * 100).rounded())))
                                 .font(.system(size: 13))
                                 .foregroundColor(.secondary)
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Reset A button size")
-                        .accessibilityValue("\(Int((aScale * 100).rounded())) percent")
+                        .accessibilityValue(String(format: "%d percent".localized, Int((aScale * 100).rounded())))
                     }
                     HStack(spacing: 8) {
                         Text("100%").font(.system(size: 12)).foregroundColor(.secondary)
@@ -210,12 +210,12 @@ struct TouchLabStyleSettingsRows: View {
 
                 if scheme == TouchLabSettings.adaptiveStyleID {
                     Button(role: .destructive, action: { showingAdaptiveReset = true }) {
-                        DestructiveSettingsLabel(title: "Reset learned layouts", systemImage: "arrow.uturn.backward")
+                        DestructiveSettingsLabel(title: "Reset learned layouts".localized, systemImage: "arrow.uturn.backward")
                     }
                 }
 
                 // Zone can be edited (its own rows in the in-game panel), so it doesn't get the "no dragging" line.
-                Text((scheme == TouchLabSettings.zoneStyleID ? "" : "These styles don't support dragging individual buttons. ") + "Size, opacity, haptics and the stick options below apply to them.")
+                Text((scheme == TouchLabSettings.zoneStyleID ? "" : "These styles don't support dragging individual buttons. ".localized) + "Size, opacity, haptics and the stick options below apply to them.".localized)
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -239,7 +239,7 @@ struct TouchLabStyleSettingsRows: View {
     private var summary: String {
         TouchLabSettings.isTouchLab(scheme)
             ? TouchLabSettings.summary(scheme)
-            : "MuffinEMU's measured GamePad layout, which you can also drag around."
+            : "MuffinEMU's measured GamePad layout, which you can also drag around.".localized
     }
 }
 
@@ -291,8 +291,8 @@ struct TouchLabLayoutPanel: View {
         LayoutPanelCard(rows: { rows }, footer: {
             LayoutPanelFooter(
                 resetMessage: isAdaptive
-                    ? "Size, opacity, stick spacing and shoulder height go back to how MuffinEMU ships in every game, and Adaptive forgets where your thumbs land in this game only."
-                    : "Size, opacity, stick spacing and shoulder height go back to how MuffinEMU ships, in every game.",
+                    ? "Size, opacity, stick spacing and shoulder height go back to how MuffinEMU ships in every game, and Adaptive forgets where your thumbs land in this game only.".localized
+                    : "Size, opacity, stick spacing and shoulder height go back to how MuffinEMU ships, in every game.".localized,
                 onReset: resetToDefault,
                 onDone: onDone)
         })
@@ -301,32 +301,32 @@ struct TouchLabLayoutPanel: View {
     @ViewBuilder private var rows: some View {
         TouchLabStylePicker()
 
-        PanelCaption(text: "\(TouchLabSettings.summary(scheme)) \(scheme == TouchLabSettings.zoneStyleID ? "" : "These styles don't support dragging individual buttons. ")Nothing here reaches the game.")
+        PanelCaption(text: String(format: scheme == TouchLabSettings.zoneStyleID ? "%@ Nothing here reaches the game.".localized : "%@ These styles don't support dragging individual buttons. Nothing here reaches the game.".localized, TouchLabSettings.summary(scheme)))
 
         if scheme == TouchLabSettings.zoneStyleID { ZoneEditRows(gameID: gameID) }
 
         lookRows
 
-        PanelSliderRow("Button size", leadingIcon: "minus.magnifyingglass", trailingIcon: "plus.magnifyingglass",
+        PanelSliderRow("Button size".localized, leadingIcon: "minus.magnifyingglass", trailingIcon: "plus.magnifyingglass",
                        value: $controlScale,
                        range: ControllerLayoutSettings.minScale...ControllerLayoutSettings.maxScale)
 
-        PanelSliderRow("Opacity", leadingIcon: "circle.lefthalf.filled", trailingIcon: "circle.fill",
+        PanelSliderRow("Opacity".localized, leadingIcon: "circle.lefthalf.filled", trailingIcon: "circle.fill",
                        value: $controlOpacity, range: 0.2...1.0)
 
         // As in Settings: Arc places every button by your reach and Showcase is the GamePad at its real
         // size, so neither has a separate A size. The buttons around A shrink a little to make room.
         if scheme != TouchLabSettings.arcStyleID && scheme != TouchLabSettings.showcaseStyleID {
-            PanelSliderRow("A button size", title: "A size", leadingIcon: "a.circle", trailingIcon: "a.circle.fill",
+            PanelSliderRow("A button size".localized, title: "A size".localized, leadingIcon: "a.circle", trailingIcon: "a.circle.fill",
                            value: $aScale, range: TouchLabSettings.aScaleRange, step: 0.01,
-                           spokenValue: "\(Int((aScale * 100).rounded())) percent",
-                           readout: "\(Int((aScale * 100).rounded()))%")
+                           spokenValue: String(format: "%d percent".localized, Int((aScale * 100).rounded())),
+                           readout: String(format: "%d%%".localized, Int((aScale * 100).rounded())))
         }
 
         // Hand size: both sticks move together, apart or closer. Only the styles with sticks
         // in fixed places have anything for it to move.
         if TouchLabSettings.hasFixedSticks(scheme) {
-            PanelSliderRow("Stick spacing",
+            PanelSliderRow("Stick spacing".localized,
                            leadingIcon: "arrow.right.and.line.vertical.and.arrow.left",
                            trailingIcon: "arrow.left.and.line.vertical.and.arrow.right",
                            value: $stickSpacing,
@@ -341,12 +341,12 @@ struct TouchLabLayoutPanel: View {
         // L, R, ZL and ZR move up or down together. iPad only: an iPhone has no spare height
         // for it. Only the styles with fixed shoulders have anything to move.
         if ControllerLayoutSettings.supportsShoulderOffset && TouchLabSettings.hasMovableShoulders(scheme) {
-            PanelSliderRow(shoulderStore.label(in: windowSize.effectiveSize, touchLab: true), title: "L/R", leadingIcon: "arrow.up.and.down",
+            PanelSliderRow(shoulderStore.label(in: windowSize.effectiveSize, touchLab: true), title: "L/R".localized, leadingIcon: "arrow.up.and.down",
                            value: shoulderBinding,
                            range: ControllerLayoutSettings.shoulderOffsetRange(touchLab: true, in: windowSize.effectiveSize),
                            step: ControllerLayoutSettings.shoulderOffsetStep,
                            spokenValue: ControllerLayoutSettings.shoulderOffsetLabel(max(0, shoulderBinding.wrappedValue)))
-            PanelToggle(title: "Same height in portrait and landscape",
+            PanelToggle(title: "Same height in portrait and landscape".localized,
                         isOn: shoulderStore.linkBinding(in: windowSize.effectiveSize, touchLab: true))
         }
 
@@ -369,8 +369,8 @@ struct TouchLabLayoutPanel: View {
         }
 
         PanelCaption(text: isAdaptive
-                     ? "These settings apply to every game, except that Adaptive remembers where your thumbs land separately for each game."
-                     : "These settings apply to every game.",
+                     ? "These settings apply to every game, except that Adaptive remembers where your thumbs land separately for each game.".localized
+                     : "These settings apply to every game.".localized,
                      prominent: false)
     }
 
@@ -378,14 +378,14 @@ struct TouchLabLayoutPanel: View {
     /// so it has no switch, only its colour and glass.
     @ViewBuilder private var lookRows: some View {
         if scheme != TouchLabSettings.showcaseStyleID {
-            PanelToggle(title: "Showcase style", isOn: $showcaseStyle)
+            PanelToggle(title: "Showcase style".localized, isOn: $showcaseStyle)
         }
         if TouchLabSettings.usesClassicLook(scheme) && showcaseStyle {
             colourPicker(selection: $classicColour, options: TouchLabSettings.classicColourOptions)
         }
         if scheme == TouchLabSettings.showcaseStyleID {
             colourPicker(selection: $showcaseColour, options: TouchLabSettings.showcaseColourOptions)
-            PanelToggle(title: "Glass look", isOn: $showcaseGlass)
+            PanelToggle(title: "Glass look".localized, isOn: $showcaseGlass)
         }
     }
 
@@ -481,7 +481,7 @@ struct ArcSettingsRows: View {
             VStack(alignment: .leading, spacing: 2) {
                 Label("Calibrate Arc", systemImage: "hand.draw")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
-                Text(arc.blocker(for: .calibrate) ?? "Sweep each thumb once and Arc fits every button to your reach.")
+                Text(arc.blocker(for: .calibrate) ?? "Sweep each thumb once and Arc fits every button to your reach.".localized)
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
             }
@@ -494,9 +494,9 @@ struct ArcSettingsRows: View {
             arc.setFineTuning(!arc.isFineTuning)
         } label: {
             VStack(alignment: .leading, spacing: 2) {
-                Label(arc.isFineTuning ? "Done fine-tuning" : "Fine-tune positions", systemImage: "hand.point.up.left")
+                Label(arc.isFineTuning ? "Done fine-tuning".localized : "Fine-tune positions".localized, systemImage: "hand.point.up.left")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
-                Text(arc.blocker(for: .fineTune) ?? "Drag a button along its arc, or in and out. Presses do nothing while you do.")
+                Text(arc.blocker(for: .fineTune) ?? "Drag a button along its arc, or in and out. Presses do nothing while you do.".localized)
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
             }
@@ -504,7 +504,7 @@ struct ArcSettingsRows: View {
         .disabled(!arc.isFineTuning && arc.blocker(for: .fineTune) != nil)
 
         Button(role: .destructive) { showResetConfirmation = true } label: {
-            DestructiveSettingsLabel(title: "Reset Arc", systemImage: "arrow.uturn.backward")
+            DestructiveSettingsLabel(title: "Reset Arc".localized, systemImage: "arrow.uturn.backward")
         }
     }
 }

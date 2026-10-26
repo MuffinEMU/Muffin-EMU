@@ -129,6 +129,6 @@ struct NotificationSettingsSection: View {
         Position picks a corner of the TV screen; Off hides every pop-up, and the other rows stay dimmed until a corner is chosen.
 
         Controller profiles: your account name and each controller's saved profile, for a few seconds after a game starts. Low controller battery: a paired controller is running down. Shader compiling: shown while the engine builds new shaders. Friends: friend activity from your account.
-        """
+        """.localized
     }
 }

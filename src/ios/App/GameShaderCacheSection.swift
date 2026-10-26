@@ -20,11 +20,11 @@ enum ShaderCacheInfo {
     }
 
     static func formatBytes(_ bytes: Int64) -> String {
-        bytes <= 0 ? "none" : ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+        bytes <= 0 ? "none".localized : ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 
     static func formatDate(_ date: Date?) -> String {
-        guard let date else { return "never" }
+        guard let date else { return "never".localized }
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
@@ -66,8 +66,8 @@ enum ShaderCacheInfo {
     }
 
     static func countText(_ count: Int?) -> String {
-        guard let count else { return "not available" }
-        return count == 0 ? "none" : count.formatted()
+        guard let count else { return "not available".localized }
+        return count == 0 ? "none".localized : count.formatted()
     }
 }
 
@@ -139,12 +139,12 @@ struct GameShaderCacheSection: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } header: {
-                SettingsSectionHeader("Shader cache", icon: "externaldrive", accent: .core)
+                SettingsSectionHeader("Shader cache".localized, icon: "externaldrive", accent: .core)
             } footer: {
                 InfoButton.footer(
-                    "What this game has saved so it starts faster. Clearing needs the game closed.",
-                    title: "Shader cache",
-                    text: "A shader cache is what a game has saved so the next start skips building its shaders again. Size on disk is everything saved for this game, and Last updated is the last time any of it changed.\n\nClear this game's shaders lets you remove just the compiled ones (one slow start, nothing else lost) or everything including the learned ones (the game stutters while it relearns them).\n\nAdvanced mode also shows how many shaders and pipelines are saved for the renderer you've selected, splits the size into learned and compiled, and can export this game's Metal shader files to Files, for backing up or moving to another device. The counts are hidden while a game is running. The settings under Settings > Shaders cover every game at once.")
+                    "What this game has saved so it starts faster. Clearing needs the game closed.".localized,
+                    title: "Shader cache".localized,
+                    text: "A shader cache is what a game has saved so the next start skips building its shaders again. Size on disk is everything saved for this game, and Last updated is the last time any of it changed.\n\nClear this game's shaders lets you remove just the compiled ones (one slow start, nothing else lost) or everything including the learned ones (the game stutters while it relearns them).\n\nAdvanced mode also shows how many shaders and pipelines are saved for the renderer you've selected, splits the size into learned and compiled, and can export this game's Metal shader files to Files, for backing up or moving to another device. The counts are hidden while a game is running. The settings under Settings > Shaders cover every game at once.".localized)
             }
             .foregroundColor(MuffinTheme.brownDarkest)
             .onAppear {
@@ -155,7 +155,7 @@ struct GameShaderCacheSection: View {
                 Button("Clear everything, including learned", role: .destructive) { clear(includeLearned: true) }
                 Button("Cancel", role: .cancel) { }
             } message: {
-                Text("\(game.title) is slow to start once while it rebuilds. Clearing the learned shaders as well makes it stutter while it relearns them.")
+                Text(String(format: "%@ is slow to start once while it rebuilds. Clearing the learned shaders as well makes it stutter while it relearns them.".localized, game.title))
             }
         }
     }
@@ -185,11 +185,11 @@ struct GameShaderCacheSection: View {
         guard let titleId = game.titleId else { return }
         let freed = cemu_bridge_clear_shader_cache(titleId, includeLearned)
         if freed < 0 {
-            message = "Close the game first, then clear its shaders."
+            message = "Close the game first, then clear its shaders.".localized
             messageIsError = true
         } else {
-            message = "Freed \(Self.formatBytes(freed)). "
-                + (includeLearned ? "The game stutters while it relearns its shaders." : "The next start of this game is slow once.")
+            message = String(format: "Freed %@.".localized, Self.formatBytes(freed)) + " "
+                + (includeLearned ? "The game stutters while it relearns its shaders.".localized : "The next start of this game is slow once.".localized)
             messageIsError = false
         }
         refresh(titleId: titleId)
@@ -200,7 +200,7 @@ struct GameShaderCacheSection: View {
         guard let titleId = game.titleId else { return }
         let files = shaderFiles(titleId: titleId)
         guard !files.isEmpty else {
-            message = "There are no shader files for this game yet. Play it first."
+            message = "There are no shader files for this game yet. Play it first.".localized
             messageIsError = true
             return
         }
@@ -219,7 +219,7 @@ struct GameShaderCacheSection: View {
                 case .success(let urls):
                     // An empty array is a cancel, not a failure.
                     guard !urls.isEmpty else { return }
-                    message = "Saved \(urls.count == 1 ? "1 file" : "\(urls.count) files") to Files."
+                    message = urls.count == 1 ? "Saved 1 file to Files.".localized : String(format: "Saved %d files to Files.".localized, urls.count)
                     messageIsError = false
                 case .failure(let error):
                     message = error.localizedDescription

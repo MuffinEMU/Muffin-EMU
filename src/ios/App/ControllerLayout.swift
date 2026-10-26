@@ -95,7 +95,7 @@ enum ControllerLayoutSettings {
 
     /// The readout beside the stick-spacing slider.
     static func stickSpacingLabel(_ value: Double) -> String {
-        abs(value) < 0.01 ? "default" : (value < 0 ? "closer" : "wider")
+        abs(value) < 0.01 ? "default".localized : (value < 0 ? "closer".localized : "wider".localized)
     }
 
     /// How far the whole shoulder cluster (L, R, ZL, ZR) moves up or down, in button widths
@@ -168,7 +168,7 @@ enum ControllerLayoutSettings {
 
     /// The readout beside the shoulder slider.
     static func shoulderOffsetLabel(_ value: Double) -> String {
-        abs(value) < 0.01 ? "default" : (value < 0 ? "higher" : "lower")
+        abs(value) < 0.01 ? "default".localized : (value < 0 ? "higher".localized : "lower".localized)
     }
 
     /// Every device gets the shoulder slider.
@@ -384,8 +384,8 @@ enum ControllerGeometry {
 
         var title: String {
             switch self {
-            case .octagon: return "Octagonal"
-            case .round:   return "Round"
+            case .octagon: return "Octagonal".localized
+            case .round:   return "Round".localized
             }
         }
 
@@ -393,9 +393,9 @@ enum ControllerGeometry {
         var summary: String {
             switch self {
             case .octagon:
-                return "Matches the real GamePad: full push in the eight main directions, slightly less in between."
+                return "Matches the real GamePad: full push in the eight main directions, slightly less in between.".localized
             case .round:
-                return "Full push in every direction."
+                return "Full push in every direction.".localized
             }
         }
 
@@ -830,8 +830,8 @@ struct ShoulderOffsetStorage: DynamicProperty {
 
     /// The label for the slider: says which orientation(s) it moves.
     func label(in size: CGSize, touchLab: Bool) -> String {
-        if isLinked(in: size, touchLab: touchLab) { return "Shoulder height (portrait and landscape)" }
-        return ControllerLayoutSettings.isUpright(size) ? "Shoulder height (portrait)" : "Shoulder height (landscape)"
+        if isLinked(in: size, touchLab: touchLab) { return "Shoulder height (portrait and landscape)".localized }
+        return ControllerLayoutSettings.isUpright(size) ? "Shoulder height (portrait)".localized : "Shoulder height (landscape)".localized
     }
 
     func reset() {

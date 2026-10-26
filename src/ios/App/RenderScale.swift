@@ -42,20 +42,20 @@ enum RenderScale: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .native:   return "Native"
-        case .high:     return "High"
-        case .balanced: return "Balanced"
-        case .battery:  return "Battery saver"
+        case .native:   return "Native".localized
+        case .high:     return "High".localized
+        case .balanced: return "Balanced".localized
+        case .battery:  return "Battery saver".localized
         }
     }
 
     /// One line, in the UI, saying what this costs and what it buys.
     var summary: String {
         switch self {
-        case .native:   return "Sharpest. Four times the pixels of Balanced, and the shortest battery life."
-        case .high:     return "Slightly softer than Native, noticeably cheaper to draw."
-        case .balanced: return "Still above the Wii U's own 720p. The best trade on most games."
-        case .battery:  return "Softest, coolest, longest-running. Use it when a game won't hold its frame rate."
+        case .native:   return "Sharpest. Four times the pixels of Balanced, and the shortest battery life.".localized
+        case .high:     return "Slightly softer than Native, noticeably cheaper to draw.".localized
+        case .balanced: return "Still above the Wii U's own 720p. The best trade on most games.".localized
+        case .battery:  return "Softest, coolest, longest-running. Use it when a game won't hold its frame rate.".localized
         }
     }
 
@@ -163,14 +163,14 @@ enum FullSpeedRenders {
         var id: Int { rawValue }
         var title: String {
             switch self {
-            case .waitForIt: return "Wait for it"
-            case .keepGoing: return "Keep going"
+            case .waitForIt: return "Wait for it".localized
+            case .keepGoing: return "Keep going".localized
             }
         }
         var summary: String {
             switch self {
-            case .waitForIt: return "Never flickers. A short hitch the first time a new effect appears."
-            case .keepGoing: return "Never freezes. A new effect can be missing for a moment the first time."
+            case .waitForIt: return "Never flickers. A short hitch the first time a new effect appears.".localized
+            case .keepGoing: return "Never freezes. A new effect can be missing for a moment the first time.".localized
             }
         }
     }
@@ -215,19 +215,19 @@ enum CoreMode: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .auto:   return "Auto"
-        case .single: return "One core"
-        case .two:    return "Two cores (Experimental)"
-        case .multi:  return "Three cores (Experimental)"
+        case .auto:   return "Auto".localized
+        case .single: return "One core".localized
+        case .two:    return "Two cores (Experimental)".localized
+        case .multi:  return "Three cores (Experimental)".localized
         }
     }
 
     var summary: String {
         switch self {
-        case .auto:   return "Picks per game and per device. Uses three cores when the game's profile asks for them or this device has the performance cores, memory and cooling headroom, and one core otherwise."
-        case .single: return "One core. Cooler, and often faster on devices without spare performance cores."
-        case .two:    return "Two cores. Runs the console's three cores on two host threads: faster than one core, with less heat and fewer performance cores than three."
-        case .multi:  return "Three cores. Can be faster on a device with spare performance cores and cooling, but heats up quickly on most iPads and has hung some games."
+        case .auto:   return "Picks per game and per device. Uses three cores when the game's profile asks for them or this device has the performance cores, memory and cooling headroom, and one core otherwise.".localized
+        case .single: return "One core. Cooler, and often faster on devices without spare performance cores.".localized
+        case .two:    return "Two cores. Runs the console's three cores on two host threads: faster than one core, with less heat and fewer performance cores than three.".localized
+        case .multi:  return "Three cores. Can be faster on a device with spare performance cores and cooling, but heats up quickly on most iPads and has hung some games.".localized
         }
     }
 
@@ -264,7 +264,11 @@ enum CoreMode: String, CaseIterable, Identifiable {
         let caps = DeviceCapabilities.current
         let cores = caps.performanceCores
         let threads = caps.maxHostThreads
-        return "\(title) probably won't work on this device. It has \(cores) performance core\(cores == 1 ? "" : "s") and can run \(threads) host thread\(threads == 1 ? "" : "s") for the console's cores; this mode needs \(hostThreads). It will be tried anyway, and a game that never starts runs on one core the next time."
+        let coresPhrase = cores == 1 ? "1 performance core".localized : String(format: "%d performance cores".localized, cores)
+        let threadsPhrase = threads == 1 ? "1 host thread".localized : String(format: "%d host threads".localized, threads)
+        return String(format: "%@ probably won't work on this device.".localized, title)
+            + " " + String(format: "It has %@ and can run %@ for the console's cores; this mode needs %d.".localized, coresPhrase, threadsPhrase, hostThreads)
+            + " " + "It will be tried anyway, and a game that never starts runs on one core the next time.".localized
     }
 
     /// The mode itself. A mode the device cannot run stands only in Advanced; Basic uses Auto (logged), such as

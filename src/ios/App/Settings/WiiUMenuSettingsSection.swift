@@ -26,17 +26,17 @@ struct WiiUMenuSettingsSection: View {
 
     var body: some View {
         Section {
-            SettingsRow(label: "Wii U Menu",
+            SettingsRow(label: "Wii U Menu".localized,
                         value: status.menuInstalled
                             ? status.installedRegions.map(\.displayName).joined(separator: ", ")
-                            : "Not installed")
-            SettingsRow(label: "Shared data (0005001b)", value: status.hasSharedData ? "Found" : "Missing")
-            SettingsRow(label: "cafeLibs", value: "\(status.cafeLibsPresent) of \(WiiUMenu.cafeLibNames.count)")
+                            : "Not installed".localized)
+            SettingsRow(label: "Shared data (0005001b)".localized, value: status.hasSharedData ? "Found".localized : "Missing".localized)
+            SettingsRow(label: "cafeLibs", value: String(format: "%d of %d".localized, status.cafeLibsPresent, WiiUMenu.cafeLibNames.count))
             if !status.incompleteTitles.isEmpty {
-                SettingsRow(label: "Incomplete system titles", value: "\(status.incompleteTitles.count)")
+                SettingsRow(label: "Incomplete system titles".localized, value: "\(status.incompleteTitles.count)")
             }
-            SettingsRow(label: "otp.bin", value: status.hasOTP ? "Found" : "Missing")
-            SettingsRow(label: "seeprom.bin", value: status.hasSeeprom ? "Found" : "Missing")
+            SettingsRow(label: "otp.bin", value: status.hasOTP ? "Found".localized : "Missing".localized)
+            SettingsRow(label: "seeprom.bin", value: status.hasSeeprom ? "Found".localized : "Missing".localized)
 
             Button(action: { importMode = .menuFolder; showingImporter = true }) {
                 Label("Import Wii U Menu", systemImage: "folder.badge.plus")
@@ -61,12 +61,12 @@ struct WiiUMenuSettingsSection: View {
 
             installedMenuRows
         } header: {
-            SettingsSectionHeader("Wii U Menu", icon: "house", accent: .identity)
+            SettingsSectionHeader("Wii U Menu".localized, icon: "house", accent: .identity)
         } footer: {
             InfoButton.footer(
-                "Experimental. Files must be dumped from your own Wii U. Nothing is included.",
-                title: "Wii U Menu",
-                text: "Experimental. The Wii U Menu and its support files must come from your own Wii U, dumped with Dumpling. MuffinEMU includes none of them.\n\nImport Wii U Menu: pick the package folder (the one containing mlc01 and cafeLibs), an mlc01 folder, a sys folder, a cafeLibs folder, or the Menu's own title folder. Files are merged one by one into MuffinEMU's storage; anything replaced is saved first, and your saves are never touched.\n\nImport console files: pick otp.bin and seeprom.bin. Only online features need them; the Menu may start without.\n\nOnce the Menu is installed it appears at the top of the library. Games in your library show up in it. You can show it as a card in the game grid instead, or hide it from the library; hiding doesn't uninstall it.\n\nUninstall Wii U Menu deletes only the Menu itself. Shared data, system apps, cafeLibs, otp.bin and seeprom.bin stay, since games can use them. Your saves and your games are never touched.")
+                "Experimental. Files must be dumped from your own Wii U. Nothing is included.".localized,
+                title: "Wii U Menu".localized,
+                text: "Experimental. The Wii U Menu and its support files must come from your own Wii U, dumped with Dumpling. MuffinEMU includes none of them.\n\nImport Wii U Menu: pick the package folder (the one containing mlc01 and cafeLibs), an mlc01 folder, a sys folder, a cafeLibs folder, or the Menu's own title folder. Files are merged one by one into MuffinEMU's storage; anything replaced is saved first, and your saves are never touched.\n\nImport console files: pick otp.bin and seeprom.bin. Only online features need them; the Menu may start without.\n\nOnce the Menu is installed it appears at the top of the library. Games in your library show up in it. You can show it as a card in the game grid instead, or hide it from the library; hiding doesn't uninstall it.\n\nUninstall Wii U Menu deletes only the Menu itself. Shared data, system apps, cafeLibs, otp.bin and seeprom.bin stay, since games can use them. Your saves and your games are never touched.".localized)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         // One importer for both buttons: two .fileImporter modifiers on the same view only
@@ -92,7 +92,7 @@ struct WiiUMenuSettingsSection: View {
         if status.menuInstalled {
             libraryToggles
             Button(role: .destructive, action: { showingUninstallConfirmation = true }) {
-                DestructiveSettingsLabel(title: "Uninstall Wii U Menu", systemImage: "trash")
+                DestructiveSettingsLabel(title: "Uninstall Wii U Menu".localized, systemImage: "trash")
             }
             .disabled(isImporting || isUninstalling)
             .alert("Uninstall the Wii U Menu?", isPresented: $showingUninstallConfirmation) {
@@ -145,10 +145,10 @@ struct WiiUMenuSettingsSection: View {
             store.refresh()
             switch outcome {
             case .success:
-                resultTitle = "Uninstalled"
-                resultMessage = "The Wii U Menu was removed. Your saves and games weren't touched."
+                resultTitle = "Uninstalled".localized
+                resultMessage = "The Wii U Menu was removed. Your saves and games weren't touched.".localized
             case .failure(let error):
-                resultTitle = "Couldn't uninstall"
+                resultTitle = "Couldn't uninstall".localized
                 resultMessage = error.localizedDescription
             }
         }
@@ -158,7 +158,7 @@ struct WiiUMenuSettingsSection: View {
         let mode = importMode
         switch result {
         case .failure(let error):
-            resultTitle = "Couldn't import"
+            resultTitle = "Couldn't import".localized
             resultMessage = error.localizedDescription
         case .success(let urls):
             guard !urls.isEmpty else { return }
@@ -180,10 +180,10 @@ struct WiiUMenuSettingsSection: View {
                 store.refresh()
                 switch outcome {
                 case .success(let message):
-                    resultTitle = "Imported"
+                    resultTitle = "Imported".localized
                     resultMessage = message + "\n\n" + statusSummary()
                 case .failure(let error):
-                    resultTitle = "Couldn't import"
+                    resultTitle = "Couldn't import".localized
                     resultMessage = error.localizedDescription
                 }
             }
@@ -194,20 +194,20 @@ struct WiiUMenuSettingsSection: View {
     private func statusSummary() -> String {
         var lines: [String] = []
         if let region = status.installedRegions.first {
-            lines.append("Wii U Menu found (\(region.displayName)).")
+            lines.append(String(format: "Wii U Menu found (%@).".localized, region.displayName))
         }
         let missing = status.missingRequired
         if missing.isEmpty {
-            lines.append("Everything the Menu needs to start is present.")
+            lines.append("Everything the Menu needs to start is present.".localized)
         } else {
-            lines.append("Still missing: " + missing.joined(separator: ", ") + ".")
+            lines.append(String(format: "Still missing: %@.".localized, missing.joined(separator: ", ")))
         }
         if let incomplete = status.incompleteTitlesSummary() {
             lines.append(incomplete)
         }
         let optional = status.missingOptional
         if !optional.isEmpty {
-            lines.append("Optional, for online features: " + optional.joined(separator: ", ") + ".")
+            lines.append(String(format: "Optional, for online features: %@.".localized, optional.joined(separator: ", ")))
         }
         return lines.joined(separator: "\n")
     }

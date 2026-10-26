@@ -22,11 +22,11 @@ struct CoverDataSettingsSection: View {
                 Label("Covers and game data", systemImage: "photo.on.rectangle.angled")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
-            SettingsRow(label: "Covers", value: style.title, icon: "rectangle.portrait")
-            SettingsRow(label: "Art packs installed", value: "\(packs.installed.count)", icon: "shippingbox")
-            SettingsRow(label: "Games with data", value: "\(data.matchedCount) of \(gameManager.games.count)", icon: "doc.text.magnifyingglass")
+            SettingsRow(label: "Covers".localized, value: style.title, icon: "rectangle.portrait")
+            SettingsRow(label: "Art packs installed".localized, value: "\(packs.installed.count)", icon: "shippingbox")
+            SettingsRow(label: "Games with data".localized, value: String(format: "%d of %d".localized, data.matchedCount, gameManager.games.count), icon: "doc.text.magnifyingglass")
         } header: {
-            SettingsSectionHeader("Cover + data scraping", icon: "photo.stack", accent: .content)
+            SettingsSectionHeader("Cover + data scraping".localized, icon: "photo.stack", accent: .content)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }
@@ -60,10 +60,10 @@ struct CoverDataSettingsView: View {
         .confirmationDialog("Delete this art pack?", isPresented: Binding(
             get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } }
         ), titleVisibility: .visible, presenting: deleteTarget) { pack in
-            Button("Delete \(pack.name)", role: .destructive) { packs.delete(pack.id) }
+            Button(String(format: "Delete %@".localized, pack.name), role: .destructive) { packs.delete(pack.id) }
             Button("Cancel", role: .cancel) { }
         } message: { pack in
-            Text("The images are removed from this device. You can download \(pack.name) again later.")
+            Text(String(format: "The images are removed from this device. You can download %@ again later.".localized, pack.name))
         }
     }
 
@@ -90,12 +90,12 @@ struct CoverDataSettingsView: View {
             }
             .disabled(packs.isLoadingManifest)
         } header: {
-            SettingsSectionHeader("Art packs", icon: "shippingbox", accent: .content)
+            SettingsSectionHeader("Art packs".localized, icon: "shippingbox", accent: .content)
         } footer: {
             InfoButton.footer(
-                "Downloaded from the MuffinEMU-Art repository. Each one checks its checksum, unpacks and indexes itself, then removes the download.",
-                title: "Art packs",
-                text: "Art packs are community collections of cover art, most of them 3D boxes. Download one and MuffinEMU matches its images to your games by title and region.\n\nThe download needs free space for the file and for the unpacked images at the same time; MuffinEMU checks first and says if there isn't enough. Keep MuffinEMU open while a pack downloads. Cancel stops it and cleans up.\n\nPacks are stored where Files can't see them, and aren't included in device backups, since they can be downloaded again."
+                "Downloaded from the MuffinEMU-Art repository. Each one checks its checksum, unpacks and indexes itself, then removes the download.".localized,
+                title: "Art packs".localized,
+                text: "Art packs are community collections of cover art, most of them 3D boxes. Download one and MuffinEMU matches its images to your games by title and region.\n\nThe download needs free space for the file and for the unpacked images at the same time; MuffinEMU checks first and says if there isn't enough. Keep MuffinEMU open while a pack downloads. Cancel stops it and cleans up.\n\nPacks are stored where Files can't see them, and aren't included in device backups, since they can be downloaded again.".localized
             )
         }
     }
@@ -104,8 +104,8 @@ struct CoverDataSettingsView: View {
 
     private var scrapeSection: some View {
         Section {
-            SettingsRow(label: "Games with data", value: "\(data.matchedCount) of \(gameManager.games.count)", icon: "doc.text.magnifyingglass")
-            SettingsRow(label: "Last scraped", value: data.lastScrape.map { ShaderCacheInfo.formatDate($0) } ?? "never", icon: "clock")
+            SettingsRow(label: "Games with data".localized, value: String(format: "%d of %d".localized, data.matchedCount, gameManager.games.count), icon: "doc.text.magnifyingglass")
+            SettingsRow(label: "Last scraped".localized, value: data.lastScrape.map { ShaderCacheInfo.formatDate($0) } ?? "never".localized, icon: "clock")
             if data.isScraping {
                 VStack(alignment: .leading, spacing: 6) {
                     ProgressView(value: data.fraction)
@@ -130,12 +130,12 @@ struct CoverDataSettingsView: View {
                 Text(error).font(.system(size: 12)).foregroundColor(.red).fixedSize(horizontal: false, vertical: true)
             }
         } header: {
-            SettingsSectionHeader("Data scraping", icon: "doc.text.magnifyingglass", accent: .content)
+            SettingsSectionHeader("Data scraping".localized, icon: "doc.text.magnifyingglass", accent: .content)
         } footer: {
             InfoButton.footer(
-                "Reads GameTDB's Wii U database and keeps the entries for the games you have: summary, release dates, publisher and more.",
-                title: "Data scraping",
-                text: "MuffinEMU downloads GameTDB's Wii U database (about 2 MB), reads it one entry at a time and keeps only your games' entries, so the saved file stays small.\n\nEach game is matched in this order: its exact GameTDB ID worked out from the title ID, then its product code, then its title in any language, always preferring the entry for the game's own region. Every match records how sure it is, and each game's Info screen lets you pick a different entry if one is wrong.\n\nIt also runs by itself in the background for new games. Everything is stored per install, so two copies of one game can match differently."
+                "Reads GameTDB's Wii U database and keeps the entries for the games you have: summary, release dates, publisher and more.".localized,
+                title: "Data scraping".localized,
+                text: "MuffinEMU downloads GameTDB's Wii U database (about 2 MB), reads it one entry at a time and keeps only your games' entries, so the saved file stays small.\n\nEach game is matched in this order: its exact GameTDB ID worked out from the title ID, then its product code, then its title in any language, always preferring the entry for the game's own region. Every match records how sure it is, and each game's Info screen lets you pick a different entry if one is wrong.\n\nIt also runs by itself in the background for new games. Everything is stored per install, so two copies of one game can match differently.".localized
             )
         }
     }
@@ -144,22 +144,22 @@ struct CoverDataSettingsView: View {
 
     private var creditsSection: some View {
         Section {
-            creditRow("GameTDB", "Covers and game data. Used with thanks to the GameTDB community.", "https://www.gametdb.com")
+            creditRow("GameTDB", "Covers and game data. Used with thanks to the GameTDB community.".localized, "https://www.gametdb.com")
             if let manifest = packs.manifest {
                 // The same packs the list above offers: disc packs aren't shown there, so they aren't credited here.
                 ForEach(manifest.packs.filter { $0.style != "disc" }) { pack in
                     creditRow(pack.name, pack.credits, nil)
                 }
             }
-            creditRow("MuffinEMU-Art", "Hosts the art packs, with the full credits in CREDITS.md.", "https://github.com/MuffinEMU/MuffinEMU-Art")
-            creditRow("box3d by RtaSistemas (MIT)", "The 3D box template behind MuffinEMU's no-cover images.", "https://github.com/RtaSistemas/box3d")
+            creditRow("MuffinEMU-Art", "Hosts the art packs, with the full credits in CREDITS.md.".localized, "https://github.com/MuffinEMU/MuffinEMU-Art")
+            creditRow("box3d by RtaSistemas (MIT)", "The 3D box template behind MuffinEMU's no-cover images.".localized, "https://github.com/RtaSistemas/box3d")
             Text("3D case template (spine, logo and badges) from Robin55's Nintendo Wii U 3D Boxes 1.3.")
             Text("Wii U and Nintendo logos \u{00A9} Nintendo. Rating icons \u{00A9} ESRB.")
             Text("Box art \u{00A9} respective publishers.")
                 .font(.system(size: 12))
                 .foregroundColor(MuffinTheme.secondaryText)
         } header: {
-            SettingsSectionHeader("Credits", icon: "heart", accent: .content)
+            SettingsSectionHeader("Credits".localized, icon: "heart", accent: .content)
         }
     }
 
@@ -199,7 +199,7 @@ private struct PackRow: View {
     private static func bytes(_ n: Int64) -> String { ByteCountFormatter.string(fromByteCount: n, countStyle: .file) }
 
     /// Which library mode uses this pack, said plainly.
-    private var usedIn: String { pack.style == "3d" ? "Used when Covers is set to 3D." : "Used for flat covers." }
+    private var usedIn: String { pack.style == "3d" ? "Used when Covers is set to 3D.".localized : "Used for flat covers.".localized }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -213,14 +213,14 @@ private struct PackRow: View {
                     .clipShape(Capsule())
             }
             Text(pack.description).font(.system(size: 12)).foregroundColor(MuffinTheme.secondaryText)
-            Text("\(pack.imageCount) images, \(pack.imageSize), \(Self.bytes(pack.downloadBytes)) download")
+            Text(String(format: "%d images, %@, %@ download".localized, pack.imageCount, pack.imageSize, Self.bytes(pack.downloadBytes)))
                 .font(.system(size: 12)).foregroundColor(MuffinTheme.secondaryText)
-            Text("Credit: \(pack.credits)").font(.system(size: 12)).foregroundColor(MuffinTheme.secondaryText)
+            Text(String(format: "Credit: %@".localized, pack.credits)).font(.system(size: 12)).foregroundColor(MuffinTheme.secondaryText)
 
             if let busy {
                 ProgressView(value: min(max(busy.fraction, 0), 1))
                 HStack {
-                    Text(busy.phase + "\u{2026} \(Int(min(max(busy.fraction, 0), 1) * 100))%")
+                    Text(String(format: "%@\u{2026} %d%%".localized, busy.phase, Int(min(max(busy.fraction, 0), 1) * 100)))
                         .font(.system(size: 12)).foregroundColor(MuffinTheme.secondaryText)
                     Spacer()
                     Button("Cancel", role: .destructive) { store.cancel(pack.id) }
@@ -229,7 +229,7 @@ private struct PackRow: View {
                 }
             } else if let installed {
                 HStack {
-                    Label("Installed, \(Self.bytes(installed.bytesOnDisk)) on disk", systemImage: "checkmark.circle.fill")
+                    Label(String(format: "Installed, %@ on disk".localized, Self.bytes(installed.bytesOnDisk)), systemImage: "checkmark.circle.fill")
                         .font(.system(size: 12, weight: .semibold)).foregroundColor(MuffinTheme.secondaryText)
                     Spacer()
                     Button("Delete", role: .destructive, action: onDelete)
@@ -246,7 +246,7 @@ private struct PackRow: View {
                 .buttonStyle(.borderless)
             }
             if installed != nil, busy == nil {
-                Text("Has art for \(matchedCount) of \(games.count) of your games. \(usedIn)")
+                Text(String(format: "Has art for %d of %d of your games. %@".localized, matchedCount, games.count, usedIn))
                     .font(.system(size: 12)).foregroundColor(MuffinTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }

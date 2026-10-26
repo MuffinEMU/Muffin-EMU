@@ -53,7 +53,7 @@ struct SettingsSectionHeader: View {
     var body: some View {
         // Classic UI: the plain `Text` header from v2.0, before the icon chips existed.
         if UIStyle.isClassic {
-            Text(title)
+            Text(verbatim: title.localized)
                 .textCase(nil)
                 .accessibilityAddTraits(.isHeader)
         } else {
@@ -73,7 +73,7 @@ struct SettingsSectionHeader: View {
                         .fill(accent.color.opacity(0.16))
                 )
 
-            Text(title)
+            Text(verbatim: title.localized)
                 .font(.system(size: 13, weight: .bold, design: .rounded))
                 .foregroundColor(MuffinTheme.brownDark)
                 .textCase(nil)

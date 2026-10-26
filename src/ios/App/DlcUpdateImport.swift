@@ -23,8 +23,8 @@ enum DlcUpdateImport {
 
         var displayName: String {
             switch self {
-            case .dlc: return "DLC"
-            case .update: return "update"
+            case .dlc: return "DLC".localized
+            case .update: return "update".localized
             }
         }
     }
@@ -45,47 +45,47 @@ enum DlcUpdateImport {
         var errorDescription: String? {
             switch self {
             case .accessDenied:
-                return "Couldn't access that file."
+                return "Couldn't access that file.".localized
             case .copyFailed(let error):
-                return "Couldn't copy the file: \(error.localizedDescription)"
+                return String(format: "Couldn't copy the file: %@".localized, error.localizedDescription)
             case .invalidTitle(let reason):
                 // Values match the CemuTitleInvalidReason typedef in CemuBridge.h.
                 switch reason {
                 case 1: // CemuTitleBadPathOrInaccessible
-                    return "That file couldn't be read."
+                    return "That file couldn't be read.".localized
                 case 2: // CemuTitleUnknownFormat
-                    return "This isn't a Wii U DLC or update file."
+                    return "This isn't a Wii U DLC or update file.".localized
                 case 3: // CemuTitleNoDiscKey
-                    return "This file is encrypted and no matching key is installed. Add your keys.txt in Settings first."
+                    return "This file is encrypted and no matching key is installed. Add your keys.txt in Settings first.".localized
                 case 4: // CemuTitleNoTicket
-                    return "This folder is missing title.tik (the ticket), which MuffinEMU needs to decrypt it."
+                    return "This folder is missing title.tik (the ticket), which MuffinEMU needs to decrypt it.".localized
                 case 5: // CemuTitleMissingXmlFiles
-                    return "Meta files (app.xml, meta.xml, cos.xml) are missing or damaged."
+                    return "Meta files (app.xml, meta.xml, cos.xml) are missing or damaged.".localized
                 case 6: // CemuTitleBadTitleTmd
-                    return "This encrypted folder's title.tmd couldn't be read."
+                    return "This encrypted folder's title.tmd couldn't be read.".localized
                 case 7: // CemuTitleBadTitleTik
-                    return "This encrypted folder's title.tik couldn't be read."
+                    return "This encrypted folder's title.tik couldn't be read.".localized
                 case 8: // CemuTitleKeyInvalid
-                    return "MuffinEMU couldn't decrypt this folder. Its title.tik doesn't unlock the .app files."
+                    return "MuffinEMU couldn't decrypt this folder. Its title.tik doesn't unlock the .app files.".localized
                 case 9: // CemuTitleMissingContentFile
-                    return "This encrypted folder is missing one or more .app files listed in its title.tmd."
+                    return "This encrypted folder is missing one or more .app files listed in its title.tmd.".localized
                 default:
-                    return "That file is corrupted or incomplete."
+                    return "That file is corrupted or incomplete.".localized
                 }
             case .wrongType(let expected, let actual):
-                return "This is \(actual), not \(expected == .dlc ? "DLC" : "an update"). Use the other import option."
+                return String(format: "This is %@, not %@. Use the other import option.".localized, actual, expected == .dlc ? "DLC".localized : "an update".localized)
             case .noBaseGameMatch:
-                return "No game in your library matches this content."
+                return "No game in your library matches this content.".localized
             case .alreadyInstalledSameOrNewer(let installed, let imported):
-                return "Version \(imported) isn't newer than what's already installed (version \(installed))."
+                return String(format: "Version %d isn't newer than what's already installed (version %d).".localized, Int(imported), Int(installed))
             case .wuaReadFailed:
-                return "The .wua file couldn't be read. It may be corrupted."
+                return "The .wua file couldn't be read. It may be corrupted.".localized
             case .noMatchingTitleInWua:
-                return "The .wua doesn't contain a matching update or DLC for this game."
+                return "The .wua doesn't contain a matching update or DLC for this game.".localized
             case .wuaHasOtherContent:
-                return "This .wua holds more than the one update or DLC for this game. Use a .wua with just that content."
+                return "This .wua holds more than the one update or DLC for this game. Use a .wua with just that content.".localized
             case .differentGame:
-                return "This content is for a different game or region than the one you picked."
+                return "This content is for a different game or region than the one you picked.".localized
             }
         }
     }
@@ -136,12 +136,12 @@ enum DlcUpdateImport {
 
     private static func titleTypeName(forByte byte: Int32) -> String {
         switch byte {
-        case 0x00: return "a base game"
-        case 0x02: return "a demo"
-        case 0x0E: return "an update"
-        case 0x0C: return "DLC"
-        case 0x0F: return "homebrew"
-        default: return "not a recognizable game title"
+        case 0x00: return "a base game".localized
+        case 0x02: return "a demo".localized
+        case 0x0E: return "an update".localized
+        case 0x0C: return "DLC".localized
+        case 0x0F: return "homebrew".localized
+        default: return "not a recognizable game title".localized
         }
     }
 

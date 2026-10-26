@@ -42,9 +42,9 @@ enum WiiUMenuRegion: CaseIterable {
 
     var displayName: String {
         switch self {
-        case .jpn: return "Japan"
+        case .jpn: return "Japan".localized
         case .usa: return "USA"
-        case .eur: return "Europe"
+        case .eur: return "Europe".localized
         }
     }
 
@@ -86,13 +86,13 @@ struct WiiUMenuStatus: Equatable {
     /// Pieces the Menu is known not to work without. Empty means the pre-flight passes.
     var missingRequired: [String] {
         var missing: [String] = []
-        if !menuInstalled { missing.append("the Wii U Menu title") }
-        if !hasSharedData { missing.append("shared data (sys/title/0005001b: fonts, Mii)") }
+        if !menuInstalled { missing.append("the Wii U Menu title".localized) }
+        if !hasSharedData { missing.append("shared data (sys/title/0005001b: fonts, Mii)".localized) }
         if !cafeLibsComplete {
-            missing.append("cafeLibs (\(cafeLibsPresent) of \(WiiUMenu.cafeLibNames.count) files)")
+            missing.append(String(format: "cafeLibs (%d of %d files)".localized, cafeLibsPresent, WiiUMenu.cafeLibNames.count))
         }
         if let broken = incompleteTitles.first(where: { $0.hasPrefix("00050010/1004") && WiiUMenu.isMenuFolderName(String($0.dropFirst(9).prefix(8))) }) {
-            missing.append("complete Wii U Menu files (\(broken))")
+            missing.append(String(format: "complete Wii U Menu files (%@)".localized, broken))
         }
         return missing
     }
@@ -101,8 +101,11 @@ struct WiiUMenuStatus: Equatable {
     func incompleteTitlesSummary(limit: Int = 8) -> String? {
         guard !incompleteTitles.isEmpty else { return nil }
         var lines = incompleteTitles.prefix(limit).map { "  " + $0 }
-        if incompleteTitles.count > limit { lines.append("  and \(incompleteTitles.count - limit) more") }
-        return "\(incompleteTitles.count) system title\(incompleteTitles.count == 1 ? " has" : "s have") missing files (re-dump them, or the Menu may fail to list or start them):\n" + lines.joined(separator: "\n")
+        if incompleteTitles.count > limit { lines.append("  " + String(format: "and %d more".localized, incompleteTitles.count - limit)) }
+        let heading = incompleteTitles.count == 1
+            ? "1 system title has missing files (re-dump them, or the Menu may fail to list or start them):".localized
+            : String(format: "%d system titles have missing files (re-dump them, or the Menu may fail to list or start them):".localized, incompleteTitles.count)
+        return heading + "\n" + lines.joined(separator: "\n")
     }
 
     /// Optional: only online features need these.
@@ -197,8 +200,8 @@ enum WiiUMenu {
                 let hasCode = isDir("code"), hasContent = isDir("content"), hasMeta = isDir("meta")
                 guard hasCode || hasContent && hasMeta else { continue }
                 var missing: [String] = []
-                if !hasCode { missing.append("code folder") }
-                if !hasMeta { missing.append("meta folder") }
+                if !hasCode { missing.append("code folder".localized) }
+                if !hasMeta { missing.append("meta folder".localized) }
                 if hasCode && !isFile("code/app.xml") { missing.append("code/app.xml") }
                 if hasCode && !isFile("code/cos.xml") { missing.append("code/cos.xml") }
                 if hasMeta && !isFile("meta/meta.xml") { missing.append("meta/meta.xml") }
@@ -247,7 +250,7 @@ enum WiiUMenu {
                 try fm.removeItem(at: folder)
                 removed += 1
             } catch {
-                throw ImportError.failed("Couldn't remove \(folder.lastPathComponent): \(error.localizedDescription)")
+                throw ImportError.failed(String(format: "Couldn't remove %@: %@".localized, folder.lastPathComponent, error.localizedDescription))
             }
         }
         return removed
@@ -266,16 +269,16 @@ enum WiiUMenu {
         var errorDescription: String? {
             switch self {
             case .accessDenied:
-                return "Couldn't access that item."
+                return "Couldn't access that item.".localized
             case .nothingRecognised:
-                return "Nothing recognisable in that folder. Pick the package folder (the one containing mlc01 and cafeLibs), an mlc01 folder, a sys folder, a cafeLibs folder, or the Wii U Menu title folder itself."
+                return "Nothing recognisable in that folder. Pick the package folder (the one containing mlc01 and cafeLibs), an mlc01 folder, a sys folder, a cafeLibs folder, or the Wii U Menu title folder itself.".localized
             case .notTheMenu(let id):
-                return "That title folder isn't a Wii U Menu (title id \(id)). The Menu is 0005001010040000, 0005001010040100 or 0005001010040200."
+                return String(format: "That title folder isn't a Wii U Menu (title id %@). The Menu is 0005001010040000, 0005001010040100 or 0005001010040200.".localized, id)
             case .wrongSize(let name, let expected):
-                return "\(name) should be exactly \(expected) bytes."
+                return String(format: "%@ should be exactly %d bytes.".localized, name, expected)
             case .notEnoughSpace(let needed, let available):
                 let format = ByteCountFormatter()
-                return "Not enough free space: the import needs about \(format.string(fromByteCount: needed)) and this device has \(format.string(fromByteCount: available)) free."
+                return String(format: "Not enough free space: the import needs about %@ and this device has %@ free.".localized, format.string(fromByteCount: needed), format.string(fromByteCount: available))
             case .failed(let message):
                 return message
             }
@@ -291,9 +294,11 @@ enum WiiUMenu {
 
         var summary: String {
             var lines = notes
-            lines.append("\(copied) new file\(copied == 1 ? "" : "s") copied, \(replaced) replaced, \(skipped) already present.")
+            lines.append(copied == 1
+                ? String(format: "1 new file copied, %d replaced, %d already present.".localized, replaced, skipped)
+                : String(format: "%d new files copied, %d replaced, %d already present.".localized, copied, replaced, skipped))
             if let backupFolder {
-                lines.append("Files that were replaced were first saved in \(backupFolder).")
+                lines.append(String(format: "Files that were replaced were first saved in %@.".localized, backupFolder))
             }
             return lines.joined(separator: "\n")
         }
@@ -328,7 +333,7 @@ enum WiiUMenu {
             } else if data.count == seepromSize {
                 target = "seeprom.bin"
             } else {
-                throw ImportError.failed("\(url.lastPathComponent) isn't otp.bin or seeprom.bin. otp.bin is \(otpSize) bytes and seeprom.bin is \(seepromSize) bytes.")
+                throw ImportError.failed(String(format: "%@ isn't otp.bin or seeprom.bin. otp.bin is %d bytes and seeprom.bin is %d bytes.".localized, url.lastPathComponent, otpSize, seepromSize))
             }
             let expected = target == "otp.bin" ? otpSize : seepromSize
             guard data.count == expected else { throw ImportError.wrongSize(target, expected: expected) }
@@ -336,17 +341,17 @@ enum WiiUMenu {
             if fm.fileExists(atPath: destination.path) {
                 let backup = root.appendingPathComponent("\(target).backup-\(timestamp())")
                 try fm.moveItem(at: destination, to: backup)
-                lines.append("Existing \(target) saved as \(backup.lastPathComponent).")
+                lines.append(String(format: "Existing %@ saved as %@.".localized, target, backup.lastPathComponent))
             }
             do {
                 try data.write(to: destination, options: .atomic)
             } catch {
-                throw ImportError.failed("Couldn't save \(target): \(error.localizedDescription)")
+                throw ImportError.failed(String(format: "Couldn't save %@: %@".localized, target, error.localizedDescription))
             }
             if target == "otp.bin" { seenOTP = true } else { seenSeeprom = true }
         }
-        if seenOTP { lines.append("otp.bin imported.") }
-        if seenSeeprom { lines.append("seeprom.bin imported.") }
+        if seenOTP { lines.append("otp.bin imported.".localized) }
+        if seenSeeprom { lines.append("seeprom.bin imported.".localized) }
         return lines
     }
 
@@ -398,7 +403,7 @@ enum WiiUMenu {
         // The folder is itself a system title folder.
         if child(root, named: "code") != nil, child(root, named: "meta") != nil {
             guard let id = metaTitleID(in: root), let region = WiiUMenuRegion(titleIDText: id) else {
-                throw ImportError.notTheMenu(metaTitleID(in: root) ?? "unknown")
+                throw ImportError.notTheMenu(metaTitleID(in: root) ?? "unknown".localized)
             }
             return [.menuTitle(root, region)]
         }
@@ -467,26 +472,26 @@ enum WiiUMenu {
         for piece in pieces {
             switch piece {
             case .cafeLibs(let source):
-                notes.append("Found cafeLibs.")
+                notes.append("Found cafeLibs.".localized)
                 try plan(source: source, destination: cafeLibs, relativePrefix: "cafeLibs", replaceDiffering: true,
                          operations: &operations, skipped: &skipped)
             case .mlc01(let source):
                 if let sys = child(source, named: "sys") {
-                    notes.append("Found sys (system titles).")
+                    notes.append("Found sys (system titles).".localized)
                     try plan(source: sys, destination: mlc01.appendingPathComponent("sys"), relativePrefix: "mlc01/sys",
                              replaceDiffering: true, operations: &operations, skipped: &skipped)
                 }
                 if let usr = child(source, named: "usr") {
-                    notes.append("Found usr. Existing files there (including saves) are never replaced.")
+                    notes.append("Found usr. Existing files there (including saves) are never replaced.".localized)
                     try plan(source: usr, destination: mlc01.appendingPathComponent("usr"), relativePrefix: "mlc01/usr",
                              replaceDiffering: false, operations: &operations, skipped: &skipped)
                 }
             case .sys(let source):
-                notes.append("Found sys (system titles).")
+                notes.append("Found sys (system titles).".localized)
                 try plan(source: source, destination: mlc01.appendingPathComponent("sys"), relativePrefix: "mlc01/sys",
                          replaceDiffering: true, operations: &operations, skipped: &skipped)
             case .menuTitle(let source, let region):
-                notes.append("Found the Wii U Menu title (\(region.displayName)).")
+                notes.append(String(format: "Found the Wii U Menu title (%@).".localized, region.displayName))
                 let destination = mlc01.appendingPathComponent("sys/title/00050010/\(region.folderName)")
                 try plan(source: source, destination: destination, relativePrefix: "mlc01/sys/title/00050010/\(region.folderName)",
                          replaceDiffering: true, operations: &operations, skipped: &skipped)
@@ -520,7 +525,7 @@ enum WiiUMenu {
                 }
                 try fm.copyItem(at: operation.source, to: operation.destination)
             } catch {
-                throw ImportError.failed("Stopped at \(operation.relative): \(error.localizedDescription). Nothing that already existed was lost; run the import again to continue.")
+                throw ImportError.failed(String(format: "Stopped at %@: %@. Nothing that already existed was lost; run the import again to continue.".localized, operation.relative, error.localizedDescription))
             }
         }
         return report

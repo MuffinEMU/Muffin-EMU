@@ -199,7 +199,7 @@ private struct ErrorCard: View {
             HStack(spacing: 10) {
                 ForEach(Array(buttons.enumerated()), id: \.offset) { index, label in
                     // The first button is the default (Return); the last is the way out.
-                    Button(label.isEmpty ? "OK" : label) {
+                    Button(label.isEmpty ? "OK".localized : label) {
                         cemu_bridge_native_error_answer(id, Int32(index))
                     }
                     .buttonStyle(DialogButtonStyle(prominent: index == 0))

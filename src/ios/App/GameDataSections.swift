@@ -31,19 +31,19 @@ struct GameSavesSection: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         } header: {
-            SettingsSectionHeader("Game saves", icon: "externaldrive", accent: .io)
+            SettingsSectionHeader("Game saves".localized, icon: "externaldrive", accent: .io)
         } footer: {
             InfoButton.footer(
-                "The save the game itself writes. Not a save state. Export is available once the game has saved.",
-                title: "Game saves",
-                text: "This is the save the game itself writes. It uses the Wii U\'s own format, so it can move between MuffinEMU, desktop Cemu and a real console. A save state is a snapshot of the whole emulated console and only MuffinEMU can read it.\n\nExport writes a folder named after the game and title ID. Import accepts that folder, a folder named after the title ID from another Cemu install, or its \'user\' folder. Importing replaces the current save; the old one is first copied to save-backups in MuffinEMU\'s Documents folder."
+                "The save the game itself writes. Not a save state. Export is available once the game has saved.".localized,
+                title: "Game saves".localized,
+                text: "This is the save the game itself writes. It uses the Wii U\'s own format, so it can move between MuffinEMU, desktop Cemu and a real console. A save state is a snapshot of the whole emulated console and only MuffinEMU can read it.\n\nExport writes a folder named after the game and title ID. Import accepts that folder, a folder named after the title ID from another Cemu install, or its \'user\' folder. Importing replaces the current save; the old one is first copied to save-backups in MuffinEMU\'s Documents folder.".localized
             )
         }
         .confirmationDialog("Import a save folder?", isPresented: $showingImportConfirmation, titleVisibility: .visible) {
             Button("Choose folder", role: .destructive, action: pickSaveFolder)
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("This replaces \(game.title)\'s current save. The one you have now is backed up first, and the game should be closed before you do this.")
+            Text(String(format: "This replaces %@\'s current save. The one you have now is backed up first, and the game should be closed before you do this.".localized, game.title))
         }
     }
 
@@ -154,12 +154,12 @@ struct GameShaderImportSection: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         } header: {
-            SettingsSectionHeader("Import shader caches", icon: "hammer", accent: .core)
+            SettingsSectionHeader("Import shader caches".localized, icon: "hammer", accent: .core)
         } footer: {
             InfoButton.footer(
-                "Add a shader cache from desktop Cemu or another MuffinEMU, so this game starts with its shaders already learned.",
-                title: "Shader caches",
-                text: "Learned shaders are what a game has revealed by drawing with them. Importing adds them to this game's own file: anything the game already has stays as it is, and the file is never replaced.\n\nThe file has to be this game's: MuffinEMU checks the version stamp inside it, not the name. Desktop Cemu's files work: learned shaders are named like 000500001010ec00_shaders.bin and are converted the first time the game starts. MuffinEMU's are named ..._mtlshaders.bin. Desktop caches from before Cemu 1.16 use another format and can't be converted.\n\nPipeline caches are named ..._vkpipeline.bin (desktop Cemu, Vulkan) or ..._mtlpipeline.bin (MuffinEMU, Metal). A Vulkan one only helps the Vulkan renderer and a Metal one only the Metal renderer; it's stored either way and used when you switch. Each also needs the game's learned shaders. Import with the game closed. The sizes in Settings update the next time you open it."
+                "Add a shader cache from desktop Cemu or another MuffinEMU, so this game starts with its shaders already learned.".localized,
+                title: "Shader caches".localized,
+                text: "Learned shaders are what a game has revealed by drawing with them. Importing adds them to this game's own file: anything the game already has stays as it is, and the file is never replaced.\n\nThe file has to be this game's: MuffinEMU checks the version stamp inside it, not the name. Desktop Cemu's files work: learned shaders are named like 000500001010ec00_shaders.bin and are converted the first time the game starts. MuffinEMU's are named ..._mtlshaders.bin. Desktop caches from before Cemu 1.16 use another format and can't be converted.\n\nPipeline caches are named ..._vkpipeline.bin (desktop Cemu, Vulkan) or ..._mtlpipeline.bin (MuffinEMU, Metal). A Vulkan one only helps the Vulkan renderer and a Metal one only the Metal renderer; it's stored either way and used when you switch. Each also needs the game's learned shaders. Import with the game closed. The sizes in Settings update the next time you open it.".localized
             )
         }
         .confirmationDialog("Which renderer made this pipeline cache?", isPresented: Binding(
@@ -170,7 +170,7 @@ struct GameShaderImportSection: View {
             Button("Metal (MuffinEMU)") { answerPipelineRenderer(pending, vulkan: false) }
             Button("Cancel", role: .cancel) { discardPending(pending) }
         } message: { pending in
-            Text("\"\(pending.name)\" doesn't say. Desktop Cemu's are named ..._vkpipeline.bin and MuffinEMU's ..._mtlpipeline.bin. It's stored under the matching name either way.")
+            Text(String(format: "\"%@\" doesn't say. Desktop Cemu's are named ..._vkpipeline.bin and MuffinEMU's ..._mtlpipeline.bin. It's stored under the matching name either way.".localized, pending.name))
         }
     }
 
@@ -188,7 +188,7 @@ struct GameShaderImportSection: View {
                         staged = try ShaderCacheImport.stage(picked)
                     } catch {
                         DispatchQueue.main.async {
-                            finish(ShaderCacheImport.Outcome(message: "Couldn't read \"\(name)\": \(error.localizedDescription)", failed: true))
+                            finish(ShaderCacheImport.Outcome(message: String(format: "Couldn't read \"%@\": %@".localized, name, error.localizedDescription), failed: true))
                         }
                         return
                     }

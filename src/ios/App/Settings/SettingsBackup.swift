@@ -33,13 +33,13 @@ enum SettingsBackup {
         var errorDescription: String? {
             switch self {
             case .unreadable:
-                return "That file couldn't be read."
+                return "That file couldn't be read.".localized
             case .notASettingsFile:
-                return "That isn't a MuffinEMU settings file."
+                return "That isn't a MuffinEMU settings file.".localized
             case .newerVersion(let version):
-                return "That file is from a newer MuffinEMU (settings file version \(version)). Update the app, then try again."
+                return String(format: "That file is from a newer MuffinEMU (settings file version %d). Update the app, then try again.".localized, version)
             case .nothingToImport:
-                return "That file has no settings MuffinEMU can use."
+                return "That file has no settings MuffinEMU can use.".localized
             }
         }
     }

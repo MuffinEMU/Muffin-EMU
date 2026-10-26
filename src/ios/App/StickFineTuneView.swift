@@ -100,16 +100,16 @@ private struct StickFineTuneEditor: View {
         }
 
         Section {
-            percentRow("Inner deadzone", value: deadzone, range: StickTuning.deadzoneRange,
-                       caption: "How far you can move before the game notices. Turn it up if a resting thumb makes the game drift.")
-            percentRow("Outer deadzone", value: $outer, range: StickFeel.outerRange,
-                       caption: "How far short of the edge the stick already counts as fully pushed. Turn it up if you can't quite reach full speed.")
-            percentRow("Anti-deadzone", value: $anti, range: StickFeel.antiRange,
-                       caption: "The least the game is sent once you are past the inner deadzone. For games that have a deadzone of their own and ignore small pushes.")
-            valueRow("Fine control", readout: curve.wrappedValue <= StickTuning.curveRange.lowerBound + 0.005
-                        ? "linear" : String(format: "%.1fx", curve.wrappedValue),
+            percentRow("Inner deadzone".localized, value: deadzone, range: StickTuning.deadzoneRange,
+                       caption: "How far you can move before the game notices. Turn it up if a resting thumb makes the game drift.".localized)
+            percentRow("Outer deadzone".localized, value: $outer, range: StickFeel.outerRange,
+                       caption: "How far short of the edge the stick already counts as fully pushed. Turn it up if you can't quite reach full speed.".localized)
+            percentRow("Anti-deadzone".localized, value: $anti, range: StickFeel.antiRange,
+                       caption: "The least the game is sent once you are past the inner deadzone. For games that have a deadzone of their own and ignore small pushes.".localized)
+            valueRow("Fine control".localized, readout: curve.wrappedValue <= StickTuning.curveRange.lowerBound + 0.005
+                        ? "linear".localized : String(format: "%.1fx", curve.wrappedValue),
                      value: curve, range: StickTuning.curveRange,
-                     caption: "Makes small movements gentler. At linear, halfway is half speed; higher values make halfway slower.")
+                     caption: "Makes small movements gentler. At linear, halfway is half speed; higher values make halfway slower.".localized)
         } header: {
             Text("Response")
         } footer: {
@@ -137,7 +137,7 @@ private struct StickFineTuneEditor: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Label("Calibrate sticks", systemImage: "scope")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text(calibrationRaw.isEmpty ? "Not calibrated." : "Calibrated.")
+                    Text(calibrationRaw.isEmpty ? "Not calibrated.".localized : "Calibrated.".localized)
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
@@ -145,7 +145,7 @@ private struct StickFineTuneEditor: View {
             Button(role: .destructive) {
                 SharedStick.reset(left: left)
             } label: {
-                DestructiveSettingsLabel(title: left ? "Reset left stick" : "Reset right stick",
+                DestructiveSettingsLabel(title: left ? "Reset left stick".localized : "Reset right stick".localized,
                                          systemImage: "arrow.uturn.backward")
             }
         } footer: {
@@ -156,7 +156,7 @@ private struct StickFineTuneEditor: View {
     private func percentRow(_ title: String, value: Binding<Double>, range: ClosedRange<Double>,
                             caption: String?) -> some View {
         let v = value.wrappedValue
-        return valueRow(title, readout: v <= 0.0005 && range.lowerBound == 0 ? "off" : "\(Int((v * 100).rounded()))%",
+        return valueRow(title, readout: v <= 0.0005 && range.lowerBound == 0 ? "off".localized : String(format: "%d%%".localized, Int((v * 100).rounded())),
                         value: value, range: range, caption: caption)
     }
 
@@ -258,8 +258,8 @@ private struct StickTestPad: View {
             .accessibilityLabel("Stick test area")
 
             VStack(spacing: 2) {
-                Text("Thumb  x \(Self.format(thumb.x / travel))  y \(Self.format(-thumb.y / travel))")
-                Text("Game   x \(Self.format(CGFloat(out.x)))  y \(Self.format(CGFloat(out.y)))")
+                Text(String(format: "Thumb  x %@  y %@".localized, Self.format(thumb.x / travel), Self.format(-thumb.y / travel)))
+                Text(String(format: "Game   x %@  y %@".localized, Self.format(CGFloat(out.x)), Self.format(CGFloat(out.y))))
             }
             .font(.system(size: 13, design: .monospaced))
             .foregroundColor(.secondary)

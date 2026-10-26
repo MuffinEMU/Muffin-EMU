@@ -105,14 +105,14 @@ struct LaunchLogView: View {
                     .foregroundColor(.white.opacity(0.9))
 
                 if store.droppedLines > 0 {
-                    Text("\(store.droppedLines) earlier lines dropped")
+                    Text(String(format: "%d earlier lines dropped".localized, store.droppedLines))
                         .font(.system(size: 10, weight: .regular, design: .rounded))
                         .foregroundColor(MuffinTheme.alertOnDark)
                 }
 
                 Spacer()
 
-                Text("\(store.lines.count) lines")
+                Text(String(format: "%d lines".localized, store.lines.count))
                     .font(.system(size: 10, weight: .regular, design: .monospaced))
                     .foregroundColor(.white.opacity(0.6))
 

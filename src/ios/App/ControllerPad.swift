@@ -865,7 +865,7 @@ private struct JoystickControl: View {
         // The hit area is the circle, not the octagonal gate, so a thumb overshooting a
         // diagonal still counts.
         .contentShape(Circle())
-        .accessibilityLabel(control.id == "stickL" ? "Left stick" : "Camera stick")
+        .accessibilityLabel(control.id == "stickL" ? "Left stick".localized : "Camera stick".localized)
         .gesture(
             DragGesture(minimumDistance: 0)
                 .updating($touching) { _, state, _ in state = true }

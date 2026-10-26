@@ -171,7 +171,7 @@ struct ZoneEditRows: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            PanelToggle(title: "Move and resize buttons",
+            PanelToggle(title: "Move and resize buttons".localized,
                         isOn: Binding(get: { store.isEditing }, set: { store.setEditing($0) }))
 
             if store.isEditing {
@@ -182,17 +182,17 @@ struct ZoneEditRows: View {
                 .pickerStyle(.segmented)
 
                 PanelCaption(text: store.granularity == .control
-                             ? "Tap a button to pick it, then drag it to move it, pinch it or use Size to resize it. It stops where it would touch another button or leave the screen."
-                             : "Tap a button to pick its whole group (the d-pad, the face buttons, a stick, a pair of shoulder buttons, or plus, minus and HOME), then drag or pinch it as one.")
+                             ? "Tap a button to pick it, then drag it to move it, pinch it or use Size to resize it. It stops where it would touch another button or leave the screen.".localized
+                             : "Tap a button to pick its whole group (the d-pad, the face buttons, a stick, a pair of shoulder buttons, or plus, minus and HOME), then drag or pinch it as one.".localized)
 
-                PanelCaption(text: store.selectionTitle.map { "Picked: \($0)" } ?? "Nothing picked yet.", prominent: false)
+                PanelCaption(text: store.selectionTitle.map { String(format: "Picked: %@".localized, $0) } ?? "Nothing picked yet.".localized, prominent: false)
 
-                PanelSliderRow("Size of the picked button", title: "Size",
+                PanelSliderRow("Size of the picked button".localized, title: "Size".localized,
                                leadingIcon: "minus.magnifyingglass", trailingIcon: "plus.magnifyingglass",
                                value: Binding(get: { store.selectedScale }, set: { store.setSelectedScale($0) }),
                                range: ZoneEditStore.scaleRange,
-                               spokenValue: "\(Int((store.selectedScale * 100).rounded())) percent",
-                               readout: "\(Int((store.selectedScale * 100).rounded()))%")
+                               spokenValue: String(format: "%d percent".localized, Int((store.selectedScale * 100).rounded())),
+                               readout: String(format: "%d%%".localized, Int((store.selectedScale * 100).rounded())))
                     .disabled(store.selection == nil)
                     .opacity(store.selection == nil ? 0.5 : 1)
 
@@ -213,8 +213,8 @@ struct ZoneEditRows: View {
                 PanelToggle(title: "Own layout for this game",
                             isOn: Binding(get: { store.isPerGame }, set: { store.setPerGame($0) }))
                 PanelCaption(text: store.isPerGame
-                             ? "Moves and sizes here belong to this game only."
-                             : "Moves and sizes here apply to every game.", prominent: false)
+                             ? "Moves and sizes here belong to this game only.".localized
+                             : "Moves and sizes here apply to every game.".localized, prominent: false)
             }
         }
         .onAppear { store.activate(gameID: gameID) }
@@ -225,8 +225,8 @@ struct ZoneEditRows: View {
             Button("Cancel", role: .cancel) { }
         } message: {
             Text(store.isPerGame
-                 ? "Every button goes back to where Zone puts it, in this game."
-                 : "Every button goes back to where Zone puts it, in every game that doesn't have its own layout.")
+                 ? "Every button goes back to where Zone puts it, in this game.".localized
+                 : "Every button goes back to where Zone puts it, in every game that doesn't have its own layout.".localized)
         }
     }
 }

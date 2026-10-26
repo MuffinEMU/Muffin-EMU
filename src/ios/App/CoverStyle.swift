@@ -20,7 +20,7 @@ enum CoverStylePreference: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .flat: return "Flat"
+        case .flat: return "Flat".localized
         case .threeD: return "3D"
         }
     }
@@ -147,12 +147,12 @@ enum RegionCode: String, CaseIterable {
 
     var name: String {
         switch self {
-        case .usa: return "North America"
-        case .eur: return "Europe"
-        case .jpn: return "Japan"
-        case .kor: return "South Korea"
-        case .chn: return "China"
-        case .twn: return "Taiwan"
+        case .usa: return "North America".localized
+        case .eur: return "Europe".localized
+        case .jpn: return "Japan".localized
+        case .kor: return "South Korea".localized
+        case .chn: return "China".localized
+        case .twn: return "Taiwan".localized
         }
     }
 

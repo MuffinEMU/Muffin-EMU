@@ -55,13 +55,13 @@ struct OnboardingView: View {
                 Spacer()
 
                 Button(action: advance) {
-                    Text(isLastPage ? "Start playing" : "Next")
+                    Text(isLastPage ? "Start playing".localized : "Next".localized)
                 }
                 .buttonStyle(MuffinPrimaryButtonStyle())
-                .accessibilityLabel(isLastPage ? "Start playing" : "Next")
+                .accessibilityLabel(isLastPage ? "Start playing".localized : "Next".localized)
                 .accessibilityHint(isLastPage
-                    ? "Finishes the guide and opens your library."
-                    : "Goes to the next page of the guide.")
+                    ? "Finishes the guide and opens your library.".localized
+                    : "Goes to the next page of the guide.".localized)
             }
         }
         .padding(.horizontal, 24)
@@ -197,8 +197,8 @@ private struct OnboardingFactRow: View {
 private struct OnboardingWelcomePage: View {
     var body: some View {
         OnboardingPageScaffold(
-            title: "Welcome to MuffinEMU",
-            subtitle: "Play your own Wii U games. This takes a minute and you can skip any step.",
+            title: "Welcome to MuffinEMU".localized,
+            subtitle: "Play your own Wii U games. This takes a minute and you can skip any step.".localized,
             hero: .mark
         ) {
             EmptyView()
@@ -218,20 +218,20 @@ private struct OnboardingKeysPage: View {
 
     var body: some View {
         OnboardingPageScaffold(
-            title: "Your keys",
-            subtitle: "Encrypted Wii U games need a keys.txt dumped from your own Wii U. MuffinEMU doesn't include one. Homebrew doesn't need it.",
+            title: "Your keys".localized,
+            subtitle: "Encrypted Wii U games need a keys.txt dumped from your own Wii U. MuffinEMU doesn't include one. Homebrew doesn't need it.".localized,
             hero: .symbol("key.fill")
         ) {
             MuffinCard {
                 VStack(alignment: .leading, spacing: 16) {
                     Button(action: importKeys) {
-                        Label(hasKeys ? "Replace keys.txt" : "Import keys.txt", systemImage: "key")
+                        Label(hasKeys ? "Replace keys.txt".localized : "Import keys.txt".localized, systemImage: "key")
                     }
                     .buttonStyle(MuffinPrimaryButtonStyle())
                     .accessibilityHint("Opens the Files picker to choose your keys.txt.")
 
                     if hasKeys {
-                        Text("\(keyCount) key\(keyCount == 1 ? "" : "s") loaded")
+                        Text(keyCount == 1 ? "1 key loaded".localized : String(format: "%d keys loaded".localized, keyCount))
                             .font(.system(.subheadline, design: .rounded).weight(.semibold))
                             .foregroundColor(MuffinTheme.brownMid)
                     }
@@ -244,7 +244,7 @@ private struct OnboardingKeysPage: View {
                     }
 
                     Button(action: onSkip) {
-                        Text(hasKeys ? "Continue" : "Skip - I only play homebrew")
+                        Text(hasKeys ? "Continue".localized : "Skip - I only play homebrew".localized)
                             .font(.system(.footnote, design: .rounded))
                             .underline()
                     }
@@ -297,8 +297,8 @@ private struct OnboardingGamesPage: View {
 
     var body: some View {
         OnboardingPageScaffold(
-            title: "Add your games",
-            subtitle: "Import games from Files: .wud, .wux, .wua, .iso, a dumped game folder or a homebrew .rpx. You can also drop them into Documents/Roms in the Files app.",
+            title: "Add your games".localized,
+            subtitle: "Import games from Files: .wud, .wux, .wua, .iso, a dumped game folder or a homebrew .rpx. You can also drop them into Documents/Roms in the Files app.".localized,
             hero: .symbol("square.and.arrow.down.fill")
         ) {
             MuffinCard {
@@ -312,7 +312,7 @@ private struct OnboardingGamesPage: View {
                     if case .copying(let name) = gameManager.importState {
                         HStack(spacing: 8) {
                             ProgressView()
-                            Text("Copying \(name)\u{2026}")
+                            Text(String(format: "Copying %@\u{2026}".localized, name))
                         }
                         .font(.system(.footnote, design: .rounded))
                         .foregroundColor(MuffinTheme.brownMid)
@@ -356,23 +356,23 @@ private struct OnboardingGamesPage: View {
 private struct OnboardingSpeedControlsPage: View {
     var body: some View {
         OnboardingPageScaffold(
-            title: "Speed and controls",
-            subtitle: "Three things affect speed and control:",
+            title: "Speed and controls".localized,
+            subtitle: "Three things affect speed and control:".localized,
             hero: .symbol("bolt.fill")
         ) {
             MuffinCard {
                 VStack(alignment: .leading, spacing: 18) {
                     OnboardingFactRow(
                         systemImage: "bolt.fill",
-                        text: "Full speed needs a JIT enabler (StikJIT, SideStore or LiveContainer) attached at launch. Without one, MuffinEMU still runs but much slower. Settings shows which you have."
+                        text: "Full speed needs a JIT enabler (StikJIT, SideStore or LiveContainer) attached at launch. Without one, MuffinEMU still runs but much slower. Settings shows which you have.".localized
                     )
                     OnboardingFactRow(
                         systemImage: "checkmark.seal.fill",
-                        text: "If a game glitches, desyncs or crashes, choose the Accuracy performance profile in Settings > Performance and graphics. It's slower but more accurate."
+                        text: "If a game glitches, desyncs or crashes, choose the Accuracy performance profile in Settings > Performance and graphics. It's slower but more accurate.".localized
                     )
                     OnboardingFactRow(
                         systemImage: "gamecontroller.fill",
-                        text: "The on-screen pad can add analog sticks and comfort controls, and any MFi, Xbox, or PlayStation controller works right alongside it."
+                        text: "The on-screen pad can add analog sticks and comfort controls, and any MFi, Xbox, or PlayStation controller works right alongside it.".localized
                     )
                 }
                 .padding(16)

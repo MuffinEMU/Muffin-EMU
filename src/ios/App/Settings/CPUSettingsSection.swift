@@ -35,7 +35,7 @@ struct CPUSettingsSection: View {
                         Spacer()
                         Picker("CPU cores", selection: $coreModeRaw) {
                             ForEach(CoreMode.listed) { mode in
-                                Text(mode.isAvailable ? mode.title : mode.title + ", may not work").tag(mode.rawValue)
+                                Text(mode.isAvailable ? mode.title : String(format: "%@, may not work".localized, mode.title)).tag(mode.rawValue)
                             }
                         }
                         .pickerStyle(.menu)
@@ -47,7 +47,7 @@ struct CPUSettingsSection: View {
                     Text(!CoreMode.hasMultiOption && !advanced
                          ? DeviceCapabilities.oneCoreOnlyText
                          : CoreMode.resolved(CoreMode(rawValue: coreModeRaw) ?? CoreMode.defaultValue).summary
-                            + (selectedModeUnavailable ? " May not work on this device." : ""))
+                            + (selectedModeUnavailable ? " " + "May not work on this device.".localized : ""))
                         .font(.system(size: 12))
                         .foregroundColor(selectedModeUnavailable ? .orange : .secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -91,14 +91,14 @@ struct CPUSettingsSection: View {
                 }
             }
         } header: {
-            SettingsSectionHeader("CPU", icon: "cpu", accent: .core)
+            SettingsSectionHeader("CPU".localized, icon: "cpu", accent: .core)
         } footer: {
             InfoButton.footer(
                 advanced
-                    ? "CPU cores applies the next time you start a game. The recompiler switch is under JIT."
-                    : "Shows whether games get the fast recompiler or the slow interpreter. The switch is under JIT.",
-                title: "CPU",
-                text: "The CPU line shows what this launch got: the recompiler (JIT), which is the fast way, or the interpreter, which is much slower. The recompiler needs a JIT enabler (StikJIT, SideStore or LiveContainer); both are set under JIT.\n\nCPU cores (Advanced mode) picks how many cores run a game. Auto decides for each game and device. The Accuracy and Battery saver performance profiles run on one core whatever this says.\n\nMemory shows how much the recompiler reserved. If it couldn't reserve any, the interpreter runs instead.\n\nCPU cores applies the next time you start a game.")
+                    ? "CPU cores applies the next time you start a game. The recompiler switch is under JIT.".localized
+                    : "Shows whether games get the fast recompiler or the slow interpreter. The switch is under JIT.".localized,
+                title: "CPU".localized,
+                text: "The CPU line shows what this launch got: the recompiler (JIT), which is the fast way, or the interpreter, which is much slower. The recompiler needs a JIT enabler (StikJIT, SideStore or LiveContainer); both are set under JIT.\n\nCPU cores (Advanced mode) picks how many cores run a game. Auto decides for each game and device. The Accuracy and Battery saver performance profiles run on one core whatever this says.\n\nMemory shows how much the recompiler reserved. If it couldn't reserve any, the interpreter runs instead.\n\nCPU cores applies the next time you start a game.".localized)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }
@@ -112,9 +112,9 @@ private struct CPUModeRow: View {
 
     private var title: String {
         switch mode {
-        case 2:  return "Recompiler (JIT)"
-        case 1:  return "Interpreter"
-        default: return "Not decided yet"
+        case 2:  return "Recompiler (JIT)".localized
+        case 1:  return "Interpreter".localized
+        default: return "Not decided yet".localized
         }
     }
 

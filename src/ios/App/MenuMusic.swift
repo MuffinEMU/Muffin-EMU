@@ -33,7 +33,7 @@ final class MenuMusic: NSObject, AVAudioPlayerDelegate {
 
         var title: String {
             switch self {
-            case .allSongs: return "All songs"
+            case .allSongs: return "All songs".localized
             case .muffinTheme: return "MuffinEMU Theme"
             case .horizonDrive: return "Horizon Drive"
             case .starfall: return "Starfall"

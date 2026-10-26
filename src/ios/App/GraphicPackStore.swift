@@ -231,7 +231,7 @@ final class GraphicPackStore: NSObject, ObservableObject {
                     self.defaults.set(try? JSONEncoder().encode(release), forKey: Key.latest)
                     self.defaults.set(self.lastChecked, forKey: Key.lastCheck)
                     if force {
-                        self.notice = self.updateAvailable ? nil : Notice(text: "You have the latest community packs.", isError: false)
+                        self.notice = self.updateAvailable ? nil : Notice(text: "You have the latest community packs.".localized, isError: false)
                     }
                 case .failure(let message):
                     // Only a manual check says anything; a background check that can't reach GitHub
@@ -251,11 +251,11 @@ final class GraphicPackStore: NSObject, ObservableObject {
 
     private static func interpretLatestRelease(data: Data?, response: URLResponse?, error: Error?) -> LatestOutcome {
         if let error { return .failure(describe(error)) }
-        guard let http = response as? HTTPURLResponse else { return .failure("GitHub didn't answer.") }
+        guard let http = response as? HTTPURLResponse else { return .failure("GitHub didn't answer.".localized) }
         if http.statusCode == 403 || http.statusCode == 429 {
-            return .failure("GitHub is limiting requests right now. Try again in a little while.")
+            return .failure("GitHub is limiting requests right now. Try again in a little while.".localized)
         }
-        guard http.statusCode == 200, let data else { return .failure("GitHub answered with an error (\(http.statusCode)).") }
+        guard http.statusCode == 200, let data else { return .failure(String(format: "GitHub answered with an error (%d).".localized, http.statusCode)) }
         struct Payload: Decodable {
             struct Asset: Decodable { let name: String; let size: Int64; let browser_download_url: URL }
             let tag_name: String
@@ -265,16 +265,16 @@ final class GraphicPackStore: NSObject, ObservableObject {
             let assets: [Asset]
         }
         guard let payload = try? JSONDecoder().decode(Payload.self, from: data) else {
-            return .failure("GitHub's answer wasn't what was expected.")
+            return .failure("GitHub's answer wasn't what was expected.".localized)
         }
         // The release carries one zip named graphicPacks<number>.zip; fall back to any zip.
         let asset = payload.assets.first { $0.name.hasPrefix("graphicPacks") && $0.name.hasSuffix(".zip") }
             ?? payload.assets.first { $0.name.hasSuffix(".zip") }
         guard let asset, isTrustedDownload(asset.browser_download_url) else {
-            return .failure("The latest release doesn't have a download MuffinEMU can use.")
+            return .failure("The latest release doesn't have a download MuffinEMU can use.".localized)
         }
         guard asset.size > 0, asset.size <= 256 * 1024 * 1024 else {
-            return .failure("The latest release is a different size than graphic packs should be.")
+            return .failure("The latest release is a different size than graphic packs should be.".localized)
         }
         return .success(GraphicPackRelease(tag: payload.tag_name, name: payload.name ?? payload.tag_name,
                                            assetName: asset.name, assetURL: asset.browser_download_url,
@@ -288,18 +288,18 @@ final class GraphicPackStore: NSObject, ObservableObject {
     }
 
     static func describe(_ error: Error) -> String {
-        if let storage = error as? GraphicPackStorage.StorageError { return storage.errorDescription ?? "Not enough free storage." }
-        if let zip = error as? MiniZip.ZipError { return zip.errorDescription ?? "The zip couldn't be read." }
+        if let storage = error as? GraphicPackStorage.StorageError { return storage.errorDescription ?? "Not enough free storage.".localized }
+        if let zip = error as? MiniZip.ZipError { return zip.errorDescription ?? "The zip couldn't be read.".localized }
         if let url = error as? URLError {
             switch url.code {
             case .notConnectedToInternet, .dataNotAllowed, .internationalRoamingOff:
-                return "You're offline. Packs you've already downloaded keep working."
+                return "You're offline. Packs you've already downloaded keep working.".localized
             case .timedOut, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed:
-                return "Couldn't reach GitHub. Check your connection and try again."
+                return "Couldn't reach GitHub. Check your connection and try again.".localized
             case .cancelled:
-                return "Cancelled."
+                return "Cancelled.".localized
             default:
-                return "The download failed (\(url.localizedDescription))."
+                return String(format: "The download failed (%@).".localized, url.localizedDescription)
             }
         }
         return error.localizedDescription
@@ -310,12 +310,12 @@ final class GraphicPackStore: NSObject, ObservableObject {
     func startDownload() {
         guard let release = latest, !isBusy else { return }
         if muffin_gp_title_running() {
-            notice = Notice(text: "A game is running. Close it before downloading graphic packs.", isError: true)
+            notice = Notice(text: "A game is running. Close it before downloading graphic packs.".localized, isError: true)
             return
         }
         // The zip, the extracted copy and a little working room. The exact figure is checked again
         // once the zip is open and its real size is known.
-        do { try GraphicPackStorage.require(release.size * 4, what: "download the graphic packs") } catch {
+        do { try GraphicPackStorage.require(release.size * 4, what: "download the graphic packs".localized) } catch {
             notice = Notice(text: Self.describe(error), isError: true)
             return
         }
@@ -338,7 +338,7 @@ final class GraphicPackStore: NSObject, ObservableObject {
         switch phase {
         case .downloading, .installing, .checking:
             phase = .idle
-            notice = Notice(text: "Cancelled. Your installed packs weren't changed.", isError: false)
+            notice = Notice(text: "Cancelled. Your installed packs weren't changed.".localized, isError: false)
         default:
             break
         }
@@ -382,13 +382,13 @@ final class GraphicPackStore: NSObject, ObservableObject {
                 let attributes = try fm.attributesOfItem(atPath: zip.path)
                 let onDisk = (attributes[.size] as? NSNumber)?.int64Value ?? -1
                 guard onDisk == release.size else {
-                    throw MiniZip.ZipError.corrupt("the download is \(onDisk) bytes, expected \(release.size)")
+                    throw MiniZip.ZipError.corrupt(String(format: "the download is %lld bytes, expected %lld".localized, onDisk, release.size))
                 }
 
                 // 2. It opens as a zip and every entry passes its checksum.
                 let archive = try MiniZip(url: zip)
                 let total = archive.entries.reduce(Int64(0)) { $0 + Int64($1.size) }
-                try GraphicPackStorage.require(total, what: "install the graphic packs")
+                try GraphicPackStorage.require(total, what: "install the graphic packs".localized)
                 try archive.verify(progress: { p in self.setInstallProgress(p * 0.4) }, isCancelled: { self.cancelRequested })
 
                 // 3. Extract next to (not into) the copy in use.
@@ -396,7 +396,7 @@ final class GraphicPackStore: NSObject, ObservableObject {
                 try archive.extract(to: staging, progress: { p in self.setInstallProgress(0.4 + p * 0.55) },
                                     isCancelled: { self.cancelRequested })
                 let packCount = Self.countPacks(in: staging)
-                guard packCount > 0 else { throw MiniZip.ZipError.corrupt("it holds no graphic packs") }
+                guard packCount > 0 else { throw MiniZip.ZipError.corrupt("it holds no graphic packs".localized) }
 
                 // 4. Version files, in the same shape the desktop app writes, plus our own.
                 let info = GraphicPackInstall(tag: release.tag, name: release.name, installedAt: Date(), packCount: packCount)
@@ -418,7 +418,7 @@ final class GraphicPackStore: NSObject, ObservableObject {
                 DispatchQueue.main.async {
                     self.installed = info
                     self.phase = .idle
-                    self.notice = Notice(text: "Installed \(packCount) community packs (\(release.name)). Changes apply the next time you launch a game.", isError: false)
+                    self.notice = Notice(text: String(format: "Installed %d community packs (%@). Changes apply the next time you launch a game.".localized, packCount, release.name), isError: false)
                     self.reload()
                 }
             } catch is CancellationError {
@@ -432,7 +432,7 @@ final class GraphicPackStore: NSObject, ObservableObject {
                 let message = Self.describe(error)
                 DispatchQueue.main.async {
                     self.phase = .idle
-                    self.notice = Notice(text: "\(message) Your installed packs weren't changed.", isError: true)
+                    self.notice = Notice(text: String(format: "%@ Your installed packs weren't changed.".localized, message), isError: true)
                 }
             }
         }
@@ -518,10 +518,10 @@ final class GraphicPackStore: NSObject, ObservableObject {
 
                 if isZip {
                     let archive = try MiniZip(url: url)
-                    try GraphicPackStorage.require(archive.entries.reduce(Int64(0)) { $0 + Int64($1.size) } * 2, what: "import this zip")
+                    try GraphicPackStorage.require(archive.entries.reduce(Int64(0)) { $0 + Int64($1.size) } * 2, what: "import this zip".localized)
                     try archive.extract(to: staged)
                 } else {
-                    try GraphicPackStorage.require(Self.folderSize(url) * 2, what: "import this folder")
+                    try GraphicPackStorage.require(Self.folderSize(url) * 2, what: "import this folder".localized)
                     try fm.copyItem(at: url, to: staged)
                 }
 
@@ -563,8 +563,8 @@ final class GraphicPackStore: NSObject, ObservableObject {
 
         var errorDescription: String? {
             switch self {
-            case .noPacks: return "No graphic pack found. A pack is a folder with a rules.txt file in it; pick that folder, a folder of packs, or a zip of either."
-            case .gameRunning: return "A game is running. Close it before importing packs."
+            case .noPacks: return "No graphic pack found. A pack is a folder with a rules.txt file in it; pick that folder, a folder of packs, or a zip of either.".localized
+            case .gameRunning: return "A game is running. Close it before importing packs.".localized
             }
         }
     }
@@ -605,7 +605,7 @@ extension GraphicPackStore: URLSessionDownloadDelegate {
         if let http = downloadTask.response as? HTTPURLResponse, http.statusCode != 200 {
             DispatchQueue.main.async {
                 self.phase = .idle
-                self.notice = Notice(text: "GitHub answered the download with an error (\(http.statusCode)).", isError: true)
+                self.notice = Notice(text: String(format: "GitHub answered the download with an error (%d).".localized, http.statusCode), isError: true)
             }
             return
         }
@@ -616,7 +616,7 @@ extension GraphicPackStore: URLSessionDownloadDelegate {
         } catch {
             DispatchQueue.main.async {
                 self.phase = .idle
-                self.notice = Notice(text: "The download finished but couldn't be saved: \(error.localizedDescription)", isError: true)
+                self.notice = Notice(text: String(format: "The download finished but couldn't be saved: %@".localized, error.localizedDescription), isError: true)
             }
             return
         }
@@ -633,7 +633,7 @@ extension GraphicPackStore: URLSessionDownloadDelegate {
         DispatchQueue.main.async {
             if case .downloading = self.phase { self.phase = .idle }
             if !cancelled && !self.cancelRequested {
-                self.notice = Notice(text: "\(Self.describe(error)) Your installed packs weren't changed.", isError: true)
+                self.notice = Notice(text: String(format: "%@ Your installed packs weren't changed.".localized, Self.describe(error)), isError: true)
             }
         }
     }

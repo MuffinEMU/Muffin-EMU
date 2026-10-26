@@ -42,8 +42,8 @@ struct ExternalDisplaySettingsSection: View {
                         Text("GamePad screen on the external display")
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
                         Text(swapScreens
-                             ? "On: the external display shows the GamePad screen."
-                             : "Off: the external display shows the TV screen.")
+                             ? "On: the external display shows the GamePad screen.".localized
+                             : "Off: the external display shows the TV screen.".localized)
                             .font(.system(size: 12))
                             .foregroundColor(MuffinTheme.secondaryText)
                     }
@@ -89,27 +89,27 @@ struct ExternalDisplaySettingsSection: View {
                 .tint(MuffinTheme.accentText)
             }
         } header: {
-            SettingsSectionHeader("External Display", icon: "tv", accent: .io)
+            SettingsSectionHeader("External Display".localized, icon: "tv", accent: .io)
         } footer: {
             InfoButton.footer(
-                "Off until you turn it on. It needs a second screen that MuffinEMU can open a window on; AirPlay mirroring doesn't count.",
-                title: "External Display",
-                text: "The external display is off by default; turn it on before connecting a display. Then choose which Wii U screen it shows, and what this device shows next to it: the other screen, the same screen, or only the controls. It is experimental and hasn't been tested on much hardware.\n\nThe HOME menu has the same settings during a game.")
+                "Off until you turn it on. It needs a second screen that MuffinEMU can open a window on; AirPlay mirroring doesn't count.".localized,
+                title: "External Display".localized,
+                text: "The external display is off by default; turn it on before connecting a display. Then choose which Wii U screen it shows, and what this device shows next to it: the other screen, the same screen, or only the controls. It is experimental and hasn't been tested on much hardware.\n\nThe HOME menu has the same settings during a game.".localized)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }
 
     /// What the choice above does with the swap setting as it is now.
     private var deviceShowsCaption: String {
-        let tvScreen = swapScreens ? "GamePad screen" : "TV screen"
-        let otherScreen = swapScreens ? "TV screen" : "GamePad screen"
+        let tvScreen = swapScreens ? "GamePad screen".localized : "TV screen".localized
+        let otherScreen = swapScreens ? "TV screen".localized : "GamePad screen".localized
         switch deviceShows {
         case .otherScreen:
-            return "The external display shows the \(tvScreen) and this device shows the \(otherScreen)."
+            return String(format: "The external display shows the %@ and this device shows the %@.".localized, tvScreen, otherScreen)
         case .sameScreen:
-            return "Both show the \(tvScreen)."
+            return String(format: "Both show the %@.".localized, tvScreen)
         case .nothing:
-            return "The external display shows the \(tvScreen). This device shows only the on-screen controls on black."
+            return String(format: "The external display shows the %@. This device shows only the on-screen controls on black.".localized, tvScreen)
         }
     }
 }

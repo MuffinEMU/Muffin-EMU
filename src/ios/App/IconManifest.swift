@@ -42,7 +42,7 @@ enum IconStyle: String, CaseIterable, Identifiable {
     case revamped, classic
 
     var id: String { rawValue }
-    var title: String { self == .revamped ? "Revamped" : "Classic" }
+    var title: String { self == .revamped ? "Revamped".localized : "Classic".localized }
 
     static let defaultsKey = "muffin.icons.style"
     static var current: IconStyle {

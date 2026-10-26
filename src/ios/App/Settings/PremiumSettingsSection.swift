@@ -69,7 +69,7 @@ struct PremiumSettingsSection: View {
                                 premiumCodeInput = ""
                                 premiumCodeError = nil
                             } else {
-                                premiumCodeError = "That code didn't work."
+                                premiumCodeError = "That code didn't work.".localized
                             }
                         }
                     } label: {
@@ -93,9 +93,9 @@ struct PremiumSettingsSection: View {
                 .padding(.vertical, 4)
             }
         } header: {
-            SettingsSectionHeader("Premium", icon: "sparkles", accent: .identity)
+            SettingsSectionHeader("Premium".localized, icon: "sparkles", accent: .identity)
         } footer: {
-            InfoButton.footer("Unlocks the pro app icons. Everything else in MuffinEMU is free.")
+            InfoButton.footer("Unlocks the pro app icons. Everything else in MuffinEMU is free.".localized)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }

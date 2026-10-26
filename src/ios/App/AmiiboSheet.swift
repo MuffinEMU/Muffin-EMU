@@ -38,9 +38,9 @@ enum AmiiboStore {
 
         var errorDescription: String? {
             switch self {
-            case .unreadable: return "MuffinEMU couldn't read that file."
-            case .tooLarge: return "That file is too big to be an amiibo dump (they are about 540 bytes)."
-            case .writeFailed: return "MuffinEMU couldn't save a copy in Documents/amiibo."
+            case .unreadable: return "MuffinEMU couldn't read that file.".localized
+            case .tooLarge: return "That file is too big to be an amiibo dump (they are about 540 bytes).".localized
+            case .writeFailed: return "MuffinEMU couldn't save a copy in Documents/amiibo.".localized
             }
         }
     }
@@ -176,7 +176,7 @@ struct AmiiboSheet: View {
             return
         }
         errorMessage = nil
-        onTapped("Scanned \(file.deletingPathExtension().lastPathComponent).")
+        onTapped(String(format: "Scanned %@.".localized, file.deletingPathExtension().lastPathComponent))
     }
 
     private func delete(at offsets: IndexSet) {

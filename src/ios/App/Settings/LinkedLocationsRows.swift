@@ -46,7 +46,7 @@ struct LinkedLocationsRows: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: { location in
-            Text("\"\(location.name)\" stops appearing in your library. Nothing on the drive or in the folder is deleted. Your saves and options are kept.")
+            Text(String(format: "\"%@\" stops appearing in your library. Nothing on the drive or in the folder is deleted. Your saves and options are kept.".localized, location.name))
         }
         .alert("Couldn't link that", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK", role: .cancel) {}
@@ -77,10 +77,10 @@ struct LinkedLocationsRows: View {
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
                     .buttonStyle(.borderless)
                     .frame(minHeight: 44)
-                    .accessibilityLabel("Unlink \(location.name)")
+                    .accessibilityLabel(String(format: "Unlink %@".localized, location.name))
             }
             if !location.hidden.isEmpty {
-                Button("Show \(location.hidden.count) removed game\(location.hidden.count == 1 ? "" : "s") again") {
+                Button(location.hidden.count == 1 ? "Show 1 removed game again".localized : String(format: "Show %d removed games again".localized, location.hidden.count)) {
                     Task { await gameManager.restoreHiddenGames(in: location.id) }
                 }
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
@@ -92,7 +92,7 @@ struct LinkedLocationsRows: View {
     private func statusLine(for location: LinkedLocation, connected: Bool) -> String {
         if !connected { return ExternalLibrary.unavailableMessage }
         let count = location.games.count
-        return count == 1 ? "Connected, 1 game" : "Connected, \(count) games"
+        return count == 1 ? "Connected, 1 game".localized : String(format: "Connected, %d games".localized, count)
     }
 
     private func beginLink(contentTypes: [UTType]) {

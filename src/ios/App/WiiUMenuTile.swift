@@ -67,9 +67,9 @@ struct WiiUMenuTile: View {
     private func subtitle(_ entry: GameMetadata) -> String {
         let missing = store.status.missingRequired
         if missing.isEmpty {
-            return "\(entry.region ?? "System") - your games appear in it"
+            return String(format: "%@ - your games appear in it".localized, entry.region ?? "System".localized)
         }
-        return "Missing files - tap for details"
+        return "Missing files - tap for details".localized
     }
 
     private func attemptLaunch(_ entry: GameMetadata) {
@@ -162,12 +162,11 @@ struct WiiUMenuCard: View {
 private extension View {
     /// The "may not start" warning shared by the bar and the card.
     func wiiuMenuPreflightAlert(isPresented: Binding<Bool>, missing: [String], launchAnyway: @escaping () -> Void) -> some View {
-        alert("The Wii U Menu may not start", isPresented: isPresented) {
+        alert("The Wii U Menu may not start".localized, isPresented: isPresented) {
             Button("Launch anyway", action: launchAnyway)
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("Missing: " + missing.joined(separator: ", ")
-                 + ".\n\nImport them in Settings > Wii U Menu. Without them the Menu is likely to crash a few seconds in.")
+            Text(String(format: "Missing: %@.\n\nImport them in Settings > Wii U Menu. Without them the Menu is likely to crash a few seconds in.".localized, missing.joined(separator: ", ")))
         }
     }
 }

@@ -21,20 +21,20 @@ enum PreviewLayoutPreset: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .native:      return "Native (this device)"
+        case .native:      return "Native (this device)".localized
         case .iPadPro2020: return "iPad Pro 12.9\" (2020)"
-        case .compact:     return "Compact"
+        case .compact:     return "Compact".localized
         }
     }
 
     var summary: String {
         switch self {
         case .native:
-            return "This device's own layout."
+            return "This device's own layout.".localized
         case .iPadPro2020:
-            return "The layout from a 12.9-inch iPad Pro, fitted to your screen."
+            return "The layout from a 12.9-inch iPad Pro, fitted to your screen.".localized
         case .compact:
-            return "70% of life-size: smaller buttons, more of the picture."
+            return "70% of life-size: smaller buttons, more of the picture.".localized
         }
     }
 

@@ -65,14 +65,14 @@ final class AudioRecorder: ObservableObject {
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         } catch {
-            failureMessage = "Couldn't create the Recordings folder."
+            failureMessage = "Couldn't create the Recordings folder.".localized
             return
         }
         let stamp = Self.fileStamp.string(from: Date())
         let url = folder.appendingPathComponent("\(Self.safeFileName(gameName)) \(stamp).m4a")
         let started = url.path.withCString { cemu_bridge_audio_record_start($0) }
         guard started else {
-            failureMessage = "Couldn't start recording."
+            failureMessage = "Couldn't start recording.".localized
             return
         }
         self.url = url
@@ -117,7 +117,7 @@ final class AudioRecorder: ObservableObject {
                     self.finished = Finished(url: url)
                 } else {
                     try? FileManager.default.removeItem(at: url)
-                    self.failureMessage = "Nothing was recorded. The game didn't play any sound."
+                    self.failureMessage = "Nothing was recorded. The game didn't play any sound.".localized
                 }
                 if backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(backgroundTask) }
             }
@@ -185,21 +185,27 @@ struct RecordingIndicator: View {
     var body: some View {
         HStack(spacing: 6) {
             if screenRecorder.isRecording {
-                pill(kind: "screen", seconds: screenRecorder.elapsed)
+                pill(isScreen: true, seconds: screenRecorder.elapsed)
             }
             if recorder.isRecording {
-                pill(kind: "audio", seconds: recorder.elapsed)
+                pill(isScreen: false, seconds: recorder.elapsed)
             }
         }
         .allowsHitTesting(false)
     }
 
-    private func pill(kind: String, seconds: Int) -> some View {
+    private func pill(isScreen: Bool, seconds: Int) -> some View {
+        let label = isScreen
+            ? String(format: "Recording screen %@".localized, Self.clock(seconds))
+            : String(format: "Recording audio %@".localized, Self.clock(seconds))
+        let spoken = isScreen
+            ? String(format: "Recording screen, %d seconds".localized, seconds)
+            : String(format: "Recording audio, %d seconds".localized, seconds)
         HStack(spacing: 6) {
             Circle()
                 .fill(Color.white)
                 .frame(width: 7, height: 7)
-            Text("Recording \(kind) \(Self.clock(seconds))")
+            Text(verbatim: label)
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .monospacedDigit()
                 .foregroundColor(.white)
@@ -208,7 +214,7 @@ struct RecordingIndicator: View {
         .padding(.vertical, 5)
         .background(Capsule().fill(Color.red))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Recording \(kind), \(seconds) seconds")
+        .accessibilityLabel(Text(verbatim: spoken))
     }
 
     static func clock(_ seconds: Int) -> String {
@@ -232,7 +238,7 @@ struct AudioRecordingNoticeModifier: ViewModifier {
 
     @ViewBuilder private var notice: some View {
         if let finished = recorder.finished {
-            card(message: "Recording saved to Files, in the Recordings folder.") {
+            card(message: "Recording saved to Files, in the Recordings folder.".localized) {
                 Button("Share") {
                     sharing = finished
                     recorder.finished = nil

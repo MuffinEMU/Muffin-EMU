@@ -134,33 +134,33 @@ struct GraphicPack: Identifiable, Hashable {
 
     func support(on api: RendererAPI) -> Support {
         if !vendorFilter.isEmpty && vendorFilter != "apple" {
-            return .inactive("Made for a different kind of graphics chip, so it never turns on here.")
+            return .inactive("Made for a different kind of graphics chip, so it never turns on here.".localized)
         }
         switch rendererFilter {
         case "metal" where api != .metal:
-            return .inactive("Only works with the Metal renderer. Switch the renderer in Settings > Graphics.")
+            return .inactive("Only works with the Metal renderer. Switch the renderer in Settings > Graphics.".localized)
         case "vulkan" where api != .vulkan:
-            return .inactive("Only works with the Vulkan renderer. Switch the renderer in Settings > Graphics.")
+            return .inactive("Only works with the Vulkan renderer. Switch the renderer in Settings > Graphics.".localized)
         case "opengl":
-            return .inactive("Made for OpenGL, which MuffinEMU doesn't use.")
+            return .inactive("Made for OpenGL, which MuffinEMU doesn't use.".localized)
         default:
             break
         }
         switch api {
         case .metal:
             if hasGLSLShaders && !hasMetalShaders {
-                return .partial("Replaces shaders that are written for OpenGL and Vulkan. Metal can't use them, so those changes are skipped and the picture can look wrong. The pack's other changes still apply.")
+                return .partial("Replaces shaders that are written for OpenGL and Vulkan. Metal can't use them, so those changes are skipped and the picture can look wrong. The pack's other changes still apply.".localized)
             }
             if hasGLSLOutputShaders && !hasMetalShaders {
-                return .partial("Adds an output or scaling shader written for OpenGL and Vulkan. Metal can't use it, so that part is skipped.")
+                return .partial("Adds an output or scaling shader written for OpenGL and Vulkan. Metal can't use it, so that part is skipped.".localized)
             }
             return .full
         case .vulkan:
             if hasMetalShaders && !hasGLSLShaders {
-                return .partial("Its shaders are written for Metal only, so the Vulkan renderer skips them.")
+                return .partial("Its shaders are written for Metal only, so the Vulkan renderer skips them.".localized)
             }
             if hasGLSLShaders && version <= 3 {
-                return .partial("Its shaders predate Vulkan support, so the Vulkan renderer skips them.")
+                return .partial("Its shaders predate Vulkan support, so the Vulkan renderer skips them.".localized)
             }
             return .full
         }
@@ -305,10 +305,12 @@ struct GraphicPackDeviceProfile: Equatable {
 
     var summary: String {
         let tall = suggestedMaxHeight
-        let label = tall == 720 ? "the Wii U's own 720p" : "\(tall)p"
-        var text = "For this \(isPad ? "iPad" : "iPhone") we suggest staying at \(label) or lower."
-        if lowPowerMode { text += " Low Power Mode is on, so the suggestion is one step lower." }
-        text += " This comes from the graphics chip, memory and screen, not a speed test, so treat it as a starting point."
+        let label = tall == 720 ? "the Wii U's own 720p".localized : String(format: "%dp".localized, tall)
+        var text = isPad
+            ? String(format: "For this iPad we suggest staying at %@ or lower.".localized, label)
+            : String(format: "For this iPhone we suggest staying at %@ or lower.".localized, label)
+        if lowPowerMode { text += " " + "Low Power Mode is on, so the suggestion is one step lower.".localized }
+        text += " " + "This comes from the graphics chip, memory and screen, not a speed test, so treat it as a starting point.".localized
         return text
     }
 
@@ -392,7 +394,7 @@ enum GraphicPackStorage {
         var errorDescription: String? {
             switch self {
             case .notEnough(let needed, let free, let what):
-                return "Not enough free storage to \(what). It needs about \(GraphicPackStorage.describe(needed)) and this device has \(GraphicPackStorage.describe(free)) free. Free some space and try again."
+                return String(format: "Not enough free storage to %@. It needs about %@ and this device has %@ free. Free some space and try again.".localized, what, GraphicPackStorage.describe(needed), GraphicPackStorage.describe(free))
             }
         }
     }

@@ -19,7 +19,7 @@ enum HeatDisplayMode: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .word:       return "Word"
+        case .word:       return "Word".localized
         case .celsius:    return "°C"
         case .fahrenheit: return "°F"
         }
@@ -56,11 +56,11 @@ enum HeatBand: Int, Comparable {
 
     var word: String {
         switch self {
-        case .cool:         return "Cool"
-        case .fair:         return "Fair"
-        case .warm:         return "Warm"
-        case .hot:          return "Hot"
-        case .extremelyHot: return "Extremely Hot"
+        case .cool:         return "Cool".localized
+        case .fair:         return "Fair".localized
+        case .warm:         return "Warm".localized
+        case .hot:          return "Hot".localized
+        case .extremelyHot: return "Extremely Hot".localized
         }
     }
 
@@ -189,6 +189,6 @@ struct HeatStatusBadge: View {
             }
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Device heat: \(band.word)")
+        .accessibilityLabel(String(format: "Device heat: %@".localized, band.word))
     }
 }

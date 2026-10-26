@@ -17,9 +17,9 @@ enum AudioChannelSetting: Int, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .mono:     return "Mono"
-        case .stereo:   return "Stereo"
-        case .surround: return "Surround"
+        case .mono:     return "Mono".localized
+        case .stereo:   return "Stereo".localized
+        case .surround: return "Surround".localized
         }
     }
 }
@@ -95,11 +95,11 @@ struct AudioSettingsSection: View {
             padGroup
             microphoneGroup
         } header: {
-            SettingsSectionHeader("Audio", icon: "speaker.wave.2", accent: .io)
+            SettingsSectionHeader("Audio".localized, icon: "speaker.wave.2", accent: .io)
         } footer: {
             InfoButton.footer(
-                "TV and GamePad audio have their own volume and channel layout. GamePad audio plays through this device's speaker or headphones. Use the microphone to give games your real voice and sounds through the GamePad mic; otherwise the in-game Blow button covers games that ask you to blow.",
-                title: "Audio",
+                "TV and GamePad audio have their own volume and channel layout. GamePad audio plays through this device's speaker or headphones. Use the microphone to give games your real voice and sounds through the GamePad mic; otherwise the in-game Blow button covers games that ask you to blow.".localized,
+                title: "Audio".localized,
                 text: fullText)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
@@ -116,7 +116,7 @@ struct AudioSettingsSection: View {
         }
 
         if tvEnabled {
-            volumeRow(label: "TV volume", volume: $tvVolume) { newValue in
+            volumeRow(label: "TV volume".localized, volume: $tvVolume) { newValue in
                 cemu_bridge_set_tv_volume(Int32(newValue))
             }
             // Channel layout is Advanced mode only (see AdvancedSettings).
@@ -147,7 +147,7 @@ struct AudioSettingsSection: View {
         }
 
         if padEnabled {
-            volumeRow(label: "GamePad volume", volume: $padVolume) { newValue in
+            volumeRow(label: "GamePad volume".localized, volume: $padVolume) { newValue in
                 cemu_bridge_set_pad_volume(Int32(newValue))
             }
             // Channel layout is Advanced mode only (see AdvancedSettings).
@@ -174,7 +174,7 @@ struct AudioSettingsSection: View {
     // while a game has the mic open, and the Blow button is hidden.
     @ViewBuilder private var microphoneGroup: some View {
         Toggle(isOn: $microphoneEnabled) {
-            Text("Use \(deviceName) microphone")
+            Text(String(format: "Use %@ microphone".localized, deviceName))
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.accentText)
@@ -205,11 +205,11 @@ struct AudioSettingsSection: View {
             Button("Open Settings") { MicrophoneAccess.openSystemSettings() }
             Button("Not Now", role: .cancel) {}
         } message: {
-            Text("MuffinEMU can't use your \(deviceName)'s microphone until you allow it in iOS Settings. Until then, games use the Blow button in the top bar instead.")
+            Text(String(format: "MuffinEMU can't use your %@'s microphone until you allow it in iOS Settings. Until then, games use the Blow button in the top bar instead.".localized, deviceName))
         }
 
         if microphoneEnabled {
-            volumeRow(label: "Microphone volume", volume: $inputVolume) { newValue in
+            volumeRow(label: "Microphone volume".localized, volume: $inputVolume) { newValue in
                 cemu_bridge_set_input_volume(Int32(newValue))
             }
         }
@@ -223,7 +223,7 @@ struct AudioSettingsSection: View {
                 Text(label)
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                 Spacer()
-                Text("\(volume.wrappedValue)%")
+                Text(String(format: "%d%%".localized, volume.wrappedValue))
                     .font(.system(size: 13, design: .monospaced))
                     .foregroundColor(MuffinTheme.secondaryText)
             }
@@ -242,6 +242,6 @@ struct AudioSettingsSection: View {
     }
 
     private var fullText: String {
-        "TV and GamePad audio are separate tracks with their own on/off, volume and channel layout.\n\nChannels: Mono mixes everything to one channel, Stereo splits left and right (default), Surround asks the game for more channels; most games only use stereo. Turning TV or GamePad audio on or off, and changing channels, applies the next time you start a game.\n\nGamePad audio plays whatever the game sends to the GamePad speaker. Many games send nothing different from the TV mix.\n\nUse microphone feeds your device's real microphone to games that ask for the GamePad mic, while the game has the mic open. iOS asks for permission the first time you turn it on; if you say no, it switches back off. While it's on, the in-game Blow button is hidden. When it's off, games still see a GamePad mic, but it only hears the Blow button (a simulated puff of air) and iOS never asks for permission. Microphone volume (50 is normal, 100 is twice as loud) applies the next time a game opens the mic."
+        "TV and GamePad audio are separate tracks with their own on/off, volume and channel layout.\n\nChannels: Mono mixes everything to one channel, Stereo splits left and right (default), Surround asks the game for more channels; most games only use stereo. Turning TV or GamePad audio on or off, and changing channels, applies the next time you start a game.\n\nGamePad audio plays whatever the game sends to the GamePad speaker. Many games send nothing different from the TV mix.\n\nUse microphone feeds your device's real microphone to games that ask for the GamePad mic, while the game has the mic open. iOS asks for permission the first time you turn it on; if you say no, it switches back off. While it's on, the in-game Blow button is hidden. When it's off, games still see a GamePad mic, but it only hears the Blow button (a simulated puff of air) and iOS never asks for permission. Microphone volume (50 is normal, 100 is twice as loud) applies the next time a game opens the mic.".localized
     }
 }

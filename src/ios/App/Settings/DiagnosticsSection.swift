@@ -33,13 +33,13 @@ struct DeviceReportSection: View {
                 UIPasteboard.general.string = deviceReport
                 deviceReportCopied = true
             } label: {
-                Label(deviceReportCopied ? "Copied" : "Copy device report",
+                Label(deviceReportCopied ? "Copied".localized : "Copy device report".localized,
                       systemImage: deviceReportCopied ? "checkmark" : "doc.on.doc")
             }
         } header: {
-            SettingsSectionHeader("This Device", icon: "iphone", accent: .system)
+            SettingsSectionHeader("This Device".localized, icon: "iphone", accent: .system)
         } footer: {
-            InfoButton.footer("Send this with any bug report. It lists your chip, memory and app build.")
+            InfoButton.footer("Send this with any bug report. It lists your chip, memory and app build.".localized)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }
@@ -98,13 +98,13 @@ struct DiagnosticsSection: View {
                 .tint(MuffinTheme.accentText)
             }
         } header: {
-            SettingsSectionHeader("Diagnostics", icon: "stethoscope", accent: .system)
+            SettingsSectionHeader("Diagnostics".localized, icon: "stethoscope", accent: .system)
         } footer: {
             InfoButton.footer(
                 // Show launch log is Advanced mode only, so Basic doesn't describe it.
-                advanced ? "The launch log shows boot progress and replaces the intro while it's on." : "The intro plays while a game starts.",
-                title: "Diagnostics",
-                text: "The intro plays during the boot. If you turn on the launch log it takes the screen instead, so you can see timestamped boot steps when a game starts but stays black.")
+                advanced ? "The launch log shows boot progress and replaces the intro while it's on.".localized : "The intro plays while a game starts.".localized,
+                title: "Diagnostics".localized,
+                text: "The intro plays during the boot. If you turn on the launch log it takes the screen instead, so you can see timestamped boot steps when a game starts but stays black.".localized)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }

@@ -17,8 +17,8 @@ struct LibrarySettingsSection: View {
 
     var body: some View {
         Section {
-            SettingsRow(label: "Games", value: "\(gameManager.games.count)", icon: "square.grid.2x2")
-            SettingsRow(label: "Favourites", value: "\(gameManager.favorites.count)", icon: "heart")
+            SettingsRow(label: "Games".localized, value: "\(gameManager.games.count)", icon: "square.grid.2x2")
+            SettingsRow(label: "Favourites".localized, value: "\(gameManager.favorites.count)", icon: "heart")
             Picker(selection: Binding(get: { CoverStylePreference(stored: coverRaw).rawValue }, set: { coverRaw = $0 })) {
                 ForEach(CoverStylePreference.allCases) { mode in Text(mode.title).tag(mode.rawValue) }
             } label: {
@@ -39,7 +39,7 @@ struct LibrarySettingsSection: View {
                     Label("Card size", systemImage: "arrow.up.left.and.arrow.down.right")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Spacer()
-                    Text("\(Int((cardSize * 100).rounded()))%")
+                    Text(String(format: "%d%%".localized, Int((cardSize * 100).rounded())))
                         .font(.system(size: 14, weight: .medium, design: .rounded))
                         .monospacedDigit()
                     Button("Reset") { cardSize = LibraryCardStyle.sizeDefault }
@@ -103,7 +103,7 @@ struct LibrarySettingsSection: View {
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
         } header: {
-            SettingsSectionHeader("Library", icon: "books.vertical", accent: .content)
+            SettingsSectionHeader("Library".localized, icon: "books.vertical", accent: .content)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }

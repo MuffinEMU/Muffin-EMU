@@ -18,7 +18,7 @@ struct SettingsRow: View {
         // Classic UI: the v2.0 row - system font, no leading glyph, no height floor.
         if UIStyle.isClassic {
             HStack {
-                Text(label)
+                Text(verbatim: label.localized)
                 Spacer(minLength: 12)
                 Text(value)
                     .foregroundColor(.secondary)
@@ -38,7 +38,7 @@ struct SettingsRow: View {
                     .frame(width: 20)
             }
 
-            Text(label)
+            Text(verbatim: label.localized)
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
 
             Spacer(minLength: 12)
@@ -75,10 +75,10 @@ struct DestructiveSettingsLabel: View {
         // destructive role's tint. v2.0 had that bug; reproducing a bug is not what
         // "classic look" means.
         if UIStyle.isClassic {
-            Label(title, systemImage: systemImage)
+            Label(title.localized, systemImage: systemImage)
                 .foregroundColor(.red)
         } else {
-            Label(title, systemImage: systemImage)
+            Label(title.localized, systemImage: systemImage)
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
                 .foregroundColor(.red)
         }

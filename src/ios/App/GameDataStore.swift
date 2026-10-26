@@ -51,9 +51,9 @@ struct GameTDBControl: Codable, Hashable {
         case "wheel": return "Wii Wheel"
         case "zapper": return "Wii Zapper"
         case "mii": return "Mii"
-        case "keyboard": return "Keyboard"
-        case "microphone": return "Microphone"
-        case "camera": return "Camera"
+        case "keyboard": return "Keyboard".localized
+        case "microphone": return "Microphone".localized
+        case "camera": return "Camera".localized
         default: return type.capitalized
         }
     }
@@ -117,18 +117,18 @@ struct GameMatch: Codable, Equatable {
 
     var methodText: String {
         switch method {
-        case "titleId": return "Exact title ID"
-        case "productCode": return "Product code"
-        case "title": return "Title and region"
-        case "manual": return "Chosen by you"
+        case "titleId": return "Exact title ID".localized
+        case "productCode": return "Product code".localized
+        case "title": return "Title and region".localized
+        case "manual": return "Chosen by you".localized
         default: return method
         }
     }
     var confidenceText: String {
         switch confidence {
-        case 0.9...: return "High"
-        case 0.75..<0.9: return "Good"
-        default: return "Low"
+        case 0.9...: return "High".localized
+        case 0.75..<0.9: return "Good".localized
+        default: return "Low".localized
         }
     }
 }
@@ -304,7 +304,7 @@ final class GameDataStore: ObservableObject {
         isScraping = true
         scrapeError = nil
         lastSummary = nil
-        phase = "Starting"
+        phase = "Starting".localized
         fraction = 0
         lock.lock(); cancelRequested = false; lock.unlock()
         Task.detached(priority: .utility) { [weak self] in
@@ -321,7 +321,7 @@ final class GameDataStore: ObservableObject {
             } catch {
                 await MainActor.run {
                     self.isScraping = false
-                    self.scrapeError = error is CancellationError ? "Cancelled." : error.localizedDescription
+                    self.scrapeError = error is CancellationError ? "Cancelled.".localized : error.localizedDescription
                 }
             }
         }
@@ -335,7 +335,7 @@ final class GameDataStore: ObservableObject {
 
     private func runScrape(targets: [ScrapeTarget]) async throws -> String {
         let fm = FileManager.default
-        report("Downloading GameTDB database", 0.02)
+        report("Downloading GameTDB database".localized, 0.02)
         var request = URLRequest(url: Self.databaseURL)
         request.setValue("MuffinEMU", forHTTPHeaderField: "User-Agent")
         request.timeoutInterval = 60
@@ -344,31 +344,31 @@ final class GameDataStore: ObservableObject {
         if let http = response as? HTTPURLResponse, http.statusCode != 200 { throw ArtPackError.http(http.statusCode) }
         if isCancelled { throw CancellationError() }
 
-        report("Unpacking", 0.2)
+        report("Unpacking".localized, 0.2)
         let archive = try MiniZip(url: tmp)
         guard let entry = archive.entries.first(where: { ($0.name as NSString).lastPathComponent == "wiiutdb.xml" }) else {
-            throw ArtPackError.failed("The GameTDB download didn't contain wiiutdb.xml.")
+            throw ArtPackError.failed("The GameTDB download didn't contain wiiutdb.xml.".localized)
         }
         let xmlURL = fm.temporaryDirectory.appendingPathComponent("wiiutdb-\(UUID().uuidString).xml")
         try archive.read(entry).write(to: xmlURL, options: .atomic)
         defer { try? fm.removeItem(at: xmlURL) }
         if isCancelled { throw CancellationError() }
 
-        report("Reading entries", 0.25)
+        report("Reading entries".localized, 0.25)
         let matcher = GameTDBMatcher(targets: targets)
         let reader = WiiUTDBReader { [weak self] game, count, total in
             matcher.consume(game)
-            if count % 100 == 0 { self?.report("Reading entries", 0.25 + 0.7 * Double(count) / Double(max(total, 1))) }
+            if count % 100 == 0 { self?.report("Reading entries".localized, 0.25 + 0.7 * Double(count) / Double(max(total, 1))) }
         }
-        guard let stream = InputStream(url: xmlURL) else { throw ArtPackError.failed("Couldn't open the GameTDB database.") }
+        guard let stream = InputStream(url: xmlURL) else { throw ArtPackError.failed("Couldn't open the GameTDB database.".localized) }
         let parser = XMLParser(stream: stream)
         parser.delegate = reader
         reader.shouldAbort = { [weak self] in self?.isCancelled ?? false }
         let ok = parser.parse()
         if isCancelled { throw CancellationError() }
-        if !ok && reader.gamesRead == 0 { throw ArtPackError.failed("The GameTDB database couldn't be read.") }
+        if !ok && reader.gamesRead == 0 { throw ArtPackError.failed("The GameTDB database couldn't be read.".localized) }
 
-        report("Saving", 0.97)
+        report("Saving".localized, 0.97)
         let result = matcher.finish()
         var newFile = GameDataFile()
         newFile.scrapedAt = Date()
@@ -384,7 +384,7 @@ final class GameDataStore: ObservableObject {
         await MainActor.run { self.lastScrape = newFile.scrapedAt }
 
         let matched = result.matches.count
-        return "Matched \(matched) of \(targets.count) games from \(reader.gamesRead) database entries."
+        return String(format: "Matched %d of %d games from %d database entries.".localized, matched, targets.count, reader.gamesRead)
     }
 }
 

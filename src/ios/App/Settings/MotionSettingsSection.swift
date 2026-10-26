@@ -71,13 +71,13 @@ struct MotionSettingsSection: View {
     private var statusText: String {
         switch Int(cemu_bridge_motion_status()) {
         case MotionSettings.statusDevice:
-            return "Using this device's gyroscope and accelerometer."
+            return "Using this device's gyroscope and accelerometer.".localized
         case MotionSettings.statusController:
-            return "Using a connected controller's motion sensors."
+            return "Using a connected controller's motion sensors.".localized
         case MotionSettings.statusUnavailable:
-            return "This device has no motion sensors, so the GamePad will stay still."
+            return "This device has no motion sensors, so the GamePad will stay still.".localized
         default:
-            return "Motion is off. Games see a GamePad that never moves."
+            return "Motion is off. Games see a GamePad that never moves.".localized
         }
     }
 
@@ -88,8 +88,8 @@ struct MotionSettingsSection: View {
                     Text("Motion aiming")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text(motionEnabled
-                         ? "Tilt and turn the device to aim, like the GamePad."
-                         : "Stick only. The GamePad never moves.")
+                         ? "Tilt and turn the device to aim, like the GamePad.".localized
+                         : "Stick only. The GamePad never moves.".localized)
                         .font(.system(size: 12))
                         .foregroundColor(MuffinTheme.secondaryText)
                 }
@@ -101,11 +101,11 @@ struct MotionSettingsSection: View {
                 motionOptions
             }
         } header: {
-            SettingsSectionHeader("Motion & Aiming", icon: "gyroscope", accent: .io)
+            SettingsSectionHeader("Motion & Aiming".localized, icon: "gyroscope", accent: .io)
         } footer: {
             InfoButton.footer(
-                "For games that aim with the GamePad's gyro, such as Splatoon.",
-                title: "Motion & Aiming",
+                "For games that aim with the GamePad's gyro, such as Splatoon.".localized,
+                title: "Motion & Aiming".localized,
                 text: fullText)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
@@ -149,8 +149,8 @@ struct MotionSettingsSection: View {
                     .onChange(of: logValues) { _ in MotionSettings.applyToBridge() }
             }
             Text(advanced
-                 ? "Leave these off unless aiming turns the wrong way. The log writes one line a second to the engine log, to report when something looks off."
-                 : "Leave these off unless aiming turns the wrong way.")
+                 ? "Leave these off unless aiming turns the wrong way. The log writes one line a second to the engine log, to report when something looks off.".localized
+                 : "Leave these off unless aiming turns the wrong way.".localized)
                 .font(.system(size: 12))
                 .foregroundColor(MuffinTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
@@ -166,12 +166,12 @@ struct MotionSettingsSection: View {
             recentred = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { recentred = false }
         } label: {
-            Label(recentred ? "Recentred" : "Recentre aim", systemImage: "scope")
+            Label(recentred ? "Recentred".localized : "Recentre aim".localized, systemImage: "scope")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
     }
 
     private var fullText: String {
-        "Motion aiming feeds this device's gyroscope and accelerometer to the emulated GamePad, so games that aim by moving the GamePad work the way they do on a Wii U. Hold the device like the GamePad, screen toward you, and tilt or turn it. It follows the way the screen is turned, so it works in every orientation.\n\nMotion from: This device uses the iPad or iPhone itself. Controller uses the motion sensors of a connected controller that has them (DualShock 4, DualSense, Switch Pro Controller) and falls back to the device when there is none. Controller motion has had little testing.\n\nSensitivity is how far the GamePad turns for a given movement. 1.00x matches the real GamePad. Turn it up if you have to move the device a long way to turn.\n\nRecentre aim forgets where the GamePad has been pointing and treats the current position as straight ahead. Use it when aim has drifted, or after turning in your seat. Many games also have their own recentre button.\n\nIf aiming turns the wrong way, \"If aim feels backwards\" reverses left and right, or up and down.\n\nTurn Motion aiming off to aim with the sticks only. A game with its own motion option, Splatoon included, should have that switched off as well."
+        "Motion aiming feeds this device's gyroscope and accelerometer to the emulated GamePad, so games that aim by moving the GamePad work the way they do on a Wii U. Hold the device like the GamePad, screen toward you, and tilt or turn it. It follows the way the screen is turned, so it works in every orientation.\n\nMotion from: This device uses the iPad or iPhone itself. Controller uses the motion sensors of a connected controller that has them (DualShock 4, DualSense, Switch Pro Controller) and falls back to the device when there is none. Controller motion has had little testing.\n\nSensitivity is how far the GamePad turns for a given movement. 1.00x matches the real GamePad. Turn it up if you have to move the device a long way to turn.\n\nRecentre aim forgets where the GamePad has been pointing and treats the current position as straight ahead. Use it when aim has drifted, or after turning in your seat. Many games also have their own recentre button.\n\nIf aiming turns the wrong way, \"If aim feels backwards\" reverses left and right, or up and down.\n\nTurn Motion aiming off to aim with the sticks only. A game with its own motion option, Splatoon included, should have that switched off as well.".localized
     }
 }

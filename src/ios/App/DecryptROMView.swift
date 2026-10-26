@@ -46,7 +46,7 @@ enum DecryptFormat {
     case wua
 
     var toWua: Bool { self == .wua }
-    var navigationTitle: String { self == .wua ? "Decrypt to WUA" : "Decrypt to Folder" }
+    var navigationTitle: String { self == .wua ? "Decrypt to WUA".localized : "Decrypt to Folder".localized }
 }
 
 struct DecryptROMView: View {
@@ -90,7 +90,7 @@ struct DecryptROMView: View {
                 Image(systemName: "lock.open.fill")
                     .font(.system(size: 40))
                     .foregroundColor(MuffinTheme.onBackgroundAccent)
-                Text("Decrypt \(game.title)")
+                Text(String(format: "Decrypt %@".localized, game.title))
                     .font(.system(size: 18, weight: .semibold, design: .rounded))
                     .foregroundColor(MuffinTheme.onBackground)
                     .multilineTextAlignment(.center)
@@ -101,14 +101,14 @@ struct DecryptROMView: View {
                 // Cards rather than capsule buttons: each choice has a title and a description.
                 VStack(spacing: 12) {
                     formatChoice(
-                        title: "Decrypt to Folder",
-                        detail: "A folder you can import and play directly.",
+                        title: "Decrypt to Folder".localized,
+                        detail: "A folder you can import and play directly.".localized,
                         systemImage: "folder.fill"
                     ) { format = .rawSource }
 
                     formatChoice(
-                        title: "Decrypt to WUA",
-                        detail: "A single .wua file that's easy to move around.",
+                        title: "Decrypt to WUA".localized,
+                        detail: "A single .wua file that's easy to move around.".localized,
                         systemImage: "doc.zipper"
                     ) { format = .wua }
                 }
@@ -164,7 +164,7 @@ struct DecryptROMView: View {
             }
         }
         .buttonStyle(ScreenCardButtonStyle())
-        .accessibilityLabel("\(title). \(detail)")
+        .accessibilityLabel(String(format: "%@. %@".localized, title, detail))
     }
 
     private func decryptingBody(_ chosenFormat: DecryptFormat) -> some View {
@@ -189,12 +189,12 @@ struct DecryptROMView: View {
                                 .font(.system(size: 18, weight: .semibold, design: .rounded))
                                 .foregroundColor(MuffinTheme.brownDarkest)
                             if progress.isSuccess {
-                                Text("\(progress.filesWritten) files, \(byteCountFormatted(progress.bytesWritten))")
+                                Text(String(format: "%d files, %@".localized, progress.filesWritten, byteCountFormatted(progress.bytesWritten)))
                                     .font(.system(size: 13, design: .rounded))
                                     .foregroundColor(MuffinTheme.brownMid)
                                 Text(chosenFormat.toWua
-                                    ? "Saved to Files \u{2192} On My iPad/iPhone \u{2192} MuffinEMU \u{2192} Decrypted \u{2192} \(game.id).wua"
-                                    : "Saved to Files \u{2192} On My iPad/iPhone \u{2192} MuffinEMU \u{2192} Decrypted \u{2192} \(game.title)")
+                                    ? String(format: "Saved to Files \u{2192} On My iPad/iPhone \u{2192} MuffinEMU \u{2192} Decrypted \u{2192} %@".localized, "\(game.id).wua")
+                                    : String(format: "Saved to Files \u{2192} On My iPad/iPhone \u{2192} MuffinEMU \u{2192} Decrypted \u{2192} %@".localized, game.title))
                                     .font(.system(size: 12, design: .rounded))
                                     .foregroundColor(MuffinTheme.brownMid)
                                     .multilineTextAlignment(.center)
@@ -209,11 +209,11 @@ struct DecryptROMView: View {
                         } else {
                             ProgressView()
                                 .scaleEffect(1.3)
-                            Text("Decrypting \(game.title)\u{2026}")
+                            Text(String(format: "Decrypting %@\u{2026}".localized, game.title))
                                 .font(.system(size: 16, weight: .medium, design: .rounded))
                                 .foregroundColor(MuffinTheme.brownDarkest)
                                 .multilineTextAlignment(.center)
-                            Text("\(progress.filesWritten) files, \(byteCountFormatted(progress.bytesWritten)) written")
+                            Text(String(format: "%d files, %@ written".localized, progress.filesWritten, byteCountFormatted(progress.bytesWritten)))
                                 .font(.system(size: 13, design: .rounded))
                                 .foregroundColor(MuffinTheme.brownMid)
                                 .monospacedDigit()
@@ -301,15 +301,15 @@ struct DecryptROMView: View {
 
     private func failureReason(for status: Int32) -> String {
         switch status {
-        case 1: return "Couldn't open this file - it may not be a valid disc image."
-        case 2: return "No matching key in keys.txt for this disc. Import the right key and try again."
-        case 3: return "Couldn't write the decrypted output."
-        case 4: return "Stopped before it finished."
-        case 6: return "This game folder is missing a readable title.tmd or title.tik, which MuffinEMU needs to decrypt it."
-        case 7: return "MuffinEMU couldn't decrypt this game folder. Its title.tik doesn't unlock the .app files - check that title.tmd, title.tik and the .app files are from the same download."
-        case 8: return "This game folder is missing one or more .app files listed in its title.tmd."
-        case 5: return "Some files couldn't be copied, so the decrypted copy is incomplete. Your original wasn't changed. Free up some space and try again."
-        default: return "Decryption couldn't start."
+        case 1: return "Couldn't open this file - it may not be a valid disc image.".localized
+        case 2: return "No matching key in keys.txt for this disc. Import the right key and try again.".localized
+        case 3: return "Couldn't write the decrypted output.".localized
+        case 4: return "Stopped before it finished.".localized
+        case 6: return "This game folder is missing a readable title.tmd or title.tik, which MuffinEMU needs to decrypt it.".localized
+        case 7: return "MuffinEMU couldn't decrypt this game folder. Its title.tik doesn't unlock the .app files - check that title.tmd, title.tik and the .app files are from the same download.".localized
+        case 8: return "This game folder is missing one or more .app files listed in its title.tmd.".localized
+        case 5: return "Some files couldn't be copied, so the decrypted copy is incomplete. Your original wasn't changed. Free up some space and try again.".localized
+        default: return "Decryption couldn't start.".localized
         }
     }
 }

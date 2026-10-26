@@ -36,10 +36,10 @@ enum NetworkService: Int, CaseIterable, Identifiable {
 
     var string: String {
         switch self {
-        case .offline: return "Offline"
-        case .nintendo: return "Nintendo Network (shut down)"
-        case .pretendo: return "Pretendo Network"
-        case .custom: return "Custom"
+        case .offline: return "Offline".localized
+        case .nintendo: return "Nintendo Network (shut down)".localized
+        case .pretendo: return "Pretendo Network".localized
+        case .custom: return "Custom".localized
         }
     }
 
@@ -47,10 +47,10 @@ enum NetworkService: Int, CaseIterable, Identifiable {
     /// server hostnames are built into the engine (PretendoURLs in config/NetworkSettings.h).
     var accountHelp: String {
         switch self {
-        case .offline: return "Online play is off for this account."
-        case .nintendo: return "Connect to Nintendo's original Wii U servers, which are no longer running."
-        case .pretendo: return "Connect to the Pretendo Network Service, a community-run replacement for Nintendo's original Wii U online services."
-        case .custom: return "Connect to a custom Network Service, set up in network_services.xml."
+        case .offline: return "Online play is off for this account.".localized
+        case .nintendo: return "Connect to Nintendo's original Wii U servers, which are no longer running.".localized
+        case .pretendo: return "Connect to the Pretendo Network Service, a community-run replacement for Nintendo's original Wii U online services.".localized
+        case .custom: return "Connect to a custom Network Service, set up in network_services.xml.".localized
         }
     }
 }

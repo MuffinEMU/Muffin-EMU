@@ -27,10 +27,10 @@ enum JITEnabler: String, CaseIterable, Identifiable {
 
     var name: String {
         switch self {
-        case .none: return "None"
+        case .none: return "None".localized
         case .stikDebug: return "StikDebug"
         case .liveContainer: return "LiveContainer"
-        case .custom: return "Custom URL"
+        case .custom: return "Custom URL".localized
         }
     }
 
@@ -108,7 +108,7 @@ final class JITEnablerPrompter: ObservableObject {
         let enabler = JITEnabler.current
         let custom = UserDefaults.standard.string(forKey: JITEnabler.customURLKey) ?? ""
         guard let url = JITEnabler.url(for: enabler, custom: custom) else {
-            resultNote = "The \(enabler.name) link isn't valid. Check it in Settings, under JIT enabler."
+            resultNote = String(format: "The %@ link isn't valid. Check it in Settings, under JIT enabler.".localized, enabler.name)
             return
         }
         awaitingReturn = true
@@ -116,7 +116,7 @@ final class JITEnablerPrompter: ObservableObject {
             Task { @MainActor in
                 guard let self, !opened else { return }
                 self.awaitingReturn = false
-                self.resultNote = "MuffinEMU couldn't open \(enabler.name). Make sure it's installed."
+                self.resultNote = String(format: "MuffinEMU couldn't open %@. Make sure it's installed.".localized, enabler.name)
             }
         }
     }
@@ -135,8 +135,8 @@ final class JITEnablerPrompter: ObservableObject {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
             }
             resultNote = JITStatus.isActive
-                ? "JIT is active. Games will use the recompiler the next time you start one."
-                : "JIT still isn't active. MuffinEMU will use the slower interpreter. You can try again in Settings, under JIT enabler."
+                ? "JIT is active. Games will use the recompiler the next time you start one.".localized
+                : "JIT still isn't active. MuffinEMU will use the slower interpreter. You can try again in Settings, under JIT enabler.".localized
         }
     }
 }
@@ -164,7 +164,7 @@ private struct JITEnablerPromptModifier: ViewModifier {
             .onChange(of: scenePhase) { phase in
                 if phase == .active { prompter.appBecameActive() }
             }
-            .alert("JIT isn't active. Enable it with \(prompter.enablerName)?",
+            .alert(String(format: "JIT isn't active. Enable it with %@?".localized, prompter.enablerName),
                    isPresented: $prompter.showPrompt) {
                 Button("Enable") { prompter.enable() }
                 Button("Not now", role: .cancel) {}

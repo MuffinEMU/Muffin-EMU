@@ -20,7 +20,20 @@ enum ControllerCategory: String, CaseIterable {
     case gameThemed = "Colour Themes"
 
     var displayName: String {
-        self.rawValue
+        switch self {
+        case .wiiU: return "Wii U"
+        case .indigo: return "Indigo".localized
+        case .primary: return "Primary".localized
+        case .lilacGrey: return "Lilac Grey".localized
+        case .redAndCream: return "Red and Cream".localized
+        case .charcoal: return "Charcoal".localized
+        case .blueAndRose: return "Blue and Rose".localized
+        case .green: return "Green".localized
+        case .slate: return "Slate".localized
+        case .arcade: return "Arcade".localized
+        case .modern: return "Modern".localized
+        case .gameThemed: return "Colour Themes".localized
+        }
     }
 
     var skins: [WiiUControllerSkin] {
@@ -88,7 +101,7 @@ struct OrganizedControllerSkinSelector: View {
             .buttonStyle(.plain)
             .background(MuffinTheme.cream)
             .accessibilityValue(selectedSkin.name)
-            .accessibilityHint(showingSelector ? "Hides the list of skins" : "Shows the list of skins")
+            .accessibilityHint(showingSelector ? "Hides the list of skins".localized : "Shows the list of skins".localized)
 
             if showingSelector {
                 Divider()
@@ -152,7 +165,7 @@ struct ControllerCategoryDropdown: View {
 
                     Spacer()
 
-                    Text("(\(category.skins.count))")
+                    Text(verbatim: "(\(category.skins.count))")
                         .font(.system(size: 11, weight: .regular, design: .rounded))
                         .foregroundColor(LegibleInk.ensure(MuffinTheme.brownMid, on: MuffinTheme.wrapper))
                 }
@@ -162,7 +175,7 @@ struct ControllerCategoryDropdown: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+            .accessibilityValue(isExpanded ? "Expanded".localized : "Collapsed".localized)
 
             if isExpanded {
                 VStack(spacing: 6) {
@@ -246,7 +259,7 @@ struct SkinOptionCompact: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(skin.name) skin")
+        .accessibilityLabel(String(format: "%@ skin".localized, skin.name))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

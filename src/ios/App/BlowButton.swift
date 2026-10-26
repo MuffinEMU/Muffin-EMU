@@ -108,7 +108,7 @@ struct BlowButton: View {
             if latched && !cemu_bridge_mic_blow() { latched = false }
         }
         .accessibilityLabel("Blow")
-        .accessibilityValue(active ? "On" : "Off")
+        .accessibilityValue(active ? "On".localized : "Off".localized)
         .accessibilityHint("Simulates blowing into the GamePad microphone. Tap to turn blowing on or off. Touch and hold to blow only while you hold.")
         .accessibilityAddTraits(active ? .isSelected : [])
         // VoiceOver users can't hold, so the tap is also exposed as the default action.

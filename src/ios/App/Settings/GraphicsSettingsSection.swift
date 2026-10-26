@@ -19,7 +19,7 @@ enum RendererAPI: Int, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .metal:  return "Metal"
-        case .vulkan: return "Vulkan (Experimental)"
+        case .vulkan: return "Vulkan (Experimental)".localized
         }
     }
 
@@ -40,10 +40,10 @@ enum ScaleFilter: Int, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .linear:         return "Linear"
-        case .bicubic:        return "Bicubic"
-        case .bicubicHermite: return "Bicubic Hermite"
-        case .nearestNeighbor: return "Nearest Neighbor"
+        case .linear:         return "Linear".localized
+        case .bicubic:        return "Bicubic".localized
+        case .bicubicHermite: return "Bicubic Hermite".localized
+        case .nearestNeighbor: return "Nearest Neighbor".localized
         }
     }
 }
@@ -88,7 +88,7 @@ enum MoltenVKBuild: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .v143: return "1.4.3 (default)"
+        case .v143: return "1.4.3 (default)".localized
         case .v128: return "1.2.8"
         }
     }
@@ -173,14 +173,14 @@ struct GraphicsSettingsSection: View {
             }
             meshShaderNote
         } header: {
-            SettingsSectionHeader("Graphics", icon: "cube.transparent", accent: .core)
+            SettingsSectionHeader("Graphics".localized, icon: "cube.transparent", accent: .core)
         } footer: {
             InfoButton.footer(
                 // The renderer picker is Advanced mode only, so Basic doesn't describe it.
                 advanced
-                    ? "Metal is the default renderer. Vulkan (MoltenVK) may work better for some games; it applies on the next launch."
-                    : "A lower Resolution uses less memory.",
-                title: "Graphics",
+                    ? "Metal is the default renderer. Vulkan (MoltenVK) may work better for some games; it applies on the next launch.".localized
+                    : "A lower Resolution uses less memory.".localized,
+                title: "Graphics".localized,
                 text: fullText)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
@@ -207,13 +207,13 @@ struct GraphicsSettingsSection: View {
                 .font(.system(size: 12))
                 .foregroundColor(MuffinTheme.secondaryText)
             if let reason = UserDefaults.standard.string(forKey: "muffin.render.vulkanFailureReason"), !reason.isEmpty {
-                Text("Last Vulkan failure: \(reason)")
+                Text(String(format: "Last Vulkan failure: %@".localized, reason))
                     .font(.system(size: 12))
                     .foregroundColor(MuffinTheme.secondaryText)
             }
             if let failedBuild = UserDefaults.standard.string(forKey: "muffin.render.vulkanFailedBuild"),
                rendererRaw == RendererAPI.metal.rawValue {
-                Text("Vulkan didn't start on this device with MoltenVK \(failedBuild). Metal is in use. Choosing Vulkan again tries it again.")
+                Text(String(format: "Vulkan didn't start on this device with MoltenVK %@. Metal is in use. Choosing Vulkan again tries it again.".localized, failedBuild))
                     .font(.system(size: 12))
                     .foregroundColor(MuffinTheme.secondaryText)
             }
@@ -240,9 +240,9 @@ struct GraphicsSettingsSection: View {
     private var moltenVKCaption: String {
         let active = String(cString: cemu_bridge_active_moltenvk())
         if !active.isEmpty && active != moltenVKRaw {
-            return "Running \(active) now. \(moltenVKRaw) is used from the next launch of MuffinEMU."
+            return String(format: "Running %@ now. %@ is used from the next launch of MuffinEMU.".localized, active, moltenVKRaw)
         }
-        return "Used by the Vulkan renderer only. A change applies the next time MuffinEMU launches."
+        return "Used by the Vulkan renderer only. A change applies the next time MuffinEMU launches.".localized
     }
 
     private var upscalePicker: some View {
@@ -273,8 +273,8 @@ struct GraphicsSettingsSection: View {
                 Text("Steady frame rate")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                 Text(fullSpeedRenders
-                     ? "Rendering comes first: steady frames at the game's own Wii U frame rate, never faster."
-                     : "Off: frames are shown the moment they're ready.")
+                     ? "Rendering comes first: steady frames at the game's own Wii U frame rate, never faster.".localized
+                     : "Off: frames are shown the moment they're ready.".localized)
                     .font(.system(size: 12))
                     .foregroundColor(MuffinTheme.secondaryText)
             }
@@ -408,29 +408,19 @@ struct GraphicsSettingsSection: View {
     }
 
     private var fullText: String {
-        """
-        Steady frame rate puts rendering ahead of everything else MuffinEMU does: the graphics thread gets first call on the fastest cores, each frame is shown at the game's own Wii U frame rate (steady, and never faster than the console), and debugging extras are skipped. Every shader the game has used before is built while the game loads, so those never cause a hitch or a flicker. The first time something brand new appears, its shader has to be built: "Wait for it" holds the frame until it's ready (a short hitch, never a missing object), "Keep going" draws without it once (no hitch, but it can be missing for a moment). Either way it's saved, so it happens only once. This choice wins over the Accuracy and Speed performance profiles and Compile shaders in the background. Takes effect the next time you start a game.
-
-        Metal is the default renderer. Vulkan (MoltenVK) goes through a translation layer and may work better for some games, at some cost to speed. Takes effect the next time you launch a game.
-
-        MoltenVK is the layer that turns Vulkan into Metal, so it only matters with the Vulkan renderer. 1.4.3 is the default; 1.2.8 is an older build that some games run better on. A change applies the next time MuffinEMU starts.
-
-        Filter when enlarging is used when MuffinEMU draws the game's picture larger than the game rendered it; Filter when shrinking is used when drawing it smaller. Bicubic (the default for enlarging) is smoother than linear; Bicubic Hermite sharpens that further; Nearest Neighbor keeps hard pixel edges with no blending at all. Linear is the default for shrinking.
-
-        \(renderScale.summary)
-
-        Resolution changes the size of the picture MuffinEMU draws, not the resolution the game runs at - nothing about the emulation changes with it. Takes effect the next time you launch a game.
-
-        There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Steady frame rate at the top of Graphics.
-
-        Fast blending lets some Metal shaders blend using the picture already on screen instead of an extra step, which is quicker. It is on by default, Metal only, and takes effect the next time you launch a game.
-
-        Display gamma adjusts how bright the mid-tones look without changing pure black or pure white. 2.2 is the standard display gamma and the default; lower looks flatter and brighter in the mids, higher looks more contrasty and darker in the mids. Takes effect on the next frame.
-
-        Override the game's gamma and Override gamma are a separate stage from Display gamma above, not a second copy of it: some games ask for their own gamma value, and this either adds Override gamma on top of that request (off) or replaces the game's request with Override gamma entirely (on) - before Display gamma is applied to the result. Off by default; most games never ask for a specific gamma at all, so this has nothing to override until one does.
-
-        Graphic Packs are community patches for higher resolutions, frame rates, fixes and mods. Turn them on here for every game, or for one game in its Game settings.
-        """
-        + (meshShadersUnsupported ? "\n\nThis device doesn't support mesh shaders, so graphic packs that rely on geometry shaders or post-processing (RECTS) draws may not render correctly. Everything else works normally." : "")
+        [
+            "Steady frame rate puts rendering ahead of everything else MuffinEMU does: the graphics thread gets first call on the fastest cores, each frame is shown at the game's own Wii U frame rate (steady, and never faster than the console), and debugging extras are skipped. Every shader the game has used before is built while the game loads, so those never cause a hitch or a flicker. The first time something brand new appears, its shader has to be built: \"Wait for it\" holds the frame until it's ready (a short hitch, never a missing object), \"Keep going\" draws without it once (no hitch, but it can be missing for a moment). Either way it's saved, so it happens only once. This choice wins over the Accuracy and Speed performance profiles and Compile shaders in the background. Takes effect the next time you start a game.".localized,
+            "Metal is the default renderer. Vulkan (MoltenVK) goes through a translation layer and may work better for some games, at some cost to speed. Takes effect the next time you launch a game.".localized,
+            "MoltenVK is the layer that turns Vulkan into Metal, so it only matters with the Vulkan renderer. 1.4.3 is the default; 1.2.8 is an older build that some games run better on. A change applies the next time MuffinEMU starts.".localized,
+            "Filter when enlarging is used when MuffinEMU draws the game's picture larger than the game rendered it; Filter when shrinking is used when drawing it smaller. Bicubic (the default for enlarging) is smoother than linear; Bicubic Hermite sharpens that further; Nearest Neighbor keeps hard pixel edges with no blending at all. Linear is the default for shrinking.".localized,
+            renderScale.summary,
+            "Resolution changes the size of the picture MuffinEMU draws, not the resolution the game runs at - nothing about the emulation changes with it. Takes effect the next time you launch a game.".localized,
+            "There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Steady frame rate at the top of Graphics.".localized,
+            "Fast blending lets some Metal shaders blend using the picture already on screen instead of an extra step, which is quicker. It is on by default, Metal only, and takes effect the next time you launch a game.".localized,
+            "Display gamma adjusts how bright the mid-tones look without changing pure black or pure white. 2.2 is the standard display gamma and the default; lower looks flatter and brighter in the mids, higher looks more contrasty and darker in the mids. Takes effect on the next frame.".localized,
+            "Override the game's gamma and Override gamma are a separate stage from Display gamma above, not a second copy of it: some games ask for their own gamma value, and this either adds Override gamma on top of that request (off) or replaces the game's request with Override gamma entirely (on) - before Display gamma is applied to the result. Off by default; most games never ask for a specific gamma at all, so this has nothing to override until one does.".localized,
+            "Graphic Packs are community patches for higher resolutions, frame rates, fixes and mods. Turn them on here for every game, or for one game in its Game settings.".localized
+        ].joined(separator: "\n\n")
+        + (meshShadersUnsupported ? "\n\n" + "This device doesn't support mesh shaders, so graphic packs that rely on geometry shaders or post-processing (RECTS) draws may not render correctly. Everything else works normally.".localized : "")
     }
 }

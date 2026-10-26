@@ -58,19 +58,19 @@ enum MigrationArchive {
         var errorDescription: String? {
             switch self {
             case .notAnArchive:
-                return "That isn't a MuffinEMU move file."
+                return "That isn't a MuffinEMU move file.".localized
             case .newerVersion(let version):
-                return "That file was made by a newer MuffinEMU (move file version \(version)). Update the app, then try again."
+                return String(format: "That file was made by a newer MuffinEMU (move file version %d). Update the app, then try again.".localized, version)
             case .damaged(let what):
-                return "The move file is damaged (\(what)). Nothing in it was trusted past that point."
+                return String(format: "The move file is damaged (%@). Nothing in it was trusted past that point.".localized, what)
             case .notEnoughSpace(let needed, let free):
-                return "Not enough free space. This needs about \(MigrationArchive.format(needed)) and the device has \(MigrationArchive.format(free)) free."
+                return String(format: "Not enough free space. This needs about %@ and the device has %@ free.".localized, MigrationArchive.format(needed), MigrationArchive.format(free))
             case .changedWhileReading(let name):
-                return "\(name) changed while it was being read. Make sure no game is running, then try again."
+                return String(format: "%@ changed while it was being read. Make sure no game is running, then try again.".localized, name)
             case .noDocuments:
-                return "MuffinEMU couldn't find its Documents folder."
+                return "MuffinEMU couldn't find its Documents folder.".localized
             case .cancelled:
-                return "Cancelled."
+                return "Cancelled.".localized
             }
         }
     }
@@ -365,19 +365,19 @@ enum MigrationArchive {
 
         try handle.seek(toOffset: size - UInt64(trailerSize))
         let trailer = try readExactly(handle, trailerSize)
-        guard trailer.suffix(8) == tailMagic else { throw MigrationError.damaged("the end of the file is missing") }
+        guard trailer.suffix(8) == tailMagic else { throw MigrationError.damaged("the end of the file is missing".localized) }
         let manifestOffset = readUInt64(trailer, 0)
         let manifestLength = readUInt64(trailer, 8)
         guard manifestLength > 0, manifestLength <= maxManifestBytes,
               manifestOffset >= UInt64(headMagic.count),
               manifestOffset + manifestLength <= size - UInt64(trailerSize) else {
-            throw MigrationError.damaged("the file list position")
+            throw MigrationError.damaged("the file list position".localized)
         }
 
         try handle.seek(toOffset: manifestOffset)
         let data = try readExactly(handle, Int(manifestLength))
         guard let manifest = try? JSONDecoder().decode(Manifest.self, from: data),
-              manifest.format == formatName else { throw MigrationError.damaged("the file list") }
+              manifest.format == formatName else { throw MigrationError.damaged("the file list".localized) }
         guard manifest.version <= currentVersion else { throw MigrationError.newerVersion(manifest.version) }
 
         for file in manifest.files {
@@ -385,7 +385,7 @@ enum MigrationArchive {
             guard isMeta || destinationParts(for: file.path) != nil,
                   file.size >= 0, file.offset >= Int64(headMagic.count),
                   UInt64(file.offset + file.size) <= manifestOffset else {
-                throw MigrationError.damaged("an entry in the file list: \(file.path)")
+                throw MigrationError.damaged(String(format: "an entry in the file list: %@".localized, file.path))
             }
         }
         return manifest
@@ -524,7 +524,7 @@ enum MigrationArchive {
                 try autoreleasepool {
                     let want = Int(min(Int64(chunkSize), remaining))
                     guard let chunk = try reader.read(upToCount: want), !chunk.isEmpty else {
-                        throw MigrationError.damaged("\(file.path) is cut short")
+                        throw MigrationError.damaged(String(format: "%@ is cut short".localized, file.path))
                     }
                     crc = MiniZip.crc32(continuing: crc, with: chunk)
                     try writer.write(contentsOf: chunk)
@@ -534,7 +534,7 @@ enum MigrationArchive {
                 }
             }
             try writer.close()
-            guard crc == file.crc32 else { throw MigrationError.damaged("checksum of \(file.path)") }
+            guard crc == file.crc32 else { throw MigrationError.damaged(String(format: "checksum of %@".localized, file.path)) }
 
             if fm.fileExists(atPath: target.path) {
                 if file.path.lowercased().hasPrefix("mlc/mlc01/usr/save/") {
@@ -561,7 +561,7 @@ enum MigrationArchive {
             guard file.size <= maxMetaBytes else { throw MigrationError.damaged(file.path) }
             try reader.seek(toOffset: UInt64(file.offset))
             let data = try readExactly(reader, Int(file.size))
-            guard MiniZip.crc32(data) == file.crc32 else { throw MigrationError.damaged("checksum of \(file.path)") }
+            guard MiniZip.crc32(data) == file.crc32 else { throw MigrationError.damaged(String(format: "checksum of %@".localized, file.path)) }
             if file.path == settingsPath { result.settingsData = data } else { result.stateData = data }
         }
         progress(total, total, "")
@@ -586,7 +586,7 @@ enum MigrationArchive {
         data.reserveCapacity(count)
         while data.count < count {
             guard let piece = try handle.read(upToCount: count - data.count), !piece.isEmpty else {
-                throw MigrationError.damaged("the file ends early")
+                throw MigrationError.damaged("the file ends early".localized)
             }
             data.append(piece)
         }

@@ -52,21 +52,17 @@ struct EmulatedDevicesSettingsSection: View {
                 EmulatedDevicesView()
             }
         } header: {
-            SettingsSectionHeader("Emulated Devices", icon: "square.stack.3d.up", accent: .content)
+            SettingsSectionHeader("Emulated Devices".localized, icon: "square.stack.3d.up", accent: .content)
         } footer: {
             InfoButton.footer(
-                "Emulates a Skylanders Portal, Disney Infinity Base or LEGO Dimensions Toypad. Changes apply the next time you start a game.",
-                title: "Emulated Devices",
+                "Emulates a Skylanders Portal, Disney Infinity Base or LEGO Dimensions Toypad. Changes apply the next time you start a game.".localized,
+                title: "Emulated Devices".localized,
                 text: fullText)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }
 
     private var fullText: String {
-        """
-        Some games (Skylanders, Disney Infinity, LEGO Dimensions) read toy figures from a USB portal, base or toypad. Turn on the one your game uses; it applies the next time you start a game.
-
-        Manage Figures lets you load a figure dump you own, create a new save for a figure, or clear a slot. No figure data is included with MuffinEMU.
-        """
+        "Some games (Skylanders, Disney Infinity, LEGO Dimensions) read toy figures from a USB portal, base or toypad. Turn on the one your game uses; it applies the next time you start a game.\n\nManage Figures lets you load a figure dump you own, create a new save for a figure, or clear a slot. No figure data is included with MuffinEMU.".localized
     }
 }

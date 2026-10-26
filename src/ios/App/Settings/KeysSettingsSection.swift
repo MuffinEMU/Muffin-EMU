@@ -17,24 +17,24 @@ struct KeysSettingsSection: View {
     var body: some View {
         Section {
             Button(action: { showingKeysImporter = true }) {
-                Label(WiiUKeys.keysFileExists() ? "Replace keys.txt" : "Import keys.txt",
+                Label(WiiUKeys.keysFileExists() ? "Replace keys.txt".localized : "Import keys.txt".localized,
                       systemImage: "key")
             }
             .foregroundColor(MuffinTheme.brownDarkest)
 
             if WiiUKeys.keysFileExists() {
-                SettingsRow(label: "Keys loaded", value: "\(keyCount)")
+                SettingsRow(label: "Keys loaded".localized, value: "\(keyCount)")
                 Button(role: .destructive, action: { showingKeysRemovalConfirmation = true }) {
-                    DestructiveSettingsLabel(title: "Remove keys.txt", systemImage: "trash")
+                    DestructiveSettingsLabel(title: "Remove keys.txt".localized, systemImage: "trash")
                 }
             }
         } header: {
-            SettingsSectionHeader("Wii U Keys", icon: "key", accent: .content)
+            SettingsSectionHeader("Wii U Keys".localized, icon: "key", accent: .content)
         } footer: {
             InfoButton.footer(
-                "Only needed for encrypted games. Homebrew and already-decrypted dumps don't need keys.",
-                title: "Wii U Keys",
-                text: "Encrypted games (.wux, .wud, .iso) need AES keys dumped from your own Wii U, in a text file called keys.txt with one key per line. MuffinEMU doesn't include keys.\n\nYou can also open MuffinEMU in the Files app and drop keys.txt into the \"keys\" folder.\n\nNew keys are used the next time you start a game. If you've already started a game since opening MuffinEMU, quit and reopen MuffinEMU first.")
+                "Only needed for encrypted games. Homebrew and already-decrypted dumps don't need keys.".localized,
+                title: "Wii U Keys".localized,
+                text: "Encrypted games (.wux, .wud, .iso) need AES keys dumped from your own Wii U, in a text file called keys.txt with one key per line. MuffinEMU doesn't include keys.\n\nYou can also open MuffinEMU in the Files app and drop keys.txt into the \"keys\" folder.\n\nNew keys are used the next time you start a game. If you've already started a game since opening MuffinEMU, quit and reopen MuffinEMU first.".localized)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         // .item: a keys.txt may carry no useful type; WiiUKeys.importKeys checks the contents.
@@ -55,7 +55,7 @@ struct KeysSettingsSection: View {
                 do {
                     try WiiUKeys.removeKeys()
                 } catch {
-                    keysErrorMessage = "Couldn't remove keys.txt: \(error.localizedDescription)"
+                    keysErrorMessage = String(format: "Couldn't remove keys.txt: %@".localized, error.localizedDescription)
                 }
                 keyCount = WiiUKeys.installedKeyCount()
             }

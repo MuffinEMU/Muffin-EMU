@@ -69,7 +69,7 @@ enum AccountImport {
                     if let c = candidate(file: direct, folderId: persistentId(folderName: name.lowercased()), label: name) {
                         result.accounts.append(c)
                     } else {
-                        result.problems.append("\(name)/account.dat isn't a readable Wii U account file, or its folder name isn't an 8-digit account ID like 80000001.")
+                        result.problems.append(String(format: "%@/account.dat isn't a readable Wii U account file, or its folder name isn't an 8-digit account ID like 80000001.".localized, name))
                     }
                 } else {
                     var found = false
@@ -81,10 +81,10 @@ enum AccountImport {
                         if let c = candidate(file: file, folderId: id, label: child) {
                             result.accounts.append(c)
                         } else {
-                            result.problems.append("\(child)/account.dat isn't a readable Wii U account file.")
+                            result.problems.append(String(format: "%@/account.dat isn't a readable Wii U account file.".localized, child))
                         }
                     }
-                    if !found { result.problems.append("\(name) has no account.dat in it.") }
+                    if !found { result.problems.append(String(format: "%@ has no account.dat in it.".localized, name)) }
                 }
             } else {
                 let lower = name.lowercased()
@@ -95,7 +95,7 @@ enum AccountImport {
                                             label: name) {
                     result.accounts.append(c)
                 } else {
-                    result.problems.append("\(name) isn't a Wii U account.dat, otp.bin or seeprom.bin. If it is an account.dat, pick its 800000XX folder instead so MuffinEMU can read the account ID.")
+                    result.problems.append(String(format: "%@ isn't a Wii U account.dat, otp.bin or seeprom.bin. If it is an account.dat, pick its 800000XX folder instead so MuffinEMU can read the account ID.".localized, name))
                 }
             }
         }
@@ -138,19 +138,19 @@ enum AccountImport {
             try candidate.data.write(to: file, options: .atomic)
         } catch {
             rollback()
-            throw WiiUMenu.ImportError.failed("Couldn't save the account: \(error.localizedDescription)")
+            throw WiiUMenu.ImportError.failed(String(format: "Couldn't save the account: %@".localized, error.localizedDescription))
         }
         cemu_bridge_accounts_refresh()
         guard Account.loadAll().contains(where: { $0.persistentId == candidate.persistentId }) else {
             rollback()
-            throw WiiUMenu.ImportError.failed("\(candidate.source) couldn't be read as a Wii U account, so it wasn't installed. Your existing accounts are unchanged.")
+            throw WiiUMenu.ImportError.failed(String(format: "%@ couldn't be read as a Wii U account, so it wasn't installed. Your existing accounts are unchanged.".localized, candidate.source))
         }
         let problem: String?
         switch cemu_bridge_account_online_error(candidate.persistentId) {
         case 0: problem = nil
-        case 2, 3: problem = "it has no saved password for its Pretendo or Nintendo Network ID"
-        case 4: problem = "it has no principal ID"
-        default: problem = "it has no linked Pretendo or Nintendo Network ID"
+        case 2, 3: problem = "it has no saved password for its Pretendo or Nintendo Network ID".localized
+        case 4: problem = "it has no principal ID".localized
+        default: problem = "it has no linked Pretendo or Nintendo Network ID".localized
         }
         return Installed(persistentId: candidate.persistentId, backupName: backup?.lastPathComponent, onlineProblem: problem)
     }
@@ -179,7 +179,7 @@ struct AccountImportButton: View {
         .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.item, .folder], allowsMultipleSelection: true) { result in
             switch result {
             case .failure(let error):
-                resultTitle = "Couldn't import"
+                resultTitle = "Couldn't import".localized
                 resultMessage = error.localizedDescription
             case .success(let urls):
                 let found = AccountImport.prepare(urls: urls)
@@ -213,8 +213,8 @@ struct AccountImportButton: View {
         } message: {
             // The Pretendo step only for an account that passed the online check.
             Text(pendingActivationCanGoOnline
-                 ? "Make the imported account the active one? Then set Network Service to Pretendo Network below."
-                 : "Make the imported account the active one?")
+                 ? "Make the imported account the active one? Then set Network Service to Pretendo Network below.".localized
+                 : "Make the imported account the active one?".localized)
         }
     }
 
@@ -234,17 +234,17 @@ struct AccountImportButton: View {
         var firstAny: UInt32?
         for candidate in found.accounts {
             if !replacing && AccountImport.exists(candidate.persistentId) {
-                lines.append("Skipped account \(String(format: "%08x", candidate.persistentId)): it's already installed.")
+                lines.append(String(format: "Skipped account %@: it's already installed.".localized, String(format: "%08x", candidate.persistentId)))
                 continue
             }
             do {
                 let done = try AccountImport.install(candidate)
                 let id = String(format: "%08x", done.persistentId)
-                if let backup = done.backupName { lines.append("The old account \(id) was saved as \(backup).") }
+                if let backup = done.backupName { lines.append(String(format: "The old account %@ was saved as %@.".localized, id, backup)) }
                 if let problem = done.onlineProblem {
-                    lines.append("Account \(id) was imported, but it can't play online: \(problem). Link a PNID on the console first, then dump account.dat again.")
+                    lines.append(String(format: "Account %@ was imported, but it can't play online: %@. Link a PNID on the console first, then dump account.dat again.".localized, id, problem))
                 } else {
-                    lines.append("Account \(id) was imported and can play online.")
+                    lines.append(String(format: "Account %@ was imported and can play online.".localized, id))
                     if firstValid == nil { firstValid = done.persistentId }
                 }
                 if firstAny == nil { firstAny = done.persistentId }
@@ -259,14 +259,14 @@ struct AccountImportButton: View {
                 lines.append(error.localizedDescription)
             }
         }
-        if lines.isEmpty { lines.append("Nothing to import. Pick account.dat (or its 800000XX folder), otp.bin and seeprom.bin.") }
+        if lines.isEmpty { lines.append("Nothing to import. Pick account.dat (or its 800000XX folder), otp.bin and seeprom.bin.".localized) }
         let missing = OnlineReadiness.missingItems(accountId: firstValid ?? cemu_bridge_active_account_persistent_id())
         if !missing.isEmpty && (!found.accounts.isEmpty || !found.consoleFiles.isEmpty) {
-            lines.append("Still missing for online play: " + missing.joined(separator: ", ") + ".")
+            lines.append(String(format: "Still missing for online play: %@.".localized, missing.joined(separator: ", ")))
         }
         pendingActivation = firstValid ?? firstAny
         pendingActivationCanGoOnline = firstValid != nil
-        resultTitle = "Import"
+        resultTitle = "Import".localized
         resultMessage = lines.joined(separator: "\n")
         onChange()
     }

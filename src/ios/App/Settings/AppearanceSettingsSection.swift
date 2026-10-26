@@ -50,8 +50,8 @@ struct AppearanceSettingsSection: View {
                     Text("Flat surfaces")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text(style.useClassicUI
-                         ? "Already on while Classic UI is on."
-                         : "Removes the highlights and shading on cards and buttons.")
+                         ? "Already on while Classic UI is on.".localized
+                         : "Removes the highlights and shading on cards and buttons.".localized)
                         .font(.system(size: 12))
                         .foregroundColor(MuffinTheme.secondaryText)
                 }
@@ -73,12 +73,12 @@ struct AppearanceSettingsSection: View {
             }
             .tint(MuffinTheme.accentText)
         } header: {
-            SettingsSectionHeader("Appearance", icon: "paintpalette", accent: .identity)
+            SettingsSectionHeader("Appearance".localized, icon: "paintpalette", accent: .identity)
         } footer: {
             InfoButton.footer(
-                "Both change how MuffinEMU looks, not what it does.",
-                title: "Appearance",
-                text: "Flat surfaces removes the soft highlights on cards and buttons.\n\nClassic UI restores the flat v2.0 styling: plain cards, text headers, system-font rows. It turns on flat surfaces too. All settings and screens are still there; newer screens just have no classic form.")
+                "Both change how MuffinEMU looks, not what it does.".localized,
+                title: "Appearance".localized,
+                text: "Flat surfaces removes the soft highlights on cards and buttons.\n\nClassic UI restores the flat v2.0 styling: plain cards, text headers, system-font rows. It turns on flat surfaces too. All settings and screens are still there; newer screens just have no classic form.".localized)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }

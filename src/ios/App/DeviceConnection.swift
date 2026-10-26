@@ -58,10 +58,10 @@ struct DeviceConnectionStatusRow: View {
 
     private var deviceText: String {
         switch connection.kind {
-        case .offline: return "Offline"
-        case .wifi: return "Wi-Fi"
-        case .cellular: return "Cellular"
-        case .other: return "Connected"
+        case .offline: return "Offline".localized
+        case .wifi: return "Wi-Fi".localized
+        case .cellular: return "Cellular".localized
+        case .other: return "Connected".localized
         }
     }
 
@@ -70,15 +70,15 @@ struct DeviceConnectionStatusRow: View {
         _ = connection.kind
         // Only the device's connection. Whether online play is ready is the separate line above.
         return cemu_bridge_console_appears_connected()
-            ? "The console will appear connected."
-            : "The console will appear offline."
+            ? "The console will appear connected.".localized
+            : "The console will appear offline.".localized
     }
 
     var body: some View {
         HStack {
             Text("Device connection")
             Spacer()
-            Text("\(deviceText). \(consoleText)")
+            Text(verbatim: "\(deviceText). \(consoleText)")
                 .font(.footnote)
                 .multilineTextAlignment(.trailing)
                 .opacity(0.7)

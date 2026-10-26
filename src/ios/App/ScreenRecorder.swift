@@ -42,24 +42,24 @@ final class ScreenRecorder: ObservableObject {
         guard !isRecording else { return }
         let audio = AudioRecorder.shared
         guard !isFinishing else {
-            audio.failureMessage = "Still saving the last recording. Try again in a moment."
+            audio.failureMessage = "Still saving the last recording. Try again in a moment.".localized
             return
         }
         guard Self.freeBytes() >= Self.minimumFreeBytes else {
-            audio.failureMessage = "Not enough storage to record. Free up some space and try again."
+            audio.failureMessage = "Not enough storage to record. Free up some space and try again.".localized
             return
         }
         let folder = AudioRecorder.recordingsFolder
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         } catch {
-            audio.failureMessage = "Couldn't create the Recordings folder."
+            audio.failureMessage = "Couldn't create the Recordings folder.".localized
             return
         }
         let stamp = Self.fileStamp.string(from: Date())
         let url = folder.appendingPathComponent("\(AudioRecorder.safeFileName(gameName)) \(stamp).mp4")
         guard url.path.withCString({ cemu_bridge_screen_record_start($0) }) else {
-            audio.failureMessage = "Couldn't start recording."
+            audio.failureMessage = "Couldn't start recording.".localized
             return
         }
         self.url = url
@@ -78,9 +78,9 @@ final class ScreenRecorder: ObservableObject {
         guard isRecording else { return }
         elapsed = Int(cemu_bridge_screen_record_seconds())
         if cemu_bridge_screen_record_failed() {
-            stop(notice: "The recording stopped because the video couldn't be written.")
+            stop(notice: "The recording stopped because the video couldn't be written.".localized)
         } else if Self.freeBytes() < Self.minimumFreeBytes {
-            stop(notice: "The recording stopped because storage is almost full. What was recorded is saved in the Recordings folder.")
+            stop(notice: "The recording stopped because storage is almost full. What was recorded is saved in the Recordings folder.".localized)
         }
     }
 
@@ -107,7 +107,7 @@ final class ScreenRecorder: ObservableObject {
                 ScreenRecorder.shared.isFinishing = false
                 let audio = AudioRecorder.shared
                 if !written {
-                    audio.failureMessage = notice ?? "Nothing was recorded."
+                    audio.failureMessage = notice ?? "Nothing was recorded.".localized
                 } else if let notice {
                     audio.failureMessage = notice
                 } else {

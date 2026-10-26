@@ -59,7 +59,7 @@ struct ScreenTextStyleRows: View {
                 Text("Text size")
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                 Spacer()
-                Text("\(textScale)%")
+                Text(String(format: "%d%%".localized, textScale))
                     .font(.system(size: 13, design: .monospaced))
                     .foregroundColor(MuffinTheme.secondaryText)
             }

@@ -31,8 +31,8 @@ struct AboutSettingsSection: View {
             }
 
             Text(MeloControlsSetting.isAvailable
-                 ? "MuffinEMU is built on Cemu, and its core includes code from MeloCafe by stossy11. The optional Melo-Controller pad is also by stossy11."
-                 : "MuffinEMU is built on Cemu, and its core includes code from MeloCafe by stossy11.")
+                 ? "MuffinEMU is built on Cemu, and its core includes code from MeloCafe by stossy11. The optional Melo-Controller pad is also by stossy11.".localized
+                 : "MuffinEMU is built on Cemu, and its core includes code from MeloCafe by stossy11.".localized)
                 .font(.system(size: 12))
                 .foregroundColor(MuffinTheme.secondaryText)
 
@@ -64,11 +64,11 @@ struct AboutSettingsSection: View {
         .confirmationDialog("Reset settings to defaults?", isPresented: $showingResetConfirmation, titleVisibility: .visible) {
             Button("Reset Settings", role: .destructive) {
                 SettingsDefaults.reset(includingPerGameOverrides: false)
-                resetMessage = "Settings reset to defaults."
+                resetMessage = "Settings reset to defaults.".localized
             }
             Button("Reset Settings and Every Game's Settings", role: .destructive) {
                 SettingsDefaults.reset(includingPerGameOverrides: true)
-                resetMessage = "Settings and every game's settings reset to defaults."
+                resetMessage = "Settings and every game's settings reset to defaults.".localized
             }
             Button("Cancel", role: .cancel) { }
         } message: {

@@ -184,7 +184,7 @@ enum CoverArtFetcher {
         var errorDescription: String? {
             switch self {
             case .network(let error):
-                return "Couldn't reach GameTDB: \(error.localizedDescription)"
+                return String(format: "Couldn't reach GameTDB: %@".localized, error.localizedDescription)
             }
         }
     }

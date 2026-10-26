@@ -22,11 +22,11 @@ enum BrightnessBoost {
     }
 
     static func label(for value: Double) -> String {
-        if value <= 0.001 { return "Off" }
+        if value <= 0.001 { return "Off".localized }
         switch value {
-        case ..<0.34: return "Low"
-        case ..<0.67: return "Medium"
-        default: return "Strong"
+        case ..<0.34: return "Low".localized
+        case ..<0.67: return "Medium".localized
+        default: return "Strong".localized
         }
     }
 }

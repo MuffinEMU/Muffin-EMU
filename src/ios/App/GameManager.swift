@@ -64,14 +64,14 @@ struct GameMetadata: Codable, Identifiable {
     }
 
     /// Wording for taking the game out of the library: a linked game's file is never deleted.
-    var removeActionTitle: String { isExternal ? "Remove from library\u{2026}" : "Remove game\u{2026}" }
-    var removeConfirmTitle: String { isExternal ? "Remove this game from your library?" : "Remove this game?" }
-    var removeConfirmButton: String { isExternal ? "Remove from library" : "Remove game" }
+    var removeActionTitle: String { isExternal ? "Remove from library\u{2026}".localized : "Remove game\u{2026}".localized }
+    var removeConfirmTitle: String { isExternal ? "Remove this game from your library?".localized : "Remove this game?".localized }
+    var removeConfirmButton: String { isExternal ? "Remove from library".localized : "Remove game".localized }
     var removeConfirmMessage: String {
         if isExternal {
-            return "\"\(cardName.name)\" is only linked, so its file stays where it is and isn't deleted. Your saves and options are kept. You can bring it back from Settings > Library."
+            return String(format: "\"%@\" is only linked, so its file stays where it is and isn't deleted. Your saves and options are kept. You can bring it back from Settings > Library.".localized, cardName.name)
         }
-        return "This deletes \"\(cardName.name)\" from MuffinEMU to free up space. Your saves and options are kept. To play it again, add the game back."
+        return String(format: "This deletes \"%@\" from MuffinEMU to free up space. Your saves and options are kept. To play it again, add the game back.".localized, cardName.name)
     }
 
     static func installKey(forRomPath romPath: String, fallback: String) -> String {
@@ -396,8 +396,8 @@ class GameManager: ObservableObject {
 
         var errorDescription: String? {
             switch self {
-            case .notInLibrary: return "Couldn't find that game's files."
-            case .failed(let error): return "Couldn't remove the game: \(error.localizedDescription)"
+            case .notInLibrary: return "Couldn't find that game's files.".localized
+            case .failed(let error): return String(format: "Couldn't remove the game: %@".localized, error.localizedDescription)
             }
         }
     }
@@ -1044,13 +1044,13 @@ class GameManager: ObservableObject {
                 // check runs against the copy we already made, and every way it can fail
                 // - unsupported extension, supported extension over the wrong bytes -
                 // means the same thing to the person holding the iPad.
-                return "This isn't a Wii U game file MuffinEMU can read. It accepts .wua, .wux, .wud, .iso, .rpx, .elf and .wuhb files, or a game folder. Encrypted games also need keys.txt."
+                return "This isn't a Wii U game file MuffinEMU can read. It accepts .wua, .wux, .wud, .iso, .rpx, .elf and .wuhb files, or a game folder. Encrypted games also need keys.txt.".localized
             case .notAWiiUDump(let name):
-                return "\"\(name)\" isn't a Wii U game dump. A dump folder needs code, content and meta folders inside it, or an encrypted game folder: title.tmd and title.tik next to its .app files."
+                return String(format: "\"%@\" isn't a Wii U game dump. A dump folder needs code, content and meta folders inside it, or an encrypted game folder: title.tmd and title.tik next to its .app files.".localized, name)
             case .accessDenied:
-                return "Couldn't access that file."
+                return "Couldn't access that file.".localized
             case .copyFailed(let error):
-                return "Couldn't copy the ROM: \(error.localizedDescription)"
+                return String(format: "Couldn't copy the ROM: %@".localized, error.localizedDescription)
             }
         }
     }
@@ -1067,9 +1067,9 @@ class GameManager: ObservableObject {
         var errorDescription: String? {
             switch self {
             case .unsupportedExtension:
-                return "That image couldn't be saved in a supported format."
+                return "That image couldn't be saved in a supported format.".localized
             case .noLibraryDirectory:
-                return "Couldn't find the game library folder."
+                return "Couldn't find the game library folder.".localized
             }
         }
     }
@@ -1379,7 +1379,7 @@ class GameManager: ObservableObject {
         if let locationID = game.externalLocationID {
             guard !game.isUnavailable, let hold = ExternalLibrary.shared.acquire(locationID),
                   ExternalLibrary.isReachable(path: game.romPath) else {
-                lastStatusMessage = ExternalLibrary.unavailableMessage + ". \"\(game.cardName.name)\" is stored on a drive or folder MuffinEMU can't reach right now."
+                lastStatusMessage = ExternalLibrary.unavailableMessage + String(format: ". \"%@\" is stored on a drive or folder MuffinEMU can't reach right now.".localized, game.cardName.name)
                 emulationState = .error
                 return
             }
@@ -1391,8 +1391,8 @@ class GameManager: ObservableObject {
         if cemu_bridge_clean_start_required() {
             needsCleanRestart = true
             let reason = String(cString: cemu_bridge_clean_start_reason())
-            lastStatusMessage = "MuffinEMU has to be closed and reopened before it can start another game."
-                + (reason.isEmpty ? "" : "\n\nWhat happened: \(reason).")
+            lastStatusMessage = "MuffinEMU has to be closed and reopened before it can start another game.".localized
+                + (reason.isEmpty ? "" : String(format: "\n\nWhat happened: %@.".localized, reason))
             emulationState = .error
             return
         }
@@ -1684,7 +1684,7 @@ class GameManager: ObservableObject {
                 var notice = String(cString: cemu_bridge_take_launch_notice())
                 // iOS slows the CPU and GPU in Low Power Mode, which no setting here can undo. Say so, but never over a more specific note.
                 if notice.isEmpty && status == CEMU_BRIDGE_OK && ProcessInfo.processInfo.isLowPowerModeEnabled {
-                    notice = "Low Power Mode is on, so games may run slowly. Turn it off in Control Centre for full speed."
+                    notice = "Low Power Mode is on, so games may run slowly. Turn it off in Control Centre for full speed.".localized
                 }
                 if notice.isEmpty && status == CEMU_BRIDGE_OK, let onlineNotice = OnlineReadiness.launchNotice() {
                     notice = onlineNotice
@@ -1794,7 +1794,7 @@ class GameManager: ObservableObject {
             ready = await Task.detached { ExternalLibrary.shared.probe(locationID, path: path) }.value
         }
         if !ready {
-            launchBlockedMessage = "\"\(game.cardName.name)\" is stored on a drive or folder MuffinEMU can't reach right now. Connect the drive, then try again."
+            launchBlockedMessage = String(format: "\"%@\" is stored on a drive or folder MuffinEMU can't reach right now. Connect the drive, then try again.".localized, game.cardName.name)
         }
         return ready
     }
@@ -1963,26 +1963,26 @@ struct EmulatorProgress: Equatable {
     /// as it always did.
     func hudText(wholeFramesPerSecond: Int) -> String {
         if wholeFramesPerSecond > 0 {
-            return "\(wholeFramesPerSecond) FPS"
+            return String(format: "%d FPS".localized, wholeFramesPerSecond)
         }
         if gx2FrameCount > 0 {
             // Running past the first frame, just below one frame per second. Show the
             // rate AND the count: the rate says how slow, the count is the thing whose
             // movement proves it is not stuck.
             if gx2FramesPerSecond > 0 {
-                return String(format: "%.1f FPS", gx2FramesPerSecond)
+                return String(format: "%.1f FPS".localized, gx2FramesPerSecond)
             }
-            return String(format: "%llu frames", gx2FrameCount)
+            return String(format: "%llu frames".localized, gx2FrameCount)
         }
         if gx2InitReached {
             // Past handover with nothing drawn. This is the case that is a real bug
             // rather than a slow one, so it says so instead of showing a rate of zero.
-            return "Started, no picture yet"
+            return "Started, no picture yet".localized
         }
         if osScreenScanouts > 0 || guestFlipRequests > 0 {
-            return "Booting..."
+            return "Booting...".localized
         }
-        return "-- FPS"
+        return "-- FPS".localized
     }
 }
 

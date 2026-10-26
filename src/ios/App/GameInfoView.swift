@@ -45,7 +45,7 @@ struct GameInfoSections: View {
                     .font(.system(size: 14))
                     .fixedSize(horizontal: false, vertical: true)
                 if s.language != GameInfo.preferredLanguages.first {
-                    Text("Summary language: \(s.language)")
+                    Text(String(format: "Summary language: %@".localized, s.language))
                         .font(.system(size: 12)).foregroundColor(MuffinTheme.secondaryText)
                 }
             } else {
@@ -62,15 +62,15 @@ struct GameInfoSections: View {
         if info.publisher != nil || info.developer != nil || !info.genres.isEmpty || playersText(info) != nil
             || ratingText(info) != nil || !info.languages.isEmpty || info.romSize != nil {
             Section {
-                if let p = info.publisher { SettingsRow(label: "Publisher", value: p, icon: "building.2") }
-                if let d = info.developer { SettingsRow(label: "Developer", value: d, icon: "hammer") }
-                if !info.genres.isEmpty { SettingsRow(label: "Genre", value: info.genres.joined(separator: ", "), icon: "tag") }
-                if let players = playersText(info) { SettingsRow(label: "Players", value: players, icon: "person.2") }
-                if let rating = ratingText(info) { SettingsRow(label: "Rating", value: rating, icon: "checkmark.shield") }
-                if !info.languages.isEmpty { SettingsRow(label: "Languages", value: info.languages.joined(separator: ", "), icon: "character.bubble") }
-                if let size = info.romSize { SettingsRow(label: "Size", value: ByteCountFormatter.string(fromByteCount: size, countStyle: .file), icon: "internaldrive") }
+                if let p = info.publisher { SettingsRow(label: "Publisher".localized, value: p, icon: "building.2") }
+                if let d = info.developer { SettingsRow(label: "Developer".localized, value: d, icon: "hammer") }
+                if !info.genres.isEmpty { SettingsRow(label: "Genre".localized, value: info.genres.joined(separator: ", "), icon: "tag") }
+                if let players = playersText(info) { SettingsRow(label: "Players".localized, value: players, icon: "person.2") }
+                if let rating = ratingText(info) { SettingsRow(label: "Rating".localized, value: rating, icon: "checkmark.shield") }
+                if !info.languages.isEmpty { SettingsRow(label: "Languages".localized, value: info.languages.joined(separator: ", "), icon: "character.bubble") }
+                if let size = info.romSize { SettingsRow(label: "Size".localized, value: ByteCountFormatter.string(fromByteCount: size, countStyle: .file), icon: "internaldrive") }
             } header: {
-                SettingsSectionHeader("Details", icon: "list.bullet", accent: .content)
+                SettingsSectionHeader("Details".localized, icon: "list.bullet", accent: .content)
             }
         }
     }
@@ -85,36 +85,36 @@ struct GameInfoSections: View {
                 SettingsRow(label: RegionCode(rawValue: r.region)?.name ?? r.region, value: r.dateText ?? "", icon: "calendar")
             }
         } header: {
-            SettingsSectionHeader("Released", icon: "calendar", accent: .content)
+            SettingsSectionHeader("Released".localized, icon: "calendar", accent: .content)
         }
     }
 
     private func controlsSection(_ info: GameInfo) -> some View {
         Section {
             ForEach(info.controls, id: \.self) { c in
-                SettingsRow(label: c.title, value: c.required ? "Required" : "Supported", icon: "gamecontroller")
+                SettingsRow(label: c.title, value: c.required ? "Required".localized : "Supported".localized, icon: "gamecontroller")
             }
         } header: {
-            SettingsSectionHeader("Controllers", icon: "gamecontroller", accent: .content)
+            SettingsSectionHeader("Controllers".localized, icon: "gamecontroller", accent: .content)
         }
     }
 
     private func identitySection(_ info: GameInfo) -> some View {
         Section {
-            if let t = game.titleId { SettingsRow(label: "Title ID", value: GameMetadata.settingsKey(forTitleId: t), icon: "number") }
-            SettingsRow(label: "Product code", value: info.productCode, icon: "barcode")
-            SettingsRow(label: "GameTDB ID", value: info.id, icon: "number.square")
-            if let region = game.region { SettingsRow(label: "This install", value: region, icon: "globe") }
+            if let t = game.titleId { SettingsRow(label: "Title ID".localized, value: GameMetadata.settingsKey(forTitleId: t), icon: "number") }
+            SettingsRow(label: "Product code".localized, value: info.productCode, icon: "barcode")
+            SettingsRow(label: "GameTDB ID".localized, value: info.id, icon: "number.square")
+            if let region = game.region { SettingsRow(label: "This install".localized, value: region, icon: "globe") }
         } header: {
-            SettingsSectionHeader("Identity", icon: "number", accent: .content)
+            SettingsSectionHeader("Identity".localized, icon: "number", accent: .content)
         }
     }
 
     private func matchSection(_ info: GameInfo) -> some View {
         Section {
             if let match {
-                SettingsRow(label: "Matched by", value: match.methodText, icon: "link")
-                SettingsRow(label: "Confidence", value: "\(match.confidenceText) (\(Int((match.confidence * 100).rounded()))%)", icon: "scope")
+                SettingsRow(label: "Matched by".localized, value: match.methodText, icon: "link")
+                SettingsRow(label: "Confidence".localized, value: "\(match.confidenceText) (\(Int((match.confidence * 100).rounded()))%)", icon: "scope")
             }
             Button {
                 showingPicker = true
@@ -123,9 +123,9 @@ struct GameInfoSections: View {
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
         } header: {
-            SettingsSectionHeader("Match", icon: "link", accent: .content)
+            SettingsSectionHeader("Match".localized, icon: "link", accent: .content)
         } footer: {
-            InfoButton.footer("The match is for this install only. Another copy of the same game can match differently.")
+            InfoButton.footer("The match is for this install only. Another copy of the same game can match differently.".localized)
         }
     }
 
@@ -145,8 +145,8 @@ struct GameInfoSections: View {
     private var emptySection: some View {
         Section {
             ScreenStatusCallout(tone: .info, message: data.isScraping
-                ? "Reading GameTDB's database\u{2026}"
-                : "There is no game data for this install yet. Scrape it from Settings > Cover + data scraping, or here.")
+                ? "Reading GameTDB's database\u{2026}".localized
+                : "There is no game data for this install yet. Scrape it from Settings > Cover + data scraping, or here.".localized)
             if data.isScraping {
                 ProgressView(value: data.fraction)
             } else {
@@ -175,9 +175,9 @@ struct GameInfoSections: View {
 
     private func playersText(_ info: GameInfo) -> String? {
         var parts: [String] = []
-        if let n = info.localPlayers { parts.append("Up to \(n) local") }
-        if let n = info.onlinePlayers { parts.append("up to \(n) online") }
-        else if !info.onlineFeatures.isEmpty { parts.append("online") }
+        if let n = info.localPlayers { parts.append(String(format: "Up to %d local".localized, n)) }
+        if let n = info.onlinePlayers { parts.append(String(format: "up to %d online".localized, n)) }
+        else if !info.onlineFeatures.isEmpty { parts.append("online".localized) }
         guard !parts.isEmpty else { return nil }
         let joined = parts.joined(separator: ", ")
         return joined.prefix(1).uppercased() + joined.dropFirst()
@@ -208,7 +208,7 @@ struct GameMatchPickerView: View {
             List {
                 if !data.hasTitleIndex {
                     Section {
-                        ScreenStatusCallout(tone: .info, message: "The title list comes from GameTDB's database. Scrape once to download it.")
+                        ScreenStatusCallout(tone: .info, message: "The title list comes from GameTDB's database. Scrape once to download it.".localized)
                         if data.isScraping {
                             ProgressView(value: data.fraction)
                         } else {
@@ -233,7 +233,7 @@ struct GameMatchPickerView: View {
                                     Text(rec.titles.first ?? rec.id)
                                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                                         .foregroundColor(MuffinTheme.brownDarkest)
-                                    Text("\(RegionCode(rawValue: rec.region)?.name ?? rec.region), \(rec.id)")
+                                    Text(verbatim: "\(RegionCode(rawValue: rec.region)?.name ?? rec.region), \(rec.id)")
                                         .font(.system(size: 12)).foregroundColor(MuffinTheme.secondaryText)
                                 }
                             }
@@ -247,7 +247,7 @@ struct GameMatchPickerView: View {
                     }
                 }
             }
-            .searchable(text: $query, prompt: "Search GameTDB titles")
+            .searchable(text: $query, prompt: Text("Search GameTDB titles"))
             .navigationTitle("Choose the game")
             .muffinOpaqueNavigationBar(MuffinTheme.formGround)
             #if os(iOS)

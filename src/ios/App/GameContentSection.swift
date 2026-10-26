@@ -28,8 +28,8 @@ struct GameContentSection: View {
 
     var body: some View {
         Section {
-            row("Update", installed: hasUpdate, kind: .update)
-            row("DLC", installed: hasDLC, kind: .dlc)
+            row("Update".localized, installed: hasUpdate, kind: .update)
+            row("DLC".localized, installed: hasDLC, kind: .dlc)
 
             if importInProgress {
                 HStack {
@@ -50,8 +50,9 @@ struct GameContentSection: View {
 
             if packing {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Packing into one .wua... \(progress.filesWritten) files, "
-                        + ByteCountFormatter.string(fromByteCount: Int64(progress.bytesWritten), countStyle: .file))
+                    Text(String(format: "Packing into one .wua... %d files, %@".localized,
+                                progress.filesWritten,
+                                ByteCountFormatter.string(fromByteCount: Int64(progress.bytesWritten), countStyle: .file)))
                         .font(.system(size: 13, design: .rounded))
                     Button("Cancel", role: .destructive) { cemu_bridge_cancel_decrypt() }
                 }
@@ -67,7 +68,7 @@ struct GameContentSection: View {
                 Button {
                     DocumentImport.presentExport([packedFile]) { _ in }
                 } label: {
-                    Label("Save \(packedFile.lastPathComponent)...", systemImage: "square.and.arrow.up")
+                    Label(String(format: "Save %@...".localized, packedFile.lastPathComponent), systemImage: "square.and.arrow.up")
                 }
             }
             if let message {
@@ -97,7 +98,7 @@ struct GameContentSection: View {
             set: { confirmRemove = $0?.kind }
         )) { request in
             Alert(
-                title: Text("Remove \(request.kind.displayName)?"),
+                title: Text(String(format: "Remove %@?".localized, request.kind.displayName)),
                 message: Text("The game itself and your saves are not touched."),
                 primaryButton: .destructive(Text("Remove")) { remove(request.kind) },
                 secondaryButton: .cancel())
@@ -147,9 +148,9 @@ struct GameContentSection: View {
     private func remove(_ kind: DlcUpdateImport.ContentKind) {
         do {
             _ = try DlcUpdateImport.remove(kind: kind, for: game)
-            message = "Removed the \(kind.displayName)."
+            message = String(format: "Removed the %@.".localized, kind.displayName)
         } catch {
-            message = "Couldn't remove it: \(error.localizedDescription)"
+            message = String(format: "Couldn't remove it: %@".localized, error.localizedDescription)
         }
         refresh()
     }
@@ -181,7 +182,7 @@ struct GameContentSection: View {
         message = nil
         packedFile = nil
         guard cemu_bridge_start_wua_build(sources.joined(separator: "\n"), destination.path) else {
-            message = "Another export is already running."
+            message = "Another export is already running.".localized
             return
         }
         packing = true
@@ -197,7 +198,7 @@ struct GameContentSection: View {
                 packing = false
                 if snapshot.isSuccess {
                     packedFile = destination
-                    message = "Done. The .wua holds the game with its update and DLC."
+                    message = "Done. The .wua holds the game with its update and DLC.".localized
                 } else {
                     message = failureText(snapshot.resultStatus)
                 }
@@ -207,13 +208,13 @@ struct GameContentSection: View {
 
     private func failureText(_ status: Int32) -> String {
         switch status {
-        case 1: return "One of the files couldn't be read as a Wii U title."
-        case 3: return "Couldn't write the .wua. The device may be out of space."
-        case 4: return "Cancelled."
-        case 5: return "Some files couldn't be read, so no .wua was made."
-        case 9: return "The update or DLC belongs to a different game."
-        case 10: return "The same title was added twice."
-        default: return "Couldn't build the .wua."
+        case 1: return "One of the files couldn't be read as a Wii U title.".localized
+        case 3: return "Couldn't write the .wua. The device may be out of space.".localized
+        case 4: return "Cancelled.".localized
+        case 5: return "Some files couldn't be read, so no .wua was made.".localized
+        case 9: return "The update or DLC belongs to a different game.".localized
+        case 10: return "The same title was added twice.".localized
+        default: return "Couldn't build the .wua.".localized
         }
     }
 
@@ -225,7 +226,7 @@ struct GameContentSection: View {
     private func addContent(result: Result<URL, Error>) {
         importMessage = nil
         guard case .success(let url) = result, let kind = pendingContentKind else {
-            importMessage = "Couldn't access that file."
+            importMessage = "Couldn't access that file.".localized
             return
         }
         install(url, kind: kind, allowReinstall: false)
@@ -239,7 +240,7 @@ struct GameContentSection: View {
                 _ = try await DlcUpdateImport.import(
                     from: url, kind: kind, library: [], manualMatch: game,
                     strictMatch: true, allowReinstall: allowReinstall)
-                importMessage = "Added the \(kind.displayName)."
+                importMessage = String(format: "Added the %@.".localized, kind.displayName)
             } catch DlcUpdateImport.ImportError.alreadyInstalledSameOrNewer(let installed, let imported)
                 where installed == imported && !allowReinstall {
                 pendingReinstall = (url, kind)

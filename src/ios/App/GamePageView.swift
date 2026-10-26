@@ -17,8 +17,8 @@ enum LibraryTapAction: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .openPage: return "Open its page"
-        case .playImmediately: return "Play immediately"
+        case .openPage: return "Open its page".localized
+        case .playImmediately: return "Play immediately".localized
         }
     }
 
@@ -211,7 +211,7 @@ struct GamePageView: View {
         }
         .buttonStyle(MuffinPrimaryButtonStyle())
         .frame(maxWidth: 340)
-        .accessibilityLabel("Play \(live.cardName.name)")
+        .accessibilityLabel(String(format: "Play %@".localized, live.cardName.name))
     }
 
     // MARK: Your play
@@ -228,7 +228,7 @@ struct GamePageView: View {
     }
 
     private var lastPlayedText: String {
-        guard let entry = stats.entry(for: game.id) else { return "Not yet" }
+        guard let entry = stats.entry(for: game.id) else { return "Not yet".localized }
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .full
         return formatter.localizedString(for: entry.last, relativeTo: Date())
@@ -302,7 +302,7 @@ struct GamePageView: View {
             ForEach(used) { slot in
                 HStack(spacing: 10) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Slot \(slot.number)")
+                        Text(String(format: "Slot %d".localized, slot.number))
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
                         Text(slotDetail(slot))
                             .font(.system(size: 12))
@@ -315,7 +315,7 @@ struct GamePageView: View {
                             .frame(width: 44, height: 44)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Delete slot \(slot.number)")
+                    .accessibilityLabel(String(format: "Delete slot %d".localized, slot.number))
                 }
             }
         } header: {
@@ -347,8 +347,8 @@ struct GamePageView: View {
             }
         } footer: {
             Text(live.isExternal
-                 ? "Only takes the game out of your library. Its file stays where it is. Your saves and options are kept."
-                 : "Frees up the space the game uses. Your saves and options are kept.")
+                 ? "Only takes the game out of your library. Its file stays where it is. Your saves and options are kept.".localized
+                 : "Frees up the space the game uses. Your saves and options are kept.".localized)
         }
     }
 

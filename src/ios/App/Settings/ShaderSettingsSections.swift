@@ -29,18 +29,18 @@ struct ShaderCacheSection: View {
                 cemu_bridge_set_async_shader_compile(newValue)
             }
             PerGameOverrideNote(field: .preCompileShaders)
-            SettingsRow(label: "Size on disk", value: Self.formatBytes(learnedCacheBytes + compiledCacheBytes))
-            SettingsRow(label: "Last updated", value: ShaderCacheInfo.formatDate(lastUpdated))
+            SettingsRow(label: "Size on disk".localized, value: Self.formatBytes(learnedCacheBytes + compiledCacheBytes))
+            SettingsRow(label: "Last updated".localized, value: ShaderCacheInfo.formatDate(lastUpdated))
             if SettingsMode.isAdvanced(raw: settingsModeRaw) {
-                SettingsRow(label: "Learned shaders", value: Self.formatBytes(learnedCacheBytes))
-                SettingsRow(label: "Compiled shaders", value: Self.formatBytes(compiledCacheBytes))
+                SettingsRow(label: "Learned shaders".localized, value: Self.formatBytes(learnedCacheBytes))
+                SettingsRow(label: "Compiled shaders".localized, value: Self.formatBytes(compiledCacheBytes))
             }
             Button { confirmClearCompiled = true } label: {
                 Label("Clear compiled shaders", systemImage: "arrow.counterclockwise")
             }
             .disabled(compiledCacheBytes <= 0)
             Button(role: .destructive) { confirmClearLearned = true } label: {
-                DestructiveSettingsLabel(title: "Clear everything, including learned", systemImage: "trash")
+                DestructiveSettingsLabel(title: "Clear everything, including learned".localized, systemImage: "trash")
             }
             .disabled(learnedCacheBytes <= 0 && compiledCacheBytes <= 0)
             if let cacheStatusMessage {
@@ -50,9 +50,9 @@ struct ShaderCacheSection: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         } header: {
-            SettingsSectionHeader("Shaders", icon: "externaldrive", accent: .core)
+            SettingsSectionHeader("Shaders".localized, icon: "externaldrive", accent: .core)
         } footer: {
-            InfoButton.footer("What every game has saved so it starts faster. To clear one game, open its page in the library. Clearing needs the game closed.")
+            InfoButton.footer("What every game has saved so it starts faster. To clear one game, open its page in the library. Clearing needs the game closed.".localized)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         .onAppear(perform: refreshCacheStats)
@@ -73,11 +73,11 @@ struct ShaderCacheSection: View {
     private func clear(includeLearned: Bool) {
         let freed = cemu_bridge_clear_shader_cache(0, includeLearned)
         if freed < 0 {
-            cacheStatusMessage = "Close the game first, then clear the cache."
+            cacheStatusMessage = "Close the game first, then clear the cache.".localized
             cacheStatusIsError = true
         } else {
-            cacheStatusMessage = "Freed \(Self.formatBytes(freed)). "
-                + (includeLearned ? "Games will stutter while they relearn their shaders." : "The next launch of each game is slow once.")
+            cacheStatusMessage = String(format: "Freed %@.".localized, Self.formatBytes(freed)) + " "
+                + (includeLearned ? "Games will stutter while they relearn their shaders.".localized : "The next launch of each game is slow once.".localized)
             cacheStatusIsError = false
         }
         refreshCacheStats()

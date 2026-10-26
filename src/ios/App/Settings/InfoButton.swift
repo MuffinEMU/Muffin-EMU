@@ -27,7 +27,7 @@ struct InfoButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
-        .accessibilityLabel("About \(title)")
+        .accessibilityLabel(String(format: "About %@".localized, title.localized))
         .sheet(isPresented: $showing) {
             // NavigationStack needs iOS 16+; this project's deployment target is 15.0.
             NavigationView {
@@ -39,7 +39,7 @@ struct InfoButton: View {
                     // in the themes with a dark gradient.
                     ScrollView {
                         MuffinCard {
-                            Text(text)
+                            Text(verbatim: text.localized)
                                 .font(.system(size: 15))
                                 .lineSpacing(3)
                                 .foregroundColor(MuffinTheme.brownDarkest)
@@ -49,7 +49,7 @@ struct InfoButton: View {
                         .padding(16)
                     }
                 }
-                .navigationTitle(title)
+                .navigationTitle(title.localized)
                 .muffinOpaqueNavigationBar()
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -83,7 +83,7 @@ extension InfoButton {
 
     /// `lineSpacing` and `fixedSize` keep multi-line footers from truncating in a Form footer.
     private static func footerText(_ short: String) -> some View {
-        Text(short)
+        Text(verbatim: short.localized)
             .font(.footnote)
             .foregroundColor(MuffinTheme.secondaryText)
             .lineSpacing(2.5)

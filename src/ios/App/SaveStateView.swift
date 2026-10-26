@@ -214,23 +214,23 @@ struct SaveStateSheet: View {
 
     private var dialogTitle: String {
         switch pending {
-        case .overwrite: return "Overwrite this save?"
-        default: return "Delete this save?"
+        case .overwrite: return "Overwrite this save?".localized
+        default: return "Delete this save?".localized
         }
     }
 
     private var dialogButton: String {
         switch pending {
-        case .overwrite: return "Overwrite"
-        default: return "Delete"
+        case .overwrite: return "Overwrite".localized
+        default: return "Delete".localized
         }
     }
 
     private var dialogMessage: String {
         let slot = pending?.slot ?? 0
         switch pending {
-        case .overwrite: return "Slot \(slot) will be replaced with the game as it is now. The old save can't be brought back."
-        default: return "Slot \(slot) will be gone for good."
+        case .overwrite: return String(format: "Slot %d will be replaced with the game as it is now. The old save can't be brought back.".localized, slot)
+        default: return String(format: "Slot %d will be gone for good.".localized, slot)
         }
     }
 
@@ -243,7 +243,7 @@ struct SaveStateSheet: View {
             rowContent(for: slot)
                 .contextMenu {
                     Button(role: .destructive) { pending = .delete(slot.number) } label: {
-                        Label("Delete Slot \(slot.number)", systemImage: "trash")
+                        Label(String(format: "Delete Slot %d".localized, slot.number), systemImage: "trash")
                     }
                 }
         } else {
@@ -260,7 +260,7 @@ struct SaveStateSheet: View {
             ScreenSlotBadge(label: "\(slot.number)", isFilled: slot.isOccupied)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Slot \(slot.number)")
+                Text(String(format: "Slot %d".localized, slot.number))
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                     .foregroundColor(MuffinTheme.brownDarkest)
 
@@ -282,7 +282,7 @@ struct SaveStateSheet: View {
                     }
                     .buttonStyle(ScreenRowActionStyle(isProminent: true))
                     .disabled(disabled)
-                    .accessibilityLabel("Load slot \(slot.number)")
+                    .accessibilityLabel(String(format: "Load slot %d".localized, slot.number))
                 }
 
                 // Overwriting an occupied slot asks first: it sits right beside Load, and the old save is gone for good.
@@ -293,11 +293,11 @@ struct SaveStateSheet: View {
                         onSave(slot.number)
                     }
                 }) {
-                    Text(slot.isOccupied ? "Overwrite" : "Save")
+                    Text(slot.isOccupied ? "Overwrite".localized : "Save".localized)
                 }
                 .buttonStyle(ScreenRowActionStyle())
                 .disabled(disabled)
-                .accessibilityLabel(slot.isOccupied ? "Overwrite slot \(slot.number)" : "Save to slot \(slot.number)")
+                .accessibilityLabel(slot.isOccupied ? String(format: "Overwrite slot %d".localized, slot.number) : String(format: "Save to slot %d".localized, slot.number))
             }
         }
         .padding(.vertical, 6)
@@ -311,17 +311,17 @@ struct SaveStateSheet: View {
     }
 
     private func subtitle(for slot: SaveStateSlot) -> String {
-        guard let savedAt = slot.savedAt else { return "Empty" }
-        let when = "Saved \(Self.relativeFormatter.localizedString(for: savedAt, relativeTo: Date()))"
+        guard let savedAt = slot.savedAt else { return "Empty".localized }
+        let when = String(format: "Saved %@".localized, Self.relativeFormatter.localizedString(for: savedAt, relativeTo: Date()))
         var detail = when
         if let bytes = slot.byteCount, bytes > 0 {
-            detail = "\(when) - \(Self.sizeFormatter.string(fromByteCount: bytes))"
+            detail = String(format: "%@ - %@".localized, when, Self.sizeFormatter.string(fromByteCount: bytes))
         }
         switch slot.availability {
         case .loadable: return detail
-        case .earlierSession: return "From an earlier session - can't be loaded yet\n\(detail)"
-        case .otherGame: return "Saved by a different game - can't be loaded here\n\(detail)"
-        case .unreadable: return "Not a readable save state\n\(detail)"
+        case .earlierSession: return String(format: "From an earlier session - can't be loaded yet\n%@".localized, detail)
+        case .otherGame: return String(format: "Saved by a different game - can't be loaded here\n%@".localized, detail)
+        case .unreadable: return String(format: "Not a readable save state\n%@".localized, detail)
         }
     }
 }

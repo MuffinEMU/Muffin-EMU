@@ -162,7 +162,7 @@ enum GameSaveTransfer {
                         completion(.failure(TransferError.cancelled))
                         return
                     }
-                    completion(.success("Saved to \(dest.lastPathComponent)."))
+                    completion(.success(String(format: "Saved to %@.".localized, dest.lastPathComponent)))
                 case .failure(let error):
                     completion(.failure(error))
                 }
@@ -249,7 +249,7 @@ enum GameSaveTransfer {
         guard let shape = shape(of: picked, preferredTitleFolder: destination.lastPathComponent) else { throw TransferError.unrecognisedFolder }
 
         let fm = FileManager.default
-        var backupNote = ""
+        var backedUp = false
         var movedAside: URL?
         if fm.fileExists(atPath: destination.path) {
             let stamp = ISO8601DateFormatter().string(from: Date())
@@ -261,7 +261,7 @@ enum GameSaveTransfer {
             try fm.createDirectory(at: backups.deletingLastPathComponent(), withIntermediateDirectories: true)
             try fm.moveItem(at: destination, to: backups)
             movedAside = backups
-            backupNote = " Your previous save was backed up first."
+            backedUp = true
         }
 
         do {
@@ -288,7 +288,9 @@ enum GameSaveTransfer {
             }
             throw error
         }
-        return "Save imported.\(backupNote) Start the game to check it."
+        return backedUp
+            ? "Save imported. Your previous save was backed up first. Start the game to check it.".localized
+            : "Save imported. Start the game to check it.".localized
     }
 
     enum TransferError: LocalizedError {
@@ -300,13 +302,13 @@ enum GameSaveTransfer {
         var errorDescription: String? {
             switch self {
             case .noSaveYet:
-                return "There's no save for this game yet. Play it once, then export."
+                return "There's no save for this game yet. Play it once, then export.".localized
             case .unknownTitleId:
-                return "MuffinEMU couldn't read this game's title ID, so it doesn't know where its save lives."
+                return "MuffinEMU couldn't read this game's title ID, so it doesn't know where its save lives.".localized
             case .unrecognisedFolder:
-                return "That folder doesn't look like a Wii U save. Pick the folder named after the game's title ID, or the 'user' folder inside it."
+                return "That folder doesn't look like a Wii U save. Pick the folder named after the game's title ID, or the 'user' folder inside it.".localized
             case .cancelled:
-                return "Export cancelled."
+                return "Export cancelled.".localized
             }
         }
     }

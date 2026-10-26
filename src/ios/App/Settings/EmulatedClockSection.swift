@@ -58,12 +58,12 @@ struct EmulatedClockSection: View {
                     .foregroundColor(MuffinTheme.secondaryText)
             }
         } header: {
-            SettingsSectionHeader("Emulated Clock", icon: "clock", accent: .core)
+            SettingsSectionHeader("Emulated Clock".localized, icon: "clock", accent: .core)
         } footer: {
             InfoButton.footer(
-                "\(timebase.summary) Changes how fast the game thinks time passes; it doesn't change how fast MuffinEMU runs.",
-                title: "Emulated Clock",
-                text: "Until you choose a value, MuffinEMU picks one itself: if a game hasn't started drawing after 12 seconds, it slows its clock a step (down to 1/64). Choosing a value here turns that off.\n\nWithout the recompiler the emulated CPU is much slower than the console's, so games can fall behind their own timers and never draw a frame. Slowing the game's clock gives them room. Emulation accuracy isn't affected.")
+                String(format: "%@ Changes how fast the game thinks time passes; it doesn't change how fast MuffinEMU runs.".localized, timebase.summary),
+                title: "Emulated Clock".localized,
+                text: "Until you choose a value, MuffinEMU picks one itself: if a game hasn't started drawing after 12 seconds, it slows its clock a step (down to 1/64). Choosing a value here turns that off.\n\nWithout the recompiler the emulated CPU is much slower than the console's, so games can fall behind their own timers and never draw a frame. Slowing the game's clock gives them room. Emulation accuracy isn't affected.".localized)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         // Reset settings clears the stored choice from outside this view.

@@ -103,14 +103,14 @@ enum PadGroup: String, CaseIterable, Codable, Identifiable {
 
     var title: String {
         switch self {
-        case .shoulderL: return "L and ZL"
-        case .shoulderR: return "R and ZR"
-        case .stickL:    return "Left stick"
-        case .stickR:    return "Right stick"
-        case .dpad:      return "D-pad"
+        case .shoulderL: return "L and ZL".localized
+        case .shoulderR: return "R and ZR".localized
+        case .stickL:    return "Left stick".localized
+        case .stickR:    return "Right stick".localized
+        case .dpad:      return "D-pad".localized
         case .face:      return "A B X Y"
-        case .start:     return "Start"
-        case .select:    return "Select"
+        case .start:     return "Start".localized
+        case .select:    return "Select".localized
         case .home:      return "HOME"
         }
     }
@@ -120,8 +120,8 @@ enum PadGroup: String, CaseIterable, Codable, Identifiable {
     /// the glyph alone does not say so.
     var caption: String? {
         switch self {
-        case .start:  return "START"
-        case .select: return "SELECT"
+        case .start:  return "START".localized
+        case .select: return "SELECT".localized
         case .home:   return "HOME"
         default:      return nil
         }
@@ -344,7 +344,7 @@ enum PadPresetFitter {
         }
         if heightLimit < unit {
             log.append(.init(kind: .scaledToFit, group: nil,
-                             detail: String(format: "%.1f -> %.1f pt: the tallest reach needs more height than this screen has",
+                             detail: String(format: "%.1f -> %.1f pt: the tallest reach needs more height than this screen has".localized,
                                             unit, heightLimit)))
             unit = heightLimit
         }
@@ -353,7 +353,7 @@ enum PadPresetFitter {
         //    unusable. Raising the unit can push things off the edge, which pass 3 catches.
         if unit < PadLayout.touchFloor {
             log.append(.init(kind: .raisedToTouchFloor, group: nil,
-                             detail: String(format: "%.1f -> %.0f pt, the 44 pt minimum", unit, PadLayout.touchFloor)))
+                             detail: String(format: "%.1f -> %.0f pt, the 44 pt minimum".localized, unit, PadLayout.touchFloor)))
             unit = PadLayout.touchFloor
         }
 
@@ -396,7 +396,7 @@ enum PadPresetFitter {
                         placed[g] = n
                         fellBack.insert(g)
                         log.append(.init(kind: .fellBackToNative, group: g,
-                                         detail: "\(g.title) could not be made to fit; using this device's own position"))
+                                         detail: String(format: "%@ could not be made to fit; using this device's own position".localized, g.title)))
                     }
                 }
                 clampToSafeArea(&placed, at: unit)
@@ -413,7 +413,7 @@ enum PadPresetFitter {
         }
         if shrinkSteps > 0 {
             log.append(.init(kind: .separatedOverlap, group: nil,
-                             detail: String(format: "shrunk %d%% to stop groups overlapping", Int((1 - pow(0.97, Double(shrinkSteps))) * 100))))
+                             detail: String(format: "shrunk %d%% to stop groups overlapping".localized, Int((1 - pow(0.97, Double(shrinkSteps))) * 100))))
         }
         // What actually moved, for the log: the raw (unclamped) position the settled
         // unit would give each group, versus where the clamp actually put it. Comparing
@@ -424,7 +424,7 @@ enum PadPresetFitter {
         for g in PadGroup.allCases {
             guard let c = placed[g], let r = raw[g], abs(c.x - r.x) > 0.5 || abs(c.y - r.y) > 0.5 else { continue }
             log.append(.init(kind: .movedInsideSafeArea, group: g,
-                             detail: String(format: "%@ moved %.0f, %.0f pt back on screen",
+                             detail: String(format: "%@ moved %.0f, %.0f pt back on screen".localized,
                                             g.title, c.x - r.x, c.y - r.y)))
         }
 

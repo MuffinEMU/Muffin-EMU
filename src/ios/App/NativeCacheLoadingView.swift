@@ -34,7 +34,7 @@ private struct CacheLoadingState: Equatable {
     }
 
     var title: String {
-        phase == .pipelines ? "Loading cached pipelines" : "Loading cached shaders"
+        phase == .pipelines ? "Loading cached pipelines".localized : "Loading cached shaders".localized
     }
 
     static func read() -> CacheLoadingState {
@@ -72,7 +72,7 @@ private struct CacheLoadingCard: View {
         let formatter = cacheLoadingCountFormatter
         let loaded = formatter.string(from: NSNumber(value: state.loaded)) ?? "\(state.loaded)"
         let total = formatter.string(from: NSNumber(value: state.total)) ?? "\(state.total)"
-        return "\(loaded) of \(total)"
+        return String(format: "%@ of %@".localized, loaded, total)
     }
 
     var body: some View {
@@ -89,7 +89,7 @@ private struct CacheLoadingCard: View {
             HStack {
                 Text(countText)
                 Spacer(minLength: 8)
-                Text("\(percent)%")
+                Text(String(format: "%d%%".localized, percent))
             }
             .font(.system(.caption, design: .rounded).weight(.medium).monospacedDigit())
             .foregroundColor(.white.opacity(0.85))
@@ -99,7 +99,7 @@ private struct CacheLoadingCard: View {
         .background(Color.black.opacity(0.78), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(state.title)
-        .accessibilityValue("\(percent) percent, \(countText)")
+        .accessibilityValue(String(format: "%d percent, %@".localized, percent, countText))
     }
 }
 

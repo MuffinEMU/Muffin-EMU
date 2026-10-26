@@ -211,7 +211,7 @@ struct PanelToggle: View {
 
     var body: some View {
         Toggle(isOn: $isOn) {
-            Text(title)
+            Text(verbatim: title.localized)
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .foregroundColor(.white.opacity(0.85))
         }
@@ -258,7 +258,7 @@ struct MuffinPadLayoutPanel: View {
     var body: some View {
         LayoutPanelCard(rows: { rows }, footer: {
             LayoutPanelFooter(
-                resetMessage: "Button size, opacity, stick spacing, shoulder height and every button you've moved go back to how MuffinEMU ships, in every game.",
+                resetMessage: "Button size, opacity, stick spacing, shoulder height and every button you've moved go back to how MuffinEMU ships, in every game.".localized,
                 onReset: { ControllerLayoutSettings.reset() },
                 onDone: onDone)
         })
@@ -274,40 +274,40 @@ struct MuffinPadLayoutPanel: View {
         .pickerStyle(.segmented)
 
         PanelCaption(text: individualEditMode
-                     ? "Drag any button to move it on its own, or pinch it to resize. L and ZL move together, and so do R and ZR. Nothing here reaches the game."
-                     : "Drag the empty space inside a dashed box to move that whole half - L/ZL and the rest of the left side together, R/ZR and the right side together. Nothing here reaches the game.")
+                     ? "Drag any button to move it on its own, or pinch it to resize. L and ZL move together, and so do R and ZR. Nothing here reaches the game.".localized
+                     : "Drag the empty space inside a dashed box to move that whole half - L/ZL and the rest of the left side together, R/ZR and the right side together. Nothing here reaches the game.".localized)
 
-        PanelSliderRow("Button size", leadingIcon: "minus.magnifyingglass", trailingIcon: "plus.magnifyingglass",
+        PanelSliderRow("Button size".localized, leadingIcon: "minus.magnifyingglass", trailingIcon: "plus.magnifyingglass",
                        value: $controlScale,
                        range: ControllerLayoutSettings.minScale...ControllerLayoutSettings.maxScale)
 
-        PanelSliderRow("Opacity", leadingIcon: "circle.lefthalf.filled", trailingIcon: "circle.fill",
+        PanelSliderRow("Opacity".localized, leadingIcon: "circle.lefthalf.filled", trailingIcon: "circle.fill",
                        value: $controlOpacity, range: 0.2...1.0)
 
         // L, ZL, R and ZR move up or down together. iPad only.
         if ControllerLayoutSettings.supportsShoulderOffset {
-            PanelSliderRow(shoulderStore.label(in: windowSize.effectiveSize, touchLab: false), title: "L/R", leadingIcon: "arrow.up.and.down",
+            PanelSliderRow(shoulderStore.label(in: windowSize.effectiveSize, touchLab: false), title: "L/R".localized, leadingIcon: "arrow.up.and.down",
                            value: shoulderBinding,
                            range: ControllerLayoutSettings.shoulderOffsetRange(touchLab: false, in: windowSize.effectiveSize),
                            step: ControllerLayoutSettings.shoulderOffsetStep,
                            spokenValue: ControllerLayoutSettings.shoulderOffsetLabel(shoulderBinding.wrappedValue))
-            PanelToggle(title: "Same height in portrait and landscape",
+            PanelToggle(title: "Same height in portrait and landscape".localized,
                         isOn: shoulderStore.linkBinding(in: windowSize.effectiveSize, touchLab: false))
         }
 
-        PanelToggle(title: "Add analog sticks", isOn: $joystickMode)
+        PanelToggle(title: "Add analog sticks".localized, isOn: $joystickMode)
 
         if joystickMode { stickRows }
 
-        PanelCaption(text: "These settings apply to every game.", prominent: false)
+        PanelCaption(text: "These settings apply to every game.".localized, prominent: false)
     }
 
     @ViewBuilder private var stickRows: some View {
-        PanelToggle(title: "Comfort controls", isOn: $comfortControls)
+        PanelToggle(title: "Comfort controls".localized, isOn: $comfortControls)
 
         PanelCaption(text: comfortControls
-                     ? "L, ZL and minus sit on the left stick; R, ZR and plus sit on the right stick."
-                     : "L, ZL and minus stay on the d-pad; R, ZR and plus stay on A/B/X/Y.",
+                     ? "L, ZL and minus sit on the left stick; R, ZR and plus sit on the right stick.".localized
+                     : "L, ZL and minus stay on the d-pad; R, ZR and plus stay on A/B/X/Y.".localized,
                      prominent: false)
 
         Picker("Stick gate", selection: $stickGateRaw) {
@@ -317,28 +317,28 @@ struct MuffinPadLayoutPanel: View {
         }
         .pickerStyle(.segmented)
 
-        PanelSliderRow("Stick deadzone", title: "Deadzone",
+        PanelSliderRow("Stick deadzone".localized, title: "Deadzone".localized,
                        value: $stickDeadzone,
                        range: ControllerLayoutSettings.minDeadzone...ControllerLayoutSettings.maxDeadzone,
-                       spokenValue: stickDeadzone <= 0.0005 ? "off" : "\(Int((stickDeadzone * 100).rounded())) percent",
-                       readout: stickDeadzone <= 0.0005 ? "off" : "\(Int((stickDeadzone * 100).rounded()))%")
+                       spokenValue: stickDeadzone <= 0.0005 ? "off".localized : String(format: "%d percent".localized, Int((stickDeadzone * 100).rounded())),
+                       readout: stickDeadzone <= 0.0005 ? "off".localized : String(format: "%d%%".localized, Int((stickDeadzone * 100).rounded())))
         // This slider sets both sticks, so a stick's own value is dropped.
         .onChange(of: stickDeadzone) { _ in SharedStick.clearInnerAndCurveOverrides() }
 
-        PanelSliderRow("Fine control", title: "Fine",
+        PanelSliderRow("Fine control".localized, title: "Fine".localized,
                        value: $stickCurve,
                        range: ControllerLayoutSettings.minStickCurve...ControllerLayoutSettings.maxStickCurve,
                        spokenValue: stickCurve <= ControllerLayoutSettings.minStickCurve + 0.005
-                           ? "linear" : String(format: "%.1f times", stickCurve),
+                           ? "linear".localized : String(format: "%.1f times".localized, stickCurve),
                        readout: stickCurve <= ControllerLayoutSettings.minStickCurve + 0.005
-                           ? "lin" : String(format: "%.1fx", stickCurve))
+                           ? "lin".localized : String(format: "%.1fx".localized, stickCurve))
         .onChange(of: stickCurve) { _ in SharedStick.clearInnerAndCurveOverrides() }
 
         // Each stick on its own: deadzones, sensitivity, invert and a test circle.
         FineTuneSticksRow()
 
         // Hand size: both sticks move together, apart or closer.
-        PanelSliderRow("Stick spacing", title: "Sticks",
+        PanelSliderRow("Stick spacing".localized, title: "Sticks".localized,
                        leadingIcon: "arrow.right.and.line.vertical.and.arrow.left",
                        trailingIcon: "arrow.left.and.line.vertical.and.arrow.right",
                        value: $stickSpacing,
@@ -366,20 +366,20 @@ struct MeloLayoutPanel: View {
     var body: some View {
         LayoutPanelCard(rows: { rows }, footer: {
             LayoutPanelFooter(
-                resetMessage: "Melo-Controller's size goes back to how it ships in every game, and so do the buttons you've moved in this game.",
+                resetMessage: "Melo-Controller's size goes back to how it ships in every game, and so do the buttons you've moved in this game.".localized,
                 onReset: { MeloControlsSetting.resetLayout(gameID: gameID) },
                 onDone: onDone)
         })
     }
 
     @ViewBuilder private var rows: some View {
-        PanelCaption(text: "Melo-Controller size")
+        PanelCaption(text: "Melo-Controller size".localized)
 
-        PanelSliderRow("Melo-Controller size", leadingIcon: "minus.magnifyingglass",
+        PanelSliderRow("Melo-Controller size".localized, leadingIcon: "minus.magnifyingglass",
                        trailingIcon: "plus.magnifyingglass",
                        value: $scale, range: MeloControlsSetting.minScale...MeloControlsSetting.maxScale)
 
-        PanelCaption(text: "Drag a button to move it. Positions are saved for this game only; the size applies to every game.",
+        PanelCaption(text: "Drag a button to move it. Positions are saved for this game only; the size applies to every game.".localized,
                      prominent: false)
     }
 }
@@ -393,15 +393,15 @@ struct PreviewLayoutPanel: View {
     var body: some View {
         LayoutPanelCard(rows: { rows }, footer: {
             LayoutPanelFooter(
-                resetMessage: "Every group goes back to the preset's own position and size, in every game. The preset, colours and picture mode you picked stay as they are.",
+                resetMessage: "Every group goes back to the preset's own position and size, in every game. The preset, colours and picture mode you picked stay as they are.".localized,
                 onReset: { PreviewPadStore.shared.resetAdjustments() },
                 onDone: onDone)
         })
     }
 
     @ViewBuilder private var rows: some View {
-        PanelCaption(text: "Drag a group of buttons to move it, or pinch it to resize it. Nothing here reaches the game.")
+        PanelCaption(text: "Drag a group of buttons to move it, or pinch it to resize it. Nothing here reaches the game.".localized)
         FineTuneSticksRow()
-        PanelCaption(text: "This is the experimental pad. Its size, colours and layout presets are in Settings.", prominent: false)
+        PanelCaption(text: "This is the experimental pad. Its size, colours and layout presets are in Settings.".localized, prominent: false)
     }
 }

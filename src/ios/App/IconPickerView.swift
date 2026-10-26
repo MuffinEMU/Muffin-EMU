@@ -90,7 +90,7 @@ struct IconPickerView: View {
         guard name != currentIconName else { return }
         UIApplication.shared.setAlternateIconName(name) { error in
             if let error {
-                errorMessage = "Couldn't switch icon: \(error.localizedDescription)"
+                errorMessage = String(format: "Couldn't switch icon: %@".localized, error.localizedDescription)
                 return
             }
             currentIconName = name
@@ -101,7 +101,7 @@ struct IconPickerView: View {
         guard !(icon.isPro && !Entitlements.hasProPlan) else {
             ScreenHaptics.rejected()
             withAnimation(.easeOut(duration: 0.18)) {
-                lockedMessage = "\(icon.name) is a pro icon. Enter an unlock code under Settings > Premium to use it."
+                lockedMessage = String(format: "%@ is a pro icon. Enter an unlock code under Settings > Premium to use it.".localized, icon.name)
             }
             return
         }
@@ -111,7 +111,7 @@ struct IconPickerView: View {
         ScreenHaptics.selectionChanged()
         UIApplication.shared.setAlternateIconName(name) { error in
             if let error {
-                errorMessage = "Couldn't switch icon: \(error.localizedDescription)"
+                errorMessage = String(format: "Couldn't switch icon: %@".localized, error.localizedDescription)
                 return
             }
             errorMessage = nil
@@ -182,7 +182,7 @@ private struct IconOptionCard: View {
             .animation(.easeOut(duration: 0.16), value: isSelected)
         }
         .buttonStyle(ScreenCardButtonStyle())
-        .accessibilityLabel(isLocked ? "\(icon.name), locked, Pro only" : icon.name)
+        .accessibilityLabel(isLocked ? String(format: "%@, locked, Pro only".localized, icon.name) : icon.name)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 

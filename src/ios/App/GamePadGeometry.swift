@@ -181,7 +181,7 @@ struct PadLayout {
     /// choosing NATIVE, not a bug to route around.
     enum DisplayMode: String, Codable, CaseIterable {
         case fit, native
-        var title: String { self == .fit ? "Fit" : "Native" }
+        var title: String { self == .fit ? "Fit".localized : "Native".localized }
     }
 
     enum Placement {
