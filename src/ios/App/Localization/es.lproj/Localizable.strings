@@ -1322,7 +1322,7 @@
 "Search games..." = "Buscar juegos...";
 "Sections" = "Secciones";
 "See-through buttons with a sheen across the top." = "Botones translúcidos con un brillo en la parte superior.";
-"Select" = "Seleccionar";
+"Select" = "Select";
 "Send this with any bug report. It lists your chip, memory and app build." = "Envía esto con cualquier informe de error. Incluye tu chip, memoria y compilación de la app.";
 "Sensitivity" = "Sensibilidad";
 "Serious" = "Grave";
@@ -1399,8 +1399,8 @@
 "Skip - I only play homebrew" = "Omitir: solo juego homebrew";
 "Skip certificate checks" = "Omitir comprobaciones de certificado";
 "Skip intro" = "Omitir intro";
-"Skip left" = "Omitir a la izquierda";
-"Skip right" = "Omitir a la derecha";
+"Skip left" = "Omitir stick izquierdo";
+"Skip right" = "Omitir stick derecho";
 "Skip those accounts" = "Omitir esas cuentas";
 "Skipped account %@: it's already installed." = "Se omitió la cuenta %@: ya está instalada.";
 "Skylander %d" = "Skylander %d";

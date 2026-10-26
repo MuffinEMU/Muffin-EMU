@@ -569,7 +569,7 @@
 "External display" = "Wyświetlacz zewnętrzny";
 "Extremely Hot" = "Ekstremalnie gorące";
 "Fade when idle" = "Wygaszaj w bezczynności";
-"Fair" = "Przyzwoite";
+"Fair" = "Umiarkowane";
 "Fast blending" = "Szybkie mieszanie";
 "Fast blending lets some Metal shaders blend using the picture already on screen instead of an extra step, which is quicker. It is on by default, Metal only, and takes effect the next time you launch a game." = "Szybkie mieszanie pozwala niektórym shaderom Metal mieszać z użyciem obrazu już na ekranie zamiast dodatkowego kroku, co jest szybsze. Jest domyślnie włączone, tylko Metal, i działa od następnego uruchomienia gry.";
 "Faster, but the picture is softer and some games look wrong." = "Szybciej, ale obraz jest bardziej miękki, a niektóre gry wyglądają źle.";
@@ -1399,8 +1399,8 @@
 "Skip - I only play homebrew" = "Pomiń – gram tylko w homebrew";
 "Skip certificate checks" = "Pomiń sprawdzanie certyfikatów";
 "Skip intro" = "Pomiń intro";
-"Skip left" = "Przewiń w lewo";
-"Skip right" = "Przewiń w prawo";
+"Skip left" = "Pomiń lewy drążek";
+"Skip right" = "Pomiń prawy drążek";
 "Skip those accounts" = "Pomiń te konta";
 "Skipped account %@: it's already installed." = "Pominięto konto %@: jest już zainstalowane.";
 "Skylander %d" = "Skylander %d";
@@ -1495,7 +1495,7 @@
 "Tap Quit Game and reopen MuffinEMU. After you quit, a lower Resolution (in Settings, Graphics) uses less memory." = "Stuknij Zakończ grę i otwórz MuffinEMU ponownie. Po wyjściu niższa Rozdzielczość (w Ustawieniach, Grafika) zużywa mniej pamięci.";
 "Tap a button to pick it, then drag it to move it, pinch it or use Size to resize it. It stops where it would touch another button or leave the screen." = "Stuknij przycisk, aby go wybrać, a potem przeciągnij, aby go przesunąć, ściągnij palce lub użyj Rozmiaru, aby zmienić rozmiar. Zatrzymuje się przy innym przycisku lub krawędzi ekranu.";
 "Tap a button to pick its whole group (the d-pad, the face buttons, a stick, a pair of shoulder buttons, or plus, minus and HOME), then drag or pinch it as one." = "Stuknij przycisk, aby wybrać całą jego grupę (krzyżak, przyciski akcji, drążek, parę przycisków górnych albo plus, minus i HOME), a potem przeciągnij lub ściągnij palce jak jedną całość.";
-"Tap a game to" = "Stuknij grę, aby";
+"Tap a game to" = "Po stuknięciu gry";
 "Tap a server to make it the active Custom server, then pick Custom under Network Service. Swipe to delete." = "Stuknij serwer, aby ustawić go jako aktywny serwer Własny, a potem wybierz Własny w Usłudze sieciowej. Przesuń, aby usunąć.";
 "Tap the GamePad screen to use it in the game." = "Stuknij ekran GamePada, aby użyć go w grze.";
 "Tap the heart on a game to add it here." = "Stuknij serce przy grze, aby dodać ją tutaj.";

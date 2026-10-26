@@ -569,7 +569,7 @@
 "External display" = "Extern skärm";
 "Extremely Hot" = "Extremt het";
 "Fade when idle" = "Tona ut vid inaktivitet";
-"Fair" = "Hyfsad";
+"Fair" = "Måttlig";
 "Fast blending" = "Snabb blandning";
 "Fast blending lets some Metal shaders blend using the picture already on screen instead of an extra step, which is quicker. It is on by default, Metal only, and takes effect the next time you launch a game." = "Snabb blandning låter vissa Metal-shaders blanda med bilden som redan finns på skärmen i stället för ett extra steg, vilket går snabbare. Det är på som standard, endast Metal, och börjar gälla nästa gång du startar ett spel.";
 "Faster, but the picture is softer and some games look wrong." = "Snabbare, men bilden blir mjukare och en del spel ser fel ut.";
@@ -1399,8 +1399,8 @@
 "Skip - I only play homebrew" = "Hoppa över – jag spelar bara homebrew";
 "Skip certificate checks" = "Hoppa över certifikatkontroller";
 "Skip intro" = "Hoppa över intro";
-"Skip left" = "Hoppa över vänster";
-"Skip right" = "Hoppa över höger";
+"Skip left" = "Hoppa över vänster spak";
+"Skip right" = "Hoppa över höger spak";
 "Skip those accounts" = "Hoppa över de kontona";
 "Skipped account %@: it's already installed." = "Hoppade över kontot %@: det är redan installerat.";
 "Skylander %d" = "Skylander %d";
@@ -1826,7 +1826,7 @@
 "entry count" = "antal poster";
 "entry name" = "postnamn";
 "games" = "spel";
-"heavy here" = "tungt här";
+"heavy here" = "för krävande";
 "higher" = "högre";
 "homebrew" = "homebrew";
 "iOS may close MuffinEMU soon. Save in the game now if you can. After you quit, a lower Resolution (in Settings, Graphics) uses less memory." = "iOS kan snart stänga MuffinEMU. Spara i spelet nu om du kan. Efter att du har avslutat använder lägre Upplösning (i Inställningar, Grafik) mindre minne.";

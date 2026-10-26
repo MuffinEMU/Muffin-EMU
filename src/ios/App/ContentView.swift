@@ -72,6 +72,9 @@ struct ContentView: View {
                         isRunning: $showingGameBrowser,
                         controllerSkin: selectedSkin
                     )
+                    // The on-screen GamePad copies the real hardware, so it never mirrors for Arabic or
+                    // Hebrew: the d-pad and left stick stay on the left. Text inside still reads right to left.
+                    .environment(\.layoutDirection, .leftToRight)
                     .overlay(alignment: .top) {
                         if let notice = gameManager.launchNotice {
                             LaunchNoticeBanner(text: notice)

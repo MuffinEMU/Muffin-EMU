@@ -1322,10 +1322,10 @@
 "Search games..." = "Spiele durchsuchen …";
 "Sections" = "Bereiche";
 "See-through buttons with a sheen across the top." = "Durchsichtige Tasten mit Glanz am oberen Rand.";
-"Select" = "Auswählen";
+"Select" = "Select";
 "Send this with any bug report. It lists your chip, memory and app build." = "Sende dies mit jedem Fehlerbericht mit. Es listet deinen Chip, Arbeitsspeicher und App-Build auf.";
 "Sensitivity" = "Empfindlichkeit";
-"Serious" = "Ernst";
+"Serious" = "Ernsthaft";
 "Server name" = "Servername";
 "Servers can't be changed while a game is running. Close the game first." = "Server lassen sich nicht ändern, solange ein Spiel läuft. Beende zuerst das Spiel.";
 "Set differently for %d games" = "Bei %d Spielen anders festgelegt";
@@ -1399,8 +1399,8 @@
 "Skip - I only play homebrew" = "Überspringen – ich spiele nur Homebrew";
 "Skip certificate checks" = "Zertifikatsprüfungen überspringen";
 "Skip intro" = "Intro überspringen";
-"Skip left" = "Links überspringen";
-"Skip right" = "Rechts überspringen";
+"Skip left" = "Linken Stick überspringen";
+"Skip right" = "Rechten Stick überspringen";
 "Skip those accounts" = "Diese Konten überspringen";
 "Skipped account %@: it's already installed." = "Konto %@ übersprungen: Es ist bereits installiert.";
 "Skylander %d" = "Skylander %d";
@@ -1826,7 +1826,7 @@
 "entry count" = "Anzahl der Einträge";
 "entry name" = "Name des Eintrags";
 "games" = "Spiele";
-"heavy here" = "hier stark";
+"heavy here" = "zu anspruchsvoll";
 "higher" = "höher";
 "homebrew" = "Homebrew";
 "iOS may close MuffinEMU soon. Save in the game now if you can. After you quit, a lower Resolution (in Settings, Graphics) uses less memory." = "iOS schließt MuffinEMU möglicherweise bald. Sichere jetzt im Spiel, wenn du kannst. Nach dem Beenden braucht eine niedrigere Auflösung (in den Einstellungen unter Grafik) weniger Speicher.";

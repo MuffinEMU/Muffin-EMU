@@ -1322,7 +1322,7 @@
 "Search games..." = "게임 검색...";
 "Sections" = "섹션";
 "See-through buttons with a sheen across the top." = "위쪽에 광택이 있는 반투명 버튼.";
-"Select" = "선택";
+"Select" = "Select";
 "Send this with any bug report. It lists your chip, memory and app build." = "버그를 신고할 때 함께 보내세요. 칩, 메모리, 앱 빌드가 나열됩니다.";
 "Sensitivity" = "감도";
 "Serious" = "심각";
@@ -1399,8 +1399,8 @@
 "Skip - I only play homebrew" = "건너뛰기 - 홈브루만 플레이합니다";
 "Skip certificate checks" = "인증서 확인 건너뛰기";
 "Skip intro" = "인트로 건너뛰기";
-"Skip left" = "왼쪽으로 건너뛰기";
-"Skip right" = "오른쪽으로 건너뛰기";
+"Skip left" = "왼쪽 스틱 건너뛰기";
+"Skip right" = "오른쪽 스틱 건너뛰기";
 "Skip those accounts" = "해당 계정 건너뛰기";
 "Skipped account %@: it's already installed." = "계정 %@을(를) 건너뛰었습니다. 이미 설치되어 있습니다.";
 "Skylander %d" = "Skylander %d";
@@ -1429,7 +1429,7 @@
 "Speed" = "속도";
 "Speed and controls" = "속도 및 컨트롤";
 "Speed with one CPU core, set before this choice existed. Pick a profile to replace it." = "이 선택지가 생기기 전에 설정된, CPU 코어 하나를 사용하는 속도입니다. 교체하려면 프로필을 선택하세요.";
-"Start" = "시작";
+"Start" = "Start";
 "Start each with http:// or https://. Leave out any the server doesn't use; those fall back to Nintendo's, which are shut down. Skip certificate checks only for a server you trust that uses a self-signed certificate." = "각각 http:// 또는 https://로 시작하세요. 서버가 사용하지 않는 것은 비워 두세요. 비워 두면 종료된 Nintendo 서버로 대체됩니다. 인증서 확인 건너뛰기는 자체 서명 인증서를 사용하는 신뢰하는 서버에만 사용하세요.";
 "Start playing" = "플레이 시작";
 "Started, no picture yet" = "시작됨, 아직 화면 없음";
@@ -1845,7 +1845,7 @@
 "lower" = "더 낮게";
 "meta folder" = "meta 폴더";
 "multi-disk archive" = "다중 디스크 압축 파일";
-"never" = "안 함";
+"never" = "기록 없음";
 "none" = "없음";
 "not a recognizable game title" = "인식할 수 있는 게임 타이틀이 아님";
 "not available" = "사용할 수 없음";

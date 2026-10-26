@@ -569,7 +569,7 @@
 "External display" = "Extern scherm";
 "Extremely Hot" = "Extreem heet";
 "Fade when idle" = "Vervagen bij inactiviteit";
-"Fair" = "Redelijk";
+"Fair" = "Matig";
 "Fast blending" = "Snelle blending";
 "Fast blending lets some Metal shaders blend using the picture already on screen instead of an extra step, which is quicker. It is on by default, Metal only, and takes effect the next time you launch a game." = "Met snelle blending kunnen sommige Metal-shaders blenden met het beeld dat al op het scherm staat in plaats van met een extra stap, wat sneller is. Het staat standaard aan, werkt alleen met Metal en gaat in de volgende keer dat je een game start.";
 "Faster, but the picture is softer and some games look wrong." = "Sneller, maar het beeld is zachter en sommige games zien er verkeerd uit.";
@@ -938,7 +938,7 @@
 "MuffinEMU's measured GamePad layout." = "De gemeten GamePad-indeling van MuffinEMU.";
 "Name" = "Naam";
 "Names the folder your saves live in. Leave it alone unless you're importing saves from a real Wii U." = "Geeft de map een naam waarin je saves staan. Laat het ongemoeid tenzij je saves van een echte Wii U importeert.";
-"Native" = "Native";
+"Native" = "Natief";
 "Native (this device)" = "Native (dit apparaat)";
 "Nearest Neighbor" = "Dichtstbijzijnde buur";
 "Needs speed to spare" = "Heeft snelheid over nodig";
@@ -1322,7 +1322,7 @@
 "Search games..." = "Games zoeken...";
 "Sections" = "Secties";
 "See-through buttons with a sheen across the top." = "Doorzichtige knoppen met een glans over de bovenkant.";
-"Select" = "Selecteer";
+"Select" = "Select";
 "Send this with any bug report. It lists your chip, memory and app build." = "Stuur dit mee met elke bugmelding. Het toont je chip, geheugen en app-build.";
 "Sensitivity" = "Gevoeligheid";
 "Serious" = "Ernstig";
@@ -1399,8 +1399,8 @@
 "Skip - I only play homebrew" = "Overslaan - ik speel alleen homebrew";
 "Skip certificate checks" = "Certificaatcontroles overslaan";
 "Skip intro" = "Intro overslaan";
-"Skip left" = "Links overslaan";
-"Skip right" = "Rechts overslaan";
+"Skip left" = "Linkerstick overslaan";
+"Skip right" = "Rechterstick overslaan";
 "Skip those accounts" = "Die accounts overslaan";
 "Skipped account %@: it's already installed." = "Account %@ overgeslagen: het is al geïnstalleerd.";
 "Skylander %d" = "Skylander %d";
@@ -1826,7 +1826,7 @@
 "entry count" = "aantal items";
 "entry name" = "itemnaam";
 "games" = "games";
-"heavy here" = "te zwaar hier";
+"heavy here" = "te zwaar";
 "higher" = "hoger";
 "homebrew" = "homebrew";
 "iOS may close MuffinEMU soon. Save in the game now if you can. After you quit, a lower Resolution (in Settings, Graphics) uses less memory." = "iOS sluit MuffinEMU mogelijk binnenkort. Bewaar nu in de game als dat kan. Na het stoppen gebruikt een lagere Resolutie (in Instellingen, Graphics) minder geheugen.";

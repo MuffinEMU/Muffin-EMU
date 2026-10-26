@@ -569,7 +569,7 @@
 "External display" = "Écran externe";
 "Extremely Hot" = "Extrêmement chaud";
 "Fade when idle" = "Estomper en cas d'inactivité";
-"Fair" = "Correct";
+"Fair" = "Modéré";
 "Fast blending" = "Fusion rapide";
 "Fast blending lets some Metal shaders blend using the picture already on screen instead of an extra step, which is quicker. It is on by default, Metal only, and takes effect the next time you launch a game." = "La fusion rapide permet à certains shaders Metal de fusionner en utilisant l'image déjà à l'écran plutôt qu'une étape supplémentaire, ce qui est plus rapide. Elle est activée par défaut, uniquement avec Metal, et prend effet au prochain lancement d'un jeu.";
 "Faster, but the picture is softer and some games look wrong." = "Plus rapide, mais l'image est plus floue et certains jeux s'affichent mal.";
@@ -1325,7 +1325,7 @@
 "Select" = "Select";
 "Send this with any bug report. It lists your chip, memory and app build." = "Joignez-le à tout rapport de bug. Il liste votre puce, votre mémoire et la version de l'app.";
 "Sensitivity" = "Sensibilité";
-"Serious" = "Sérieux";
+"Serious" = "Sévère";
 "Server name" = "Nom du serveur";
 "Servers can't be changed while a game is running. Close the game first." = "Les serveurs ne peuvent pas être modifiés pendant qu'un jeu est en cours. Fermez d'abord le jeu.";
 "Set differently for %d games" = "Réglé différemment pour %d jeux";
@@ -1785,7 +1785,7 @@
 "Wii U keys, how the library looks and cover art." = "Clés Wii U, aspect de la bibliothèque et jaquettes.";
 "Wii U title folder (title.tmd and .app files)." = "Dossier de titre Wii U (title.tmd et fichiers .app).";
 "Won't activate here" = "Ne s'activera pas ici";
-"Word" = "Texte";
+"Word" = "Mot";
 "Wrong game? Choose…" = "Ce n'est pas le bon jeu ? Choisir…";
 "You have the latest community packs." = "Vous avez les derniers packs communautaires.";
 "You're offline. Packs you've already downloaded keep working." = "Vous êtes hors ligne. Les packs déjà téléchargés continuent de fonctionner.";
