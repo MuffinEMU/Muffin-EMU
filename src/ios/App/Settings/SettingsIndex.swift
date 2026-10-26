@@ -63,6 +63,7 @@ enum SettingsIndex {
         row("App Icon", .appearance, "icon pro"),
         row("Flat surfaces", .appearance, "glass flat"),
         row("Use Classic UI", .appearance, "classic old look"),
+        row("Unlock", .premium, "buy purchase"),
         row("View on GitHub", .about, "source code issue bug"),
         row("Open-source licences", .about, "licenses legal"),
         row("Show welcome guide again", .about, "onboarding intro tutorial"),
@@ -70,15 +71,18 @@ enum SettingsIndex {
     ]
 
     private static let emulation: [SettingEntry] = [
-        stored("Use the recompiler (JIT)", .cpu, "muffin.cpu.recompiler", true, "interpreter"),
         // The profile is stored as three switches; each is listed as changed under the profile it means.
-        stored("Performance profile: Accuracy", .cpu, "muffin.cpu.favourAccuracy", false, "favour accuracy glitch crash fix"),
-        stored("Performance profile: Speed", .cpu, FavourPerformance.storageKey, FavourPerformance.defaultValue, "favour performance fast"),
-        stored("Performance profile: Battery saver", .cpu, OneCoreMode.storageKey, OneCoreMode.defaultValue, "one-core mode single core low power heat"),
+        stored("Performance profile: Accuracy", .performance, "muffin.cpu.favourAccuracy", false, "favour accuracy glitch crash fix"),
+        stored("Performance profile: Speed", .performance, FavourPerformance.storageKey, FavourPerformance.defaultValue, "favour performance fast"),
+        stored("Performance profile: Battery saver", .performance, OneCoreMode.storageKey, OneCoreMode.defaultValue, "one-core mode single core low power heat"),
+        // Also listed under Display, where they are drawn too; Changed from default lists each key once.
+        stored("Pause the TV screen when it isn't shown", .performance, HiddenScreenSettings.pauseHiddenTVKey, false, "battery heat hidden"),
+        stored("Pause the GamePad screen when it isn't shown", .performance, HiddenScreenSettings.pauseHiddenPadKey, false, "battery heat hidden"),
+        stored("Cool down automatically", .performance, ThermalMonitor.autoThrottleKey, ThermalMonitor.autoThrottleDefault, "heat thermal hot throttle"),
+        stored("Cool down starts at", .performance, ThermalSettings.thresholdKey, ThermalSettings.defaultThreshold.rawValue, "heat thermal"),
+        stored("Device heat", .performance, HeatDisplayMode.storageKey, HeatDisplayMode.word.rawValue, "temperature show as"),
         stored("CPU cores", .cpu, CoreMode.storageKey, CoreMode.defaultValue.rawValue, "multicore threads"),
-        stored("Cool down automatically", .cpu, ThermalMonitor.autoThrottleKey, ThermalMonitor.autoThrottleDefault, "heat thermal hot throttle"),
-        stored("Cool down starts at", .cpu, ThermalSettings.thresholdKey, ThermalSettings.defaultThreshold.rawValue, "heat thermal"),
-        stored("Device heat", .cpu, HeatDisplayMode.storageKey, HeatDisplayMode.word.rawValue, "temperature show as"),
+        stored("Use the recompiler (JIT)", .jit, "muffin.cpu.recompiler", true, "interpreter"),
         stored("JIT enabler", .jit, JITEnabler.storageKey, JITEnabler.none.rawValue, "stikdebug stikjit"),
         stored("JIT enabler link", .jit, JITEnabler.customURLKey, "", "url custom"),
         row("Test it now", .jit, "test enabler"),
@@ -89,13 +93,12 @@ enum SettingsIndex {
         stored("Filter when shrinking", .graphics, DownscaleFilterSetting.storageKey, DownscaleFilterSetting.defaultValue.rawValue, "downscale"),
         stored("Steady frame rate", .graphics, FullSpeedRenders.storageKey, FullSpeedRenders.defaultValue, "full speed stutter vsync"),
         stored("First time a new effect appears", .graphics, FullSpeedRenders.shaderModeKey, FullSpeedRenders.defaultShaderMode.rawValue, "shader"),
-        stored("Stretch picture to fill the screen", .graphics, FrameStretch.storageKey, FrameStretch.defaultValue, "aspect ratio"),
-        stored("Flip screen upside down", .graphics, "muffin.render.upsideDown", false, "rotate"),
         stored("Display gamma", .graphics, DisplayGammaSetting.storageKey, DisplayGammaSetting.defaultValue, "dark bright"),
         stored("Fast blending", .graphics, "muffin.render.framebufferFetch", true, "framebuffer fetch"),
         stored("Emulate missing effects", .graphics, "muffin.render.emulateMissingEffects", false, "geometry shaders"),
         stored("Override the game's gamma", .graphics, "muffin.render.overrideAppGamma", false, "dark bright"),
         stored("Override gamma", .graphics, OverrideGammaSetting.storageKey, OverrideGammaSetting.defaultValue, "dark bright"),
+        row("Graphic Packs", .graphics, "mods resolution fps patches"),
         stored("Compile shaders in the background", .shaderCache, "muffin.shaders.asyncCompile", true, "async stutter"),
         row("Clear compiled shaders", .shaderCache, "delete free space"),
         row("Clear everything, including learned", .shaderCache, "delete clear all"),
@@ -145,6 +148,8 @@ enum SettingsIndex {
         stored("Show swap button", .display, LocalScreenLayoutSettings.showSwapButtonKey, LocalScreenLayoutSettings.defaultShowSwapButton),
         stored("Pause the TV screen when it isn't shown", .display, HiddenScreenSettings.pauseHiddenTVKey, false, "battery heat"),
         stored("Pause the GamePad screen when it isn't shown", .display, HiddenScreenSettings.pauseHiddenPadKey, false, "battery heat"),
+        stored("Stretch picture to fill the screen", .display, FrameStretch.storageKey, FrameStretch.defaultValue, "aspect ratio"),
+        stored("Flip screen upside down", .display, "muffin.render.upsideDown", false, "rotate"),
         stored("Allow portrait during games", .display, OrientationPolicy.allowPortraitKey, OrientationPolicy.defaultAllowPortrait, "upright rotate"),
         stored("Brightness boost", .display, BrightnessBoost.key, BrightnessBoost.defaultValue),
         stored("Max screen brightness while playing", .display, ScreenBrightness.maxWhilePlayingKey, ScreenBrightness.defaultMaxWhilePlaying),
@@ -190,22 +195,20 @@ enum SettingsIndex {
         stored("Sort by", .library, "muffin.library.sortOrder", LibrarySortOrder.title.rawValue, "order"),
         stored("Group by", .library, LibraryGrouping.storageKey, LibraryGrouping.defaultValue.rawValue),
         stored("Show", .library, LibraryFilter.storageKey, LibraryFilter.defaultValue.rawValue, "filter"),
-        row("Graphic Packs", .library, "mods resolution fps patches"),
         row("Link a folder", .library, "external drive usb"),
         row("Link a game file", .library, "external"),
         row("Check for packs", .coverArt, "art packs download"),
         row("Scrape now", .coverArt, "download game data gametdb"),
-        stored("Show Wii U Menu as a game card", .wiiUMenu, WiiUMenuSettings.showAsCardKey, WiiUMenuSettings.defaultShowAsCard),
-        stored("Hide the installed Wii U Menu", .wiiUMenu, WiiUMenuSettings.hideKey, WiiUMenuSettings.defaultHidden),
-        row("Import Wii U Menu", .wiiUMenu, "system dump install"),
-        row("Uninstall Wii U Menu", .wiiUMenu, "remove delete"),
     ]
 
     private static let accountOnline: [SettingEntry] = [
         row("Active account", .account, "switch"),
         row("Create", .account, "new account add"),
         row("Custom servers", .network, "pretendo server"),
-        row("Unlock", .premium, "buy purchase"),
+        stored("Show Wii U Menu as a game card", .wiiUMenu, WiiUMenuSettings.showAsCardKey, WiiUMenuSettings.defaultShowAsCard),
+        stored("Hide the installed Wii U Menu", .wiiUMenu, WiiUMenuSettings.hideKey, WiiUMenuSettings.defaultHidden),
+        row("Import Wii U Menu", .wiiUMenu, "system dump install"),
+        row("Uninstall Wii U Menu", .wiiUMenu, "remove delete"),
     ]
 
     private static let housekeeping: [SettingEntry] = [
@@ -225,9 +228,14 @@ enum SettingsIndex {
         entries.filter { (advanced || !$0.item.advancedOnly) && $0.matches(query) }
     }
 
-    /// Settings stored away from their defaults right now, in page order.
+    /// Settings stored away from their defaults right now, in page order. A setting drawn in two sections
+    /// is listed once, under the first.
     static func changed(in defaults: UserDefaults = .standard) -> [SettingEntry] {
-        entries.filter { $0.isChanged(in: defaults) }
+        var seen = Set<String>()
+        return entries.filter { entry in
+            guard entry.isChanged(in: defaults), let key = entry.key else { return false }
+            return seen.insert(key).inserted
+        }
     }
 }
 
@@ -261,9 +269,17 @@ enum PerGameField: CaseIterable {
         }
     }
 
-    /// Everything but the shader choice is Advanced, and ignored while Settings mode is Basic (see
+    /// Matches GameOverrides.takeBasicFields: the rest are ignored while Settings mode is Basic (see
     /// activeOverrides).
-    var isAdvanced: Bool { self != .preCompileShaders }
+    var isAdvanced: Bool {
+        switch self {
+        case .preCompileShaders, .favourAccuracy, .favourPerformance, .oneCoreMode, .performanceProfile,
+             .renderScale, .screenLayout, .autoHideControls, .performanceOverlay:
+            return false
+        case .coreMode, .upscaleFilter, .downscaleFilter, .fullSpeedRenders, .fullSpeedShaderMode:
+            return true
+        }
+    }
 }
 
 private struct SettingsLibraryGamesKey: EnvironmentKey {

@@ -368,7 +368,7 @@ private struct OnboardingSpeedControlsPage: View {
                     )
                     OnboardingFactRow(
                         systemImage: "checkmark.seal.fill",
-                        text: "If a game glitches, desyncs or crashes, choose the Accuracy performance profile in Settings > CPU (Advanced mode). It's slower but more accurate."
+                        text: "If a game glitches, desyncs or crashes, choose the Accuracy performance profile in Settings > Performance and graphics. It's slower but more accurate."
                     )
                     OnboardingFactRow(
                         systemImage: "gamecontroller.fill",

@@ -5,45 +5,18 @@
 
 import SwiftUI
 
-/// First section in the Form: whether the recompiler is running is decided by how the app
-/// was launched, and matters more to speed than anything below it.
+/// What the CPU runs: whether this launch got the recompiler, how many cores games use, and how much
+/// memory the JIT got. The recompiler switch is under JIT; the profile and cooling down are under
+/// Performance.
 struct CPUSettingsSection: View {
-    // Must keep matching GameManager's defaults for the same keys: the engine reads
-    // them at title start, and a disagreement here would show a switch in the wrong
-    // position.
-    @AppStorage("muffin.cpu.recompiler") private var recompilerEnabled = true
-    @AppStorage("muffin.cpu.favourAccuracy") private var favourAccuracy = false
-    @AppStorage(FavourPerformance.storageKey) private var favourPerformance = FavourPerformance.defaultValue
-    @AppStorage(OneCoreMode.storageKey) private var oneCoreMode = OneCoreMode.defaultValue
+    // Must keep matching GameManager's default for the same key: the engine reads it at title start,
+    // and a disagreement here would show the wrong choice.
     @AppStorage(CoreMode.storageKey) private var coreModeRaw = CoreMode.current.rawValue
-    @AppStorage(ThermalMonitor.autoThrottleKey) private var autoReduceWhenHot = ThermalMonitor.autoThrottleDefault
-    @AppStorage(ThermalSettings.thresholdKey) private var coolDownThresholdRaw = ThermalSettings.defaultThreshold.rawValue
-    @ObservedObject private var thermal = ThermalMonitor.shared
-    @AppStorage(HeatDisplayMode.storageKey) private var heatDisplayMode = HeatDisplayMode.word.rawValue
     @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
 
     @State private var coreWarning: CoreMode?
 
     private var advanced: Bool { SettingsMode.isAdvanced(raw: settingsModeRaw) }
-
-    private var profile: PerformanceProfile {
-        PerformanceProfile(accuracy: favourAccuracy, performance: favourPerformance, oneCore: oneCoreMode)
-    }
-
-    /// Sets all three switches and tells the engine, as the three toggles each used to.
-    private var profileChoice: Binding<PerformanceProfile> {
-        Binding(
-            get: { profile },
-            set: { choice in
-                guard let switches = choice.switches else { return }
-                favourAccuracy = switches.accuracy
-                favourPerformance = switches.performance
-                oneCoreMode = switches.oneCore
-                cemu_bridge_set_favour_accuracy(switches.accuracy)
-                cemu_bridge_set_favour_performance(switches.performance)
-                cemu_bridge_set_low_power_mode(switches.oneCore)
-            })
-    }
 
     private var selectedModeUnavailable: Bool { advanced && !(CoreMode(rawValue: coreModeRaw)?.isAvailable ?? true) }
 
@@ -51,43 +24,8 @@ struct CPUSettingsSection: View {
         Section {
             CPUModeRow()
 
-            // On by default. Without a JIT enabler the bridge falls back to the interpreter.
-            Toggle(isOn: $recompilerEnabled) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Use the recompiler (JIT)")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text("The fast way to run games. Needs a JIT enabler; without one the slow interpreter runs instead.")
-                        .font(.system(size: 12))
-                        .foregroundColor(MuffinTheme.secondaryText)
-                }
-            }
-            .tint(MuffinTheme.accentText)
-            .onChange(of: recompilerEnabled) { newValue in
-                cemu_bridge_set_recompiler_enabled(newValue)
-            }
-
-            // Advanced mode only: Basic keeps these at their defaults (see AdvancedSettings).
+            // Advanced mode only: Basic keeps it at its default (see AdvancedSettings).
             if advanced {
-                // One choice for Favour accuracy, Favour performance and One-core mode, stored under
-                // their own keys as before (see PerformanceProfile).
-                VStack(alignment: .leading, spacing: 4) {
-                    Picker(selection: profileChoice) {
-                        ForEach(PerformanceProfile.choices(including: profile)) { choice in
-                            Text(choice.title).tag(choice)
-                        }
-                    } label: {
-                        Text("Performance profile")
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    }
-                    .pickerStyle(.menu)
-                    .tint(MuffinTheme.accentText)
-                    Text(profile.summary)
-                        .font(.system(size: 12))
-                        .foregroundColor(MuffinTheme.secondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                PerGameOverrideNote(field: .performanceProfile)
-
                 // Auto by default: decides per game from its profile, this device's performance cores and
                 // its thermal state, and leans to one core (see CoreMode in RenderScale.swift).
                 VStack(alignment: .leading, spacing: 6) {
@@ -135,40 +73,6 @@ struct CPUSettingsSection: View {
                 PerGameOverrideNote(field: .coreMode)
             }
 
-            // On by default: at .serious iOS is already throttling, so lowering the pixel count
-            // gives frames back.
-            Toggle(isOn: $autoReduceWhenHot) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Cool down automatically")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text("When iOS reports the device is overheating, lowers resolution and CPU load until it cools.")
-                        .font(.system(size: 12))
-                        .foregroundColor(MuffinTheme.secondaryText)
-                }
-            }
-            .tint(MuffinTheme.accentText)
-
-            // When the cool-down starts: Advanced mode only (see AdvancedSettings).
-            if advanced && autoReduceWhenHot {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Cool down starts at")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    Picker("Cool down starts at", selection: $coolDownThresholdRaw) {
-                        ForEach(ThermalSettings.Threshold.allCases) { threshold in
-                            Text(threshold.title).tag(threshold.rawValue)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .onChange(of: coolDownThresholdRaw) { _ in
-                        thermal.thresholdChanged()
-                    }
-                    Text((ThermalSettings.Threshold(rawValue: coolDownThresholdRaw) ?? ThermalSettings.defaultThreshold).summary)
-                        .font(.system(size: 12))
-                        .foregroundColor(MuffinTheme.secondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
             // Memory headroom. If the JIT's memory reservation fails, the recompiler is switched
             // off and the interpreter runs, so the arena size shows whether the memory
             // entitlements were honoured on this device.
@@ -186,36 +90,15 @@ struct CPUSettingsSection: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-
-            // What iOS reports for the device's thermal state.
-            HStack(spacing: 10) {
-                Image(systemName: "thermometer.medium")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(MuffinTheme.brownMid)
-                    .frame(width: 20)
-                Text("Device heat")
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                Spacer(minLength: 12)
-                HeatStatusBadge()
-            }
-            .frame(minHeight: 30)
-
-            // Only shown when a numeric temperature is actually available.
-            if HeatStatus.hasRealTemperature {
-                Picker("Show as", selection: $heatDisplayMode) {
-                    ForEach(HeatDisplayMode.allCases) { mode in
-                        Text(mode.title).tag(mode.rawValue)
-                    }
-                }
-                .pickerStyle(.segmented)
-            }
         } header: {
             SettingsSectionHeader("CPU", icon: "cpu", accent: .core)
         } footer: {
             InfoButton.footer(
-                "Changes to the CPU switches apply the next time you start a game. Cool down automatically only acts when the device overheats; the Battery saver profile is the always-on version.",
+                advanced
+                    ? "CPU cores applies the next time you start a game. The recompiler switch is under JIT."
+                    : "Shows whether games get the fast recompiler or the slow interpreter. The switch is under JIT.",
                 title: "CPU",
-                text: "The recompiler needs a JIT enabler (StikJIT, SideStore or LiveContainer). Without one the interpreter runs instead, which is much slower; the CPU line above shows which you got.\n\nPerformance profile (Advanced mode) picks one trade-off. Balanced is the default.\n\nAccuracy is slower but can fix a game that glitches, desyncs or crashes. It runs on one CPU core and builds every shader before it is needed, whatever Compile shaders in the background is set to.\n\nSpeed is the opposite trade: everything runs as fast as MuffinEMU can make it, and some quality goes. The picture is drawn at Balanced at most with linear scaling, so it's softer. Shaders skip the Wii U's exact multiply rule, which is faster but can make lighting or shadows look wrong in some games. Shaders always compile in the background, so things can pop in for a moment instead of the game pausing. Crash reports carry less detail.\n\nBattery saver runs on one CPU core whatever CPU cores is set to, for less heat and battery use, at some cost in frame rate.\n\nA game can have its own profile in its Game settings.\n\nCool down automatically acts when iOS reports the device is overheating, and Device heat shows that same state. In Advanced mode, Cool down starts at picks the point: Serious (the default) acts as soon as iOS starts throttling, Critical waits until iOS is throttling hard.\n\nThe recompiler, the performance profile and CPU cores apply the next time you start a game.")
+                text: "The CPU line shows what this launch got: the recompiler (JIT), which is the fast way, or the interpreter, which is much slower. The recompiler needs a JIT enabler (StikJIT, SideStore or LiveContainer); both are set under JIT.\n\nCPU cores (Advanced mode) picks how many cores run a game. Auto decides for each game and device. The Accuracy and Battery saver performance profiles run on one core whatever this says.\n\nMemory shows how much the recompiler reserved. If it couldn't reserve any, the interpreter runs instead.\n\nCPU cores applies the next time you start a game.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }

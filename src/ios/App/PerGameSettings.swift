@@ -456,13 +456,15 @@ struct GameOptionsView: View {
                             selection: store.onOffChoice(\.preCompileShaders, for: key)) {
                 OverrideChoice.options(settingsHas: store.globalPreCompileShaders)
             }
-            if isAdvanced {
-                GameOverrideRow("Performance profile", isCustom: profileIsCustom, note: profileNote, selection: profileChoice) {
-                    Text(sameAsSettings(PerformanceProfile.current.title)).tag("")
-                    ForEach(PerformanceProfile.choices(including: ownProfile ?? .balanced)) { choice in
-                        Text(choice.title).tag(choice.rawValue)
-                    }
+            GameOverrideRow("Performance profile", isCustom: profileIsCustom, note: profileNote, selection: profileChoice) {
+                Text(sameAsSettings(PerformanceProfile.current.title)).tag("")
+                ForEach(PerformanceProfile.choices(including: ownProfile ?? .balanced)) { choice in
+                    Text(choice.title).tag(choice.rawValue)
                 }
+            }
+            resolutionRow
+            // The rest are Advanced mode only, like their rows in Settings.
+            if isAdvanced {
                 GameOverrideRow("CPU cores", isCustom: own.coreMode != nil, note: coreModeNote, selection: coreModeChoice) {
                     Text(sameAsSettings(CoreMode.current.title)).tag("")
                     ForEach(CoreMode.listed) { mode in
@@ -472,6 +474,7 @@ struct GameOptionsView: View {
                 graphicsRows
             }
             allGamesLink {
+                PerformanceSettingsSection()
                 ShaderCacheSection()
                 CPUSettingsSection()
                 GraphicsSettingsSection()
@@ -483,17 +486,17 @@ struct GameOptionsView: View {
                 InfoButton.footer(
                     "How fast this game runs and how it looks.",
                     title: "Performance and graphics",
-                    text: "Compile shaders in the background builds shaders while the game keeps running. Most games want this on; Nano Assault Neo breaks with it.\n\nPerformance profile picks the trade-off for this game: Speed, Accuracy (slower but more accurate, on one CPU core; can fix a game that glitches or crashes) or Battery saver (one CPU core).\n\nCPU cores picks how many cores run the game. Auto decides for each game and device.\n\nResolution and the two scaling filters change how the picture is drawn for this game.")
+                    text: "Compile shaders in the background builds shaders while the game keeps running. Most games want this on; Nano Assault Neo breaks with it.\n\nPerformance profile picks the trade-off for this game: Speed, Accuracy (slower but more accurate, on one CPU core; can fix a game that glitches or crashes) or Battery saver (one CPU core).\n\nResolution and the two scaling filters change how the picture is drawn for this game.\n\nCPU cores picks how many cores run the game. Auto decides for each game and device.")
             } else {
                 InfoButton.footer(
-                    "Resolution, CPU cores, screen layout and more can be set per game when Settings mode is Advanced (Settings > General).",
+                    "CPU cores, the scaling filters and Steady frame rate can be set per game too when Settings mode is Advanced (Settings > General).",
                     title: "Performance and graphics",
-                    text: "Compile shaders in the background builds shaders while the game keeps running. Most games want this on; Nano Assault Neo breaks with it, so it can be set per game.\n\nSwitch Settings mode to Advanced on Settings > General to set the performance profile, CPU cores, Resolution, the scaling filters, Steady frame rate, screen layout, the performance overlay and controller auto-hide for this game too.")
+                    text: "Compile shaders in the background builds shaders while the game keeps running. Most games want this on; Nano Assault Neo breaks with it, so it can be set per game.\n\nPerformance profile picks the trade-off for this game: Speed, Accuracy (slower but more accurate, on one CPU core; can fix a game that glitches or crashes) or Battery saver (one CPU core).\n\nResolution changes how large the picture is drawn for this game.\n\nSwitch Settings mode to Advanced on Settings > General to set CPU cores, the scaling filters and Steady frame rate for this game too.")
             }
         }
     }
 
-    @ViewBuilder private var graphicsRows: some View {
+    private var resolutionRow: some View {
         GameOverrideRow("Resolution", isCustom: own.renderScale != nil,
                         selection: store.textChoice(\.renderScale, known: RenderScale.allCases.map(\.rawValue), for: key)) {
             Text(sameAsSettings(RenderScale.storedChoice.title)).tag("")
@@ -501,6 +504,9 @@ struct GameOptionsView: View {
                 Text(scale.title).tag(scale.rawValue)
             }
         }
+    }
+
+    @ViewBuilder private var graphicsRows: some View {
         GameOverrideRow("Filter when enlarging", isCustom: own.upscaleFilter != nil,
                         selection: store.numberChoice(\.upscaleFilter, known: ScaleFilter.allCases.map(\.rawValue), for: key)) {
             Text(sameAsSettings(store.globalUpscaleFilter.title)).tag(-1)
@@ -603,10 +609,8 @@ struct GameOptionsView: View {
             Form {
                 summarySection
                 performanceSection
-                if isAdvanced {
-                    screenSection
-                    controlsSection
-                }
+                screenSection
+                controlsSection
                 graphicPacksSection
             }
         }

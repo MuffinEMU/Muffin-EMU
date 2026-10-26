@@ -10,7 +10,7 @@ import SwiftUI
 /// touches its storage keys.
 enum SettingsItem: String, CaseIterable, Identifiable {
     case settingsMode, changedSettings, appearance, about
-    case cpu, jit, graphics, shaderCache, emulatedClock
+    case performance, cpu, jit, graphics, shaderCache, emulatedClock
     case onScreenControls, motion, emulatedDevices
     case display, externalDisplay, audio, overlay, notifications
     case library, coverArt, keys, wiiUMenu
@@ -26,8 +26,9 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         case .changedSettings: return "Changed from default"
         case .appearance: return "Appearance"
         case .about: return "About"
+        case .performance: return "Performance"
         case .cpu: return "CPU"
-        case .jit: return "JIT enabler"
+        case .jit: return "JIT"
         case .graphics: return "Graphics"
         case .shaderCache: return "Shaders"
         case .emulatedClock: return "Emulated Clock"
@@ -62,20 +63,21 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         case .changedSettings: return "Every setting you've changed, and games with settings of their own."
         case .appearance: return "Theme, app icon, Flat surfaces and Classic UI."
         case .about: return "Version, credits, licences and reset."
-        case .cpu: return "The performance profile, CPU cores, the recompiler and cooling down."
-        case .jit: return "Whether JIT is on, and the enabler that turns it on."
-        case .graphics: return "Renderer, resolution, filtering and frame rate."
+        case .performance: return "The performance profile, pausing a hidden screen, and cooling down."
+        case .cpu: return "What the CPU runs, CPU cores and memory."
+        case .jit: return "The recompiler, whether JIT is on, and the enabler that turns it on."
+        case .graphics: return "Renderer, resolution, filtering, frame rate and graphic packs."
         case .shaderCache: return "Compiling in the background, cache size and clearing."
         case .emulatedClock: return "The emulated console's clock speed."
         case .onScreenControls: return "The touch pad: size, opacity, sticks and when it hides."
         case .motion: return "Aiming by tilting this device or a controller."
         case .emulatedDevices: return "Skylanders, Disney Infinity and LEGO Dimensions."
-        case .display: return "Screen layout, portrait and brightness."
+        case .display: return "Screen layout, stretching, portrait and brightness."
         case .externalDisplay: return "A TV or second screen."
         case .audio: return "TV and GamePad sound, the microphone and recording."
         case .overlay: return "The FPS and usage readout over the game: what it lists, and where."
         case .notifications: return "Pop-ups during games: which ones, and where."
-        case .library: return "How the library looks, linked folders and graphic packs."
+        case .library: return "How the library looks, and linked folders and files."
         case .coverArt: return "Cover style, art packs and data scraping."
         case .keys: return "The keys.txt encrypted games need."
         case .wiiUMenu: return "The Wii U Menu and its system files."
@@ -97,20 +99,21 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         case .changedSettings: return "changed modified custom different defaults per game overrides"
         case .appearance: return "theme colours colors icon dark light classic flat look"
         case .about: return "version credits licences licenses reset support defaults github documentation"
-        case .cpu: return "cores threads multicore interpreter speed processor performance profile accuracy battery saver heat thermal cool"
-        case .jit: return "recompiler stikjit stikdebug pairing debugger enabler"
-        case .graphics: return "resolution upscale vsync vulkan metal renderer filter gamma frame rate texture filtering anisotropic sharp blurry distance steady"
+        case .performance: return "speed performance profile accuracy balanced battery saver heat thermal cool hot throttle pause hidden screen tv gamepad"
+        case .cpu: return "cores threads multicore interpreter processor memory"
+        case .jit: return "recompiler interpreter stikjit stikdebug pairing debugger enabler"
+        case .graphics: return "resolution upscale vsync vulkan metal renderer filter gamma frame rate texture filtering anisotropic sharp blurry distance steady graphic packs mods patches"
         case .shaderCache: return "shaders stutter precompile cache compile background"
         case .emulatedClock: return "timing advanced clock speed"
         case .onScreenControls: return "pad gamepad touch layout buttons skin controller sticks haptic opacity size deadzone top bar hide"
         case .motion: return "gyro motion controller aim gyroscope tilt sensitivity"
         case .emulatedDevices: return "skylanders disney infinity lego dimensions toypad portal figures toys amiibo devices"
-        case .display: return "screen layout single screen gamepad position orientation portrait brightness swap"
+        case .display: return "screen layout single screen gamepad position orientation portrait brightness swap stretch aspect ratio flip upside down"
         case .externalDisplay: return "tv external second screen monitor hdmi airplay swap"
         case .audio: return "sound volume latency channels music microphone mic record"
         case .overlay: return "fps counter stats hud performance overlay readout frame rate speed cpu ram"
         case .notifications: return "alerts messages banners pop-ups battery"
-        case .library: return "games sort list grid cards covers size tap layout linked folders drive removed restore graphic packs"
+        case .library: return "games sort list grid cards covers size tap layout linked folders drive removed restore"
         case .coverArt: return "covers images artwork box art packs"
         case .keys: return "keys.txt decrypt online files encrypted"
         case .wiiUMenu: return "home menu launcher system"
@@ -153,12 +156,12 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     /// The line under the title on the one-column list of pages.
     var blurb: String {
         switch self {
-        case .general: return "Settings mode, how MuffinEMU looks, and About."
-        case .emulation: return "How fast games run and how they look: JIT, CPU, resolution and shaders."
+        case .general: return "Settings mode, how MuffinEMU looks, Premium and About."
+        case .emulation: return "How fast games run and how they look: the performance profile, JIT, CPU, resolution and shaders."
         case .controls: return "The on-screen pad, motion aiming and figure portals."
         case .screenAndSound: return "Screen layout, a TV or second screen, audio, the performance overlay and alerts."
-        case .library: return "Wii U keys, how the library looks, cover art and the Wii U Menu."
-        case .accountOnline: return "Your Wii U accounts, online play and Premium."
+        case .library: return "Wii U keys, how the library looks and cover art."
+        case .accountOnline: return "Your Wii U accounts, online play and the Wii U Menu."
         case .storage: return "Where files live, settings backups and moving to the new MuffinEMU."
         case .support: return "This device's report for bug reports, and diagnostics."
         }
@@ -168,11 +171,11 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     var intro: String {
         switch self {
         case .general: return "None of this changes how games run. Switch Settings mode to Advanced to see every option on the other pages."
-        case .emulation: return "The defaults suit most games, so change one thing at a time. A single game can have its own values: open it in the library, then Game settings."
+        case .emulation: return "The defaults suit most games, so change one thing at a time. Performance profile, at the top, is the quickest way to trade speed against accuracy or battery. A single game can have its own values: open it in the library, then Game settings."
         case .controls: return "Button size, sticks and opacity are under On-screen Controls. Emulated Devices are the Skylanders, Disney Infinity and LEGO Dimensions portals."
         case .screenAndSound: return "Display is this device's screen. External Display is a TV or second screen. Audio, the performance overlay and pop-up notifications are here too."
-        case .library: return "Encrypted games need Wii U keys, so they come first. Then how your games look, where cover art comes from, and the Wii U Menu."
-        case .accountOnline: return "An account is only needed for online play. Network Service decides which servers games connect to."
+        case .library: return "Encrypted games need Wii U keys, so they come first. Then how your games look and where cover art comes from."
+        case .accountOnline: return "An account is only needed for online play. Network Service decides which servers games connect to. The Wii U Menu is the console's own home screen and system files."
         case .storage: return "Back up your settings before a big change or an update. Move to the new MuffinEMU exports your saves and settings, and your games if you choose."
         case .support: return "Copy device report lists your chip, memory and app build. Send it with any bug report."
         }
@@ -203,12 +206,12 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 
     var items: [SettingsItem] {
         switch self {
-        case .general: return [.settingsMode, .changedSettings, .appearance, .about]
-        case .emulation: return [.cpu, .jit, .graphics, .shaderCache, .emulatedClock]
+        case .general: return [.settingsMode, .changedSettings, .appearance, .premium, .about]
+        case .emulation: return [.performance, .cpu, .jit, .graphics, .shaderCache, .emulatedClock]
         case .controls: return [.onScreenControls, .motion, .emulatedDevices]
         case .screenAndSound: return [.display, .externalDisplay, .audio, .overlay, .notifications]
-        case .library: return [.keys, .library, .coverArt, .wiiUMenu]
-        case .accountOnline: return [.account, .network, .premium]
+        case .library: return [.keys, .library, .coverArt]
+        case .accountOnline: return [.account, .network, .wiiUMenu]
         case .storage: return [.files, .backup, .migration]
         case .support: return [.deviceReport, .diagnostics]
         }
@@ -309,6 +312,7 @@ struct SettingsView: View {
         case .appearance:
             AppearanceSettingsSection(showingIconPicker: $showingIconPicker, showingThemePicker: $showingThemePicker)
         case .about: AboutSettingsSection()
+        case .performance: PerformanceSettingsSection()
         case .cpu: CPUSettingsSection()
         case .jit: JITEnablerSection()
         case .graphics: GraphicsSettingsSection()

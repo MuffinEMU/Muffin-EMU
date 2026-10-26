@@ -5,8 +5,10 @@
 
 import SwiftUI
 
-/// Settings > JIT enabler: which app MuffinEMU hands off to when JIT isn't active.
+/// Settings > JIT: the recompiler switch, and which app MuffinEMU hands off to when JIT isn't active.
 struct JITEnablerSection: View {
+    // Must keep matching GameManager's default: the engine reads it at title start.
+    @AppStorage("muffin.cpu.recompiler") private var recompilerEnabled = true
     @AppStorage(JITEnabler.storageKey) private var enablerRaw = JITEnabler.none.rawValue
     @AppStorage(JITEnabler.customURLKey) private var customURL = ""
     @Environment(\.scenePhase) private var scenePhase
@@ -25,6 +27,21 @@ struct JITEnablerSection: View {
                 Spacer()
                 Text(active ? "JIT is active" : "JIT is not active")
                     .foregroundColor(active ? MuffinTheme.accentText : MuffinTheme.cautionText)
+            }
+
+            // On by default. Without a JIT enabler the bridge falls back to the interpreter.
+            Toggle(isOn: $recompilerEnabled) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Use the recompiler (JIT)")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    Text("The fast way to run games. Needs a JIT enabler; without one the slow interpreter runs instead.")
+                        .font(.system(size: 12))
+                        .foregroundColor(MuffinTheme.secondaryText)
+                }
+            }
+            .tint(MuffinTheme.accentText)
+            .onChange(of: recompilerEnabled) { newValue in
+                cemu_bridge_set_recompiler_enabled(newValue)
             }
 
             Picker("JIT enabler", selection: $enablerRaw) {
@@ -53,7 +70,7 @@ struct JITEnablerSection: View {
                 }
             }
         } header: {
-            SettingsSectionHeader("JIT enabler", icon: "bolt.fill", accent: .core)
+            SettingsSectionHeader("JIT", icon: "bolt.fill", accent: .core)
         } footer: {
             Text("When JIT isn't active, MuffinEMU asks once each time it opens, and offers to open the enabler. It never asks during a game. A custom link is filled in with MuffinEMU's bundle ID wherever it says {bundleId}.")
         }

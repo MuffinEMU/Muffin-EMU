@@ -7,7 +7,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// Graphic packs: download the community packs, then turn packs on and off and choose their
-/// options. Opened from Settings > Library (every game) and from a game's Game settings (that game).
+/// options. Opened from Settings > Graphics (every game) and from a game's Game settings (that game).
 ///
 /// Packs only take effect when a game starts, so every change here applies on the next launch.
 struct GraphicPacksView: View {

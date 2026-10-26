@@ -17,7 +17,7 @@ enum ThermalSettings {
     /// The remembered Resolution is stored for as long as a throttle is in effect.
     static var isHoldingScale: Bool { UserDefaults.standard.string(forKey: scaleKey) != nil }
 
-    /// Which thermal state starts the automatic cool-down (Settings > CPU, Advanced mode).
+    /// Which thermal state starts the automatic cool-down (Settings > Performance, Advanced mode).
     static let thresholdKey = "muffin.thermal.coolDownThreshold"
     static let defaultThreshold = Threshold.serious
 

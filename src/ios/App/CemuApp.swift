@@ -21,6 +21,8 @@ struct CemuApp: App {
         DeviceConnection.shared.start()
         // Before anything reads the mode: an update must not switch off advanced settings already in use.
         SettingsMode.chooseInitialModeIfNeeded()
+        // Settings that are Basic now get back what an older Basic set aside for them.
+        AdvancedSettings.releaseFormerlyAdvanced()
         // Before any Settings screen or pad reads it: decides whether the polished control look starts on.
         TouchLabSettings.registerShowcaseStyleDefault()
         MeloControlsSetting.clearIfUnavailable()

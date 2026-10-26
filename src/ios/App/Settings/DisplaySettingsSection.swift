@@ -17,10 +17,9 @@ struct DisplaySettingsSection: View {
     private var screenLayout = ScreenLayout.initialValue
     @AppStorage(LocalScreenLayoutSettings.showSwapButtonKey)
     private var showLocalSwapButton = LocalScreenLayoutSettings.defaultShowSwapButton
-    @AppStorage(HiddenScreenSettings.pauseHiddenTVKey)
-    private var pauseHiddenTV = false
-    @AppStorage(HiddenScreenSettings.pauseHiddenPadKey)
-    private var pauseHiddenPad = false
+    @AppStorage(FrameStretch.storageKey) private var frameStretchEnabled = FrameStretch.defaultValue
+    @AppStorage("muffin.render.upsideDown") private var upsideDownEnabled = false
+    @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
 
     // Read by OrientationPolicy each time UIKit asks which way the app may turn, so there is nothing to push.
     @AppStorage(OrientationPolicy.allowPortraitKey)
@@ -75,27 +74,29 @@ struct DisplaySettingsSection: View {
                 }
                 .tint(MuffinTheme.accentText)
 
-                Toggle(isOn: $pauseHiddenTV) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Pause the TV screen when it isn't shown")
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        Text("Stops drawing the TV while the GamePad is up. The game keeps running. Saves heat and battery.")
-                            .font(.system(size: 12))
-                            .foregroundColor(MuffinTheme.secondaryText)
-                    }
-                }
-                .tint(MuffinTheme.accentText)
+                // Also under Performance, since they save heat and battery.
+                HiddenScreenPauseRows()
+            }
 
-                Toggle(isOn: $pauseHiddenPad) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Pause the GamePad screen when it isn't shown")
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        Text("Stops drawing the GamePad while the TV is up. The game keeps running. Saves heat and battery.")
-                            .font(.system(size: 12))
-                            .foregroundColor(MuffinTheme.secondaryText)
-                    }
+            Toggle(isOn: $frameStretchEnabled) {
+                Text("Stretch picture to fill the screen")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+            }
+            .tint(MuffinTheme.accentText)
+            .onChange(of: frameStretchEnabled) { newValue in
+                cemu_bridge_set_stretch_to_fill(newValue)
+            }
+
+            // Advanced mode only: Basic keeps it at its default (see AdvancedSettings).
+            if SettingsMode.isAdvanced(raw: settingsModeRaw) {
+                Toggle(isOn: $upsideDownEnabled) {
+                    Text("Flip screen upside down")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
                 }
                 .tint(MuffinTheme.accentText)
+                .onChange(of: upsideDownEnabled) { newValue in
+                    cemu_bridge_set_render_upside_down(newValue)
+                }
             }
 
             // iPhone only: iPad stays landscape, and the menus on every device do.
@@ -150,7 +151,7 @@ struct DisplaySettingsSection: View {
             InfoButton.footer(
                 "Screen Layout arranges the TV and GamePad on this device. A TV or second screen is under External display.",
                 title: "Display",
-                text: "The Wii U has two screens: the TV and the GamePad.\n\nScreen Layout: Single Screen shows one at a time with a swap button; Adaptive shows both, stacked in portrait and side by side in landscape; Both Screens (GamePad Top Right) keeps the TV full size with a small GamePad inset.\n\nAllow portrait during games (iPhone): hold the phone upright and the picture goes along the top with the controls below it. Menus stay in landscape. Turn it off if you'd rather a game never turns when the phone tilts; the iOS rotation lock works too.")
+                text: "The Wii U has two screens: the TV and the GamePad.\n\nScreen Layout: Single Screen shows one at a time with a swap button; Adaptive shows both, stacked in portrait and side by side in landscape; Both Screens (GamePad Top Right) keeps the TV full size with a small GamePad inset.\n\nWith Single Screen, Pause the TV screen and Pause the GamePad screen stop drawing whichever screen is out of sight, to save heat and battery. The game keeps running. They are under Performance too.\n\nStretch picture to fill the screen fills the screen's own shape instead of keeping the Wii U's 1280x720 proportions, which otherwise letterboxes with bars on two sides. Off keeps the picture undistorted; on trades that for using every pixel. Takes effect on the very next frame.\n\nFlip screen upside down (Advanced mode) turns both Wii U screens vertically before they reach the screen. Off for everyone except a panel or capture rig that presents the image inverted.\n\nAllow portrait during games (iPhone): hold the phone upright and the picture goes along the top with the controls below it. Menus stay in landscape. Turn it off if you'd rather a game never turns when the phone tilts; the iOS rotation lock works too.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }

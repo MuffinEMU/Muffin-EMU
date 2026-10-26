@@ -89,10 +89,9 @@ enum AdvancedSettings {
     private static let snapshotKey = "muffin.settings.advancedSnapshot"
     private static let perGameSnapshotKey = "muffin.settings.advancedSnapshot.perGame"
 
+    // The performance profile's three switches are Basic (see formerlyAdvanced); the bridge push below
+    // still sends them, so a restore leaves the engine agreeing with Settings.
     private static let cpuAndPerformance = AdvancedGroup(name: "CPU and performance", settings: [
-        AdvancedSetting("muffin.cpu.favourAccuracy", false),
-        AdvancedSetting(FavourPerformance.storageKey, FavourPerformance.defaultValue),
-        AdvancedSetting(OneCoreMode.storageKey, OneCoreMode.defaultValue),
         AdvancedSetting(CoreMode.storageKey, CoreMode.defaultValue.rawValue),
         AdvancedSetting(ThermalSettings.thresholdKey, ThermalSettings.defaultThreshold.rawValue),
         // The switch CPU cores replaced. CoreMode.current falls back to it when the new key is absent.
@@ -202,12 +201,8 @@ enum AdvancedSettings {
             defaults.object(forKey: AudioSettings.padChannelsKey) as? Int ?? AudioSettings.defaultPadChannels))
     }
 
-    // Motion on/off and Recentre stay in Basic.
-    private static let motionTuning = AdvancedGroup(name: "Motion tuning", settings: [
-        AdvancedSetting(MotionSettings.sourceKey, MotionSettings.defaultSource),
-        AdvancedSetting(MotionSettings.sensitivityKey, MotionSettings.defaultSensitivity),
-        AdvancedSetting(MotionSettings.invertHorizontalKey, false),
-        AdvancedSetting(MotionSettings.invertVerticalKey, false),
+    // Motion on/off, where it comes from, sensitivity, the reverse switches and Recentre are Basic.
+    private static let motionTuning = AdvancedGroup(name: "Motion log", settings: [
         AdvancedSetting(MotionSettings.diagnosticKey, false),
     ]) {
         MotionSettings.applyToBridge()
@@ -243,11 +238,6 @@ enum AdvancedSettings {
         AdvancedSetting(PadDiagnostics.enabledKey, PadDiagnostics.defaultEnabled),
     ], applyToBridge: nil)
 
-    private static let libraryOrganization = AdvancedGroup(name: "Library organization", settings: [
-        AdvancedSetting(LibraryGrouping.storageKey, LibraryGrouping.defaultValue.rawValue),
-        AdvancedSetting(LibraryFilter.storageKey, LibraryFilter.defaultValue.rawValue),
-    ], applyToBridge: nil)
-
     static let groups: [AdvancedGroup] = [
         cpuAndPerformance,
         fullSpeedRenders,
@@ -261,8 +251,44 @@ enum AdvancedSettings {
         stickFeel,
         topBar,
         diagnostics,
-        libraryOrganization,
     ]
+
+    /// Settings that were Advanced in an earlier version and are Basic now. Someone who was in Basic
+    /// when they changed has them in the snapshot; releaseFormerlyAdvanced hands them back.
+    private static let formerlyAdvanced: [String] = [
+        "muffin.cpu.favourAccuracy", FavourPerformance.storageKey, OneCoreMode.storageKey,
+        MotionSettings.sourceKey, MotionSettings.sensitivityKey,
+        MotionSettings.invertHorizontalKey, MotionSettings.invertVerticalKey,
+        LibraryGrouping.storageKey, LibraryFilter.storageKey,
+    ]
+
+    /// At launch: values Basic set aside for settings that are Basic now go back to work, in the app and
+    /// in each game's own options, unless they've been set again since. They leave the snapshot, so this
+    /// does nothing the second time.
+    static func releaseFormerlyAdvanced() {
+        let defaults = UserDefaults.standard
+        if var values = defaults.dictionary(forKey: snapshotKey) {
+            for key in formerlyAdvanced {
+                guard let saved = values.removeValue(forKey: key) else { continue }
+                if defaults.object(forKey: key) == nil { defaults.set(saved, forKey: key) }
+            }
+            if values.isEmpty { defaults.removeObject(forKey: snapshotKey) } else { defaults.set(values, forKey: snapshotKey) }
+        }
+        guard let data = defaults.data(forKey: perGameSnapshotKey),
+              let saved = try? JSONDecoder().decode([String: GameOverrides].self, from: data) else { return }
+        let perGame = PerGameSettingsStore.shared
+        var live = perGame.overridesByGame
+        for (game, snapshot) in saved {
+            live[game] = (live[game] ?? .identity).filling(basicFieldsFrom: snapshot)
+        }
+        perGame.replaceOverrides(live)
+        let rest = saved.mapValues { $0.advancedFields }.filter { !$0.value.isIdentity }
+        if rest.isEmpty {
+            defaults.removeObject(forKey: perGameSnapshotKey)
+        } else if let encoded = try? JSONEncoder().encode(rest) {
+            defaults.set(encoded, forKey: perGameSnapshotKey)
+        }
+    }
 
     static var allSettings: [AdvancedSetting] { groups.flatMap { $0.settings } }
 
@@ -374,28 +400,57 @@ enum AdvancedSettings {
     }
 }
 
-/// Per-game options and Settings mode. Everything in GameOverrides is Advanced except
-/// `preCompileShaders` (the Compile shaders in the background escape hatch, which Basic keeps), so a
-/// field added to GameOverrides is Advanced without anything else to register.
+/// Per-game options and Settings mode. Basic keeps the per-game rows whose Settings row is Basic too:
+/// Compile shaders in the background, the performance profile, Resolution, Screen layout, the
+/// performance overlay and hiding the controls with a controller. Everything else in GameOverrides is
+/// Advanced, so a field added to GameOverrides is Advanced unless it is added to takeBasicFields.
 extension GameOverrides {
+    /// Copies the options Basic keeps from `source`.
+    private mutating func takeBasicFields(from source: GameOverrides) {
+        preCompileShaders = source.preCompileShaders
+        favourAccuracy = source.favourAccuracy
+        favourPerformance = source.favourPerformance
+        oneCoreMode = source.oneCoreMode
+        renderScale = source.renderScale
+        screenLayout = source.screenLayout
+        autoHideControls = source.autoHideControls
+        performanceOverlay = source.performanceOverlay
+    }
+
     /// A copy holding only the Advanced options, for the snapshot.
     var advancedFields: GameOverrides {
         var copy = self
-        copy.preCompileShaders = nil
+        copy.takeBasicFields(from: .identity)
         return copy
     }
 
-    /// What Basic uses: the Advanced options cleared, the shader choice kept.
+    /// What Basic uses: the Advanced options cleared, the Basic ones kept.
     func removingAdvancedFields() -> GameOverrides {
         var copy = GameOverrides()
-        copy.preCompileShaders = preCompileShaders
+        copy.takeBasicFields(from: self)
         return copy
     }
 
-    /// Restore: takes the Advanced options from `other` and leaves the shader choice as it is now.
+    /// Restore: takes the Advanced options from `other` and leaves the Basic ones as they are now.
     func adopting(advancedFieldsOf other: GameOverrides) -> GameOverrides {
         var copy = other
-        copy.preCompileShaders = preCompileShaders
+        copy.takeBasicFields(from: self)
+        return copy
+    }
+
+    /// releaseFormerlyAdvanced: each Basic option this game doesn't set, taken from an older snapshot.
+    /// The profile's three switches move together, so a game never ends up with half of two profiles.
+    func filling(basicFieldsFrom snapshot: GameOverrides) -> GameOverrides {
+        var copy = self
+        if favourAccuracy == nil && favourPerformance == nil && oneCoreMode == nil {
+            copy.favourAccuracy = snapshot.favourAccuracy
+            copy.favourPerformance = snapshot.favourPerformance
+            copy.oneCoreMode = snapshot.oneCoreMode
+        }
+        copy.renderScale = renderScale ?? snapshot.renderScale
+        copy.screenLayout = screenLayout ?? snapshot.screenLayout
+        copy.autoHideControls = autoHideControls ?? snapshot.autoHideControls
+        copy.performanceOverlay = performanceOverlay ?? snapshot.performanceOverlay
         return copy
     }
 }

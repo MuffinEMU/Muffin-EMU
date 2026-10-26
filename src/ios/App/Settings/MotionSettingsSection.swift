@@ -98,11 +98,7 @@ struct MotionSettingsSection: View {
             .onChange(of: motionEnabled) { _ in MotionSettings.applyToBridge() }
 
             if motionEnabled {
-                if advanced {
-                    motionOptions
-                } else {
-                    recentreButton
-                }
+                motionOptions
             }
         } header: {
             SettingsSectionHeader("Motion & Aiming", icon: "gyroscope", accent: .io)
@@ -147,9 +143,14 @@ struct MotionSettingsSection: View {
                 .onChange(of: invertHorizontal) { _ in MotionSettings.applyToBridge() }
             Toggle("Reverse up and down", isOn: $invertVertical)
                 .onChange(of: invertVertical) { _ in MotionSettings.applyToBridge() }
-            Toggle("Log motion values", isOn: $logValues)
-                .onChange(of: logValues) { _ in MotionSettings.applyToBridge() }
-            Text("Leave these off unless aiming turns the wrong way. The log writes one line a second to the engine log, to report when something looks off.")
+            // Advanced mode only (see AdvancedSettings).
+            if advanced {
+                Toggle("Log motion values", isOn: $logValues)
+                    .onChange(of: logValues) { _ in MotionSettings.applyToBridge() }
+            }
+            Text(advanced
+                 ? "Leave these off unless aiming turns the wrong way. The log writes one line a second to the engine log, to report when something looks off."
+                 : "Leave these off unless aiming turns the wrong way.")
                 .font(.system(size: 12))
                 .foregroundColor(MuffinTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)

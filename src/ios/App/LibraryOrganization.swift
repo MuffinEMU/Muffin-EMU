@@ -747,7 +747,6 @@ struct LibraryViewMenu: View {
     @AppStorage(CoverStylePreference.storageKey) private var coverRaw = CoverStylePreference.defaultValue.rawValue
     @AppStorage(LibraryGrouping.storageKey) private var groupingRaw = LibraryGrouping.defaultValue.rawValue
     @AppStorage(LibraryFilter.storageKey) private var filterRaw = LibraryFilter.defaultValue.rawValue
-    @AppStorage(SettingsMode.storageKey) private var modeRaw = SettingsMode.defaultValue.rawValue
 
     var body: some View {
         Menu {
@@ -768,19 +767,17 @@ struct LibraryViewMenu: View {
                     }
                 }
             }
-            if SettingsMode.isAdvanced(raw: modeRaw) {
-                Section("Group by") {
-                    ForEach(LibraryGrouping.allCases) { grouping in
-                        Button { groupingRaw = grouping.rawValue } label: {
-                            Label(grouping.title, systemImage: groupingRaw == grouping.rawValue ? "checkmark" : grouping.systemImage)
-                        }
+            Section("Group by") {
+                ForEach(LibraryGrouping.allCases) { grouping in
+                    Button { groupingRaw = grouping.rawValue } label: {
+                        Label(grouping.title, systemImage: groupingRaw == grouping.rawValue ? "checkmark" : grouping.systemImage)
                     }
                 }
-                Section("Show") {
-                    ForEach(LibraryFilter.allCases) { filter in
-                        Button { filterRaw = filter.rawValue } label: {
-                            Label(filter.title, systemImage: filterRaw == filter.rawValue ? "checkmark" : filter.systemImage)
-                        }
+            }
+            Section("Show") {
+                ForEach(LibraryFilter.allCases) { filter in
+                    Button { filterRaw = filter.rawValue } label: {
+                        Label(filter.title, systemImage: filterRaw == filter.rawValue ? "checkmark" : filter.systemImage)
                     }
                 }
             }

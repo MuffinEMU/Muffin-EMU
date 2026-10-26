@@ -61,7 +61,7 @@ struct WiiUMenuSettingsSection: View {
 
             installedMenuRows
         } header: {
-            SettingsSectionHeader("Wii U Menu", icon: "house", accent: .content)
+            SettingsSectionHeader("Wii U Menu", icon: "house", accent: .identity)
         } footer: {
             InfoButton.footer(
                 "Experimental. Files must be dumped from your own Wii U. Nothing is included.",

@@ -97,7 +97,7 @@ enum MoltenVKBuild: String, CaseIterable, Identifiable {
     static let defaultValue: MoltenVKBuild = .v143
 }
 
-/// Renderer, filters, resolution, stretching and gamma. The bridge reads the
+/// Renderer, filters, resolution, gamma and graphic packs. Stretch and flip are under Display. The bridge reads the
 /// renderer and filter keys itself before every launch, so those three have no bridge call here.
 struct GraphicsSettingsSection: View {
     @AppStorage(RendererAPI.storageKey) private var rendererRaw = RendererAPI.defaultValue.rawValue
@@ -107,9 +107,7 @@ struct GraphicsSettingsSection: View {
     @AppStorage(FavourPerformance.storageKey) private var favourPerformance = FavourPerformance.defaultValue
     @AppStorage(FullSpeedRenders.storageKey) private var fullSpeedRenders = FullSpeedRenders.defaultValue
     @AppStorage(FullSpeedRenders.shaderModeKey) private var fullSpeedShaderMode = FullSpeedRenders.defaultShaderMode.rawValue
-    @AppStorage(FrameStretch.storageKey) private var frameStretchEnabled = FrameStretch.defaultValue
     @AppStorage(MoltenVKBuild.storageKey) private var moltenVKRaw = MoltenVKBuild.defaultValue.rawValue
-    @AppStorage("muffin.render.upsideDown") private var upsideDownEnabled = false
     @AppStorage(DisplayGammaSetting.storageKey) private var displayGamma = DisplayGammaSetting.defaultValue
     // Default true: matches CemuConfig's framebuffer_fetch default.
     @AppStorage("muffin.render.framebufferFetch") private var framebufferFetchEnabled = true
@@ -149,13 +147,11 @@ struct GraphicsSettingsSection: View {
             resolutionPicker
             PerGameOverrideNote(field: .renderScale)
             if favourPerformance {
-                Text("The Speed performance profile is on (Settings > CPU), so the picture is drawn at Balanced at most, with linear scaling.")
+                Text("The Speed performance profile is on (Performance, at the top of this page), so the picture is drawn at Balanced at most, with linear scaling.")
                     .font(.system(size: 12))
                     .foregroundColor(MuffinTheme.secondaryText)
             }
-            stretchToggle
             if advanced {
-                upsideDownToggle
                 if rendererRaw == RendererAPI.metal.rawValue {
                     framebufferFetchToggle
                     // Devices with mesh shaders draw these effects natively, so there is nothing to switch
@@ -168,6 +164,12 @@ struct GraphicsSettingsSection: View {
                 if overrideAppGammaEnabled {
                     overrideGammaSlider
                 }
+            }
+            NavigationLink {
+                GraphicPacksView()
+            } label: {
+                Label("Graphic Packs", systemImage: "wand.and.stars")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
             meshShaderNote
         } header: {
@@ -310,28 +312,6 @@ struct GraphicsSettingsSection: View {
         .foregroundColor(MuffinTheme.brownDarkest)
     }
 
-    private var stretchToggle: some View {
-        Toggle(isOn: $frameStretchEnabled) {
-            Text("Stretch picture to fill the screen")
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
-        }
-        .tint(MuffinTheme.accentText)
-        .onChange(of: frameStretchEnabled) { newValue in
-            cemu_bridge_set_stretch_to_fill(newValue)
-        }
-    }
-
-    private var upsideDownToggle: some View {
-        Toggle(isOn: $upsideDownEnabled) {
-            Text("Flip screen upside down")
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
-        }
-        .tint(MuffinTheme.accentText)
-        .onChange(of: upsideDownEnabled) { newValue in
-            cemu_bridge_set_render_upside_down(newValue)
-        }
-    }
-
     private var gammaSlider: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
@@ -421,7 +401,7 @@ struct GraphicsSettingsSection: View {
 
     @ViewBuilder private var meshShaderNote: some View {
         if meshShadersUnsupported {
-            Text("This device doesn't support mesh shaders, so some graphic packs may not render correctly. See Graphic Packs under Library.")
+            Text("This device doesn't support mesh shaders, so some graphic packs may not render correctly. See Graphic Packs below.")
                 .font(.system(size: 12))
                 .foregroundColor(MuffinTheme.secondaryText)
         }
@@ -429,7 +409,7 @@ struct GraphicsSettingsSection: View {
 
     private var fullText: String {
         """
-        Steady frame rate puts rendering ahead of everything else MuffinEMU does: the graphics thread gets first call on the fastest cores, each frame is shown at the game's own Wii U frame rate (steady, and never faster than the console), and debugging extras are skipped. Every shader the game has used before is built while the game loads, so those never cause a hitch or a flicker. The first time something brand new appears, its shader has to be built: "Wait for it" holds the frame until it's ready (a short hitch, never a missing object), "Keep going" draws without it once (no hitch, but it can be missing for a moment). Either way it's saved, so it happens only once. This choice wins over Favour accuracy, Favour performance and Compile shaders in the background. Takes effect the next time you start a game.
+        Steady frame rate puts rendering ahead of everything else MuffinEMU does: the graphics thread gets first call on the fastest cores, each frame is shown at the game's own Wii U frame rate (steady, and never faster than the console), and debugging extras are skipped. Every shader the game has used before is built while the game loads, so those never cause a hitch or a flicker. The first time something brand new appears, its shader has to be built: "Wait for it" holds the frame until it's ready (a short hitch, never a missing object), "Keep going" draws without it once (no hitch, but it can be missing for a moment). Either way it's saved, so it happens only once. This choice wins over the Accuracy and Speed performance profiles and Compile shaders in the background. Takes effect the next time you start a game.
 
         Metal is the default renderer. Vulkan (MoltenVK) goes through a translation layer and may work better for some games, at some cost to speed. Takes effect the next time you launch a game.
 
@@ -441,17 +421,15 @@ struct GraphicsSettingsSection: View {
 
         Resolution changes the size of the picture MuffinEMU draws, not the resolution the game runs at - nothing about the emulation changes with it. Takes effect the next time you launch a game.
 
-        Stretch picture to fill the screen fills the screen's own shape instead of keeping the Wii U's 1280x720 proportions, which otherwise letterboxes with bars on two sides. Off keeps the picture undistorted; on trades that for using every pixel. Takes effect on the very next frame.
-
-        There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Steady frame rate at the top of this page.
-
-        Flip screen upside down turns both Wii U screens vertically before they reach the screen. Off for everyone except a panel or capture rig that presents the image inverted. Takes effect on the next frame.
+        There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Steady frame rate at the top of Graphics.
 
         Fast blending lets some Metal shaders blend using the picture already on screen instead of an extra step, which is quicker. It is on by default, Metal only, and takes effect the next time you launch a game.
 
         Display gamma adjusts how bright the mid-tones look without changing pure black or pure white. 2.2 is the standard display gamma and the default; lower looks flatter and brighter in the mids, higher looks more contrasty and darker in the mids. Takes effect on the next frame.
 
         Override the game's gamma and Override gamma are a separate stage from Display gamma above, not a second copy of it: some games ask for their own gamma value, and this either adds Override gamma on top of that request (off) or replaces the game's request with Override gamma entirely (on) - before Display gamma is applied to the result. Off by default; most games never ask for a specific gamma at all, so this has nothing to override until one does.
+
+        Graphic Packs are community patches for higher resolutions, frame rates, fixes and mods. Turn them on here for every game, or for one game in its Game settings.
         """
         + (meshShadersUnsupported ? "\n\nThis device doesn't support mesh shaders, so graphic packs that rely on geometry shaders or post-processing (RECTS) draws may not render correctly. Everything else works normally." : "")
     }

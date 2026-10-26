@@ -14,7 +14,6 @@ struct LibrarySettingsSection: View {
     @AppStorage(LibraryGrouping.storageKey) private var groupingRaw = LibraryGrouping.defaultValue.rawValue
     @AppStorage(LibraryFilter.storageKey) private var filterRaw = LibraryFilter.defaultValue.rawValue
     @AppStorage(LibraryTapAction.storageKey) private var tapActionRaw = LibraryTapAction.defaultValue.rawValue
-    @AppStorage(SettingsMode.storageKey) private var modeRaw = SettingsMode.defaultValue.rawValue
 
     var body: some View {
         Section {
@@ -68,31 +67,23 @@ struct LibrarySettingsSection: View {
                 Label("Sort by", systemImage: "arrow.up.arrow.down")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
-            if SettingsMode.isAdvanced(raw: modeRaw) {
-                Picker(selection: $groupingRaw) {
-                    ForEach(LibraryGrouping.allCases) { grouping in
-                        Text(grouping.title).tag(grouping.rawValue)
-                    }
-                } label: {
-                    Label("Group by", systemImage: "rectangle.grid.1x2")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+            Picker(selection: $groupingRaw) {
+                ForEach(LibraryGrouping.allCases) { grouping in
+                    Text(grouping.title).tag(grouping.rawValue)
                 }
-                Picker(selection: $filterRaw) {
-                    ForEach(LibraryFilter.allCases) { filter in
-                        Text(filter.title).tag(filter.rawValue)
-                    }
-                } label: {
-                    Label("Show", systemImage: "line.3.horizontal.decrease.circle")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                }
-            }
-            LinkedLocationsRows(gameManager: gameManager)
-            NavigationLink {
-                GraphicPacksView()
             } label: {
-                Label("Graphic Packs", systemImage: "wand.and.stars")
+                Label("Group by", systemImage: "rectangle.grid.1x2")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
+            Picker(selection: $filterRaw) {
+                ForEach(LibraryFilter.allCases) { filter in
+                    Text(filter.title).tag(filter.rawValue)
+                }
+            } label: {
+                Label("Show", systemImage: "line.3.horizontal.decrease.circle")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+            }
+            LinkedLocationsRows(gameManager: gameManager)
             Button(role: .destructive) {
                 // Back to how a fresh install lays out the library, and no art pack applied.
                 let d = UserDefaults.standard
