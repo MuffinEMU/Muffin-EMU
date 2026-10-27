@@ -1202,7 +1202,7 @@
 "Rename" = "إعادة تسمية";
 "Rename…" = "إعادة تسمية…";
 "Renderer" = "المصيّر";
-"Renderer, resolution, filtering, frame rate and graphic packs." = "المصيّر والدقة والترشيح ومعدل الإطارات وحزم الرسوميات.";
+"Renderer, resolution, filtering and graphic packs." = "المصيّر والدقة والترشيح وحزم الرسوميات.";
 "Rendering comes first: steady frames at the game's own Wii U frame rate, never faster." = "الرسم أولًا: إطارات ثابتة بمعدل إطارات Wii U للعبة نفسها، لا أسرع منه أبدًا.";
 "Reopens the first-launch guide to keys, games, speed and controls." = "يعيد فتح دليل أول تشغيل للمفاتيح والألعاب والسرعة وعناصر التحكم.";
 "Replace" = "استبدال";
@@ -1607,7 +1607,7 @@
 "The overlay is the engine's own readout. Position picks a corner of the TV screen; Off hides it, and the other rows stay dimmed until a corner is chosen.\n\nFPS is the frame rate the game is producing. CPU, per-core CPU, RAM and VRAM usage measure MuffinEMU itself, not the whole device. Draw calls counts draw commands in the current frame. Debug info adds a few lines of renderer state.\n\nThe panel only appears while at least one of FPS, draw calls, CPU, per-core CPU or RAM is on. VRAM usage and debug info are extra lines inside it, so on their own they show nothing.\n\nText size and colour change the readout's look. Changes show up straight away." = "المؤشر هو القراءة الخاصة بالمحرك. يختار الموضع زاوية من شاشة التلفزيون؛ ويخفيه إيقاف، وتبقى الصفوف الأخرى معتمة حتى تختار زاوية.\n\nFPS هو معدل الإطارات الذي تنتجه اللعبة. يقيس استخدام CPU وCPU لكل نواة وRAM وVRAM MuffinEMU نفسه، لا الجهاز كله. تعدّ استدعاءات الرسم أوامر الرسم في الإطار الحالي. تضيف معلومات التصحيح بضعة أسطر عن حالة المصيّر.\n\nتظهر اللوحة فقط ما دام واحد على الأقل من FPS أو استدعاءات الرسم أو CPU أو CPU لكل نواة أو RAM مفعّلًا. استخدام VRAM ومعلومات التصحيح سطور إضافية داخلها، لذا لا تعرض شيئًا بمفردها.\n\nيغيّر حجم النص واللون مظهر القراءة. تظهر التغييرات فورًا.";
 "The pack unpacked, but no images were found in it." = "فُكت الحزمة لكن لم يُعثر فيها على صور.";
 "The pack's download address is invalid." = "عنوان تنزيل الحزمة غير صالح.";
-"The performance profile, pausing a hidden screen, and cooling down." = "ملف تعريف الأداء، وإيقاف شاشة مخفية مؤقتًا، والتبريد.";
+"The performance profile, Steady frame rate, pausing a hidden screen, and cooling down." = "ملف تعريف الأداء، معدل الإطارات الثابت، وإيقاف شاشة مخفية مؤقتًا، والتبريد.";
 "The persistent ID must be %@ or higher." = "يجب أن يكون المعرّف الدائم %@ أو أعلى.";
 "The persistent ID must be hexadecimal (0-9, A-F)." = "يجب أن يكون المعرّف الدائم سداسيًا عشريًا (0-9، A-F).";
 "The picture froze" = "تجمدت الصورة";
@@ -1644,7 +1644,7 @@
 "Theme, app icon, Flat surfaces and Classic UI." = "السمة وأيقونة التطبيق والأسطح المسطحة والواجهة الكلاسيكية.";
 "There are no shader files for this game yet. Play it first." = "لا توجد ملفات مظللات لهذه اللعبة بعد. العبها أولًا.";
 "There is no game data for this install yet. Scrape it from Settings > Cover + data scraping, or here." = "لا توجد بيانات لعبة لهذا التثبيت بعد. اجلبها من الإعدادات > جلب الأغلفة والبيانات، أو من هنا.";
-"There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Steady frame rate at the top of Graphics." = "لا يوجد مفتاح VSync لأن iOS يزامن الإطارات دائمًا مع تحديث الشاشة نفسه، فلا تتمزق الصورة ولا شيء لإيقافه. لانتظام إيقاع الإطارات، استخدم معدل الإطارات الثابت في أعلى الرسوميات.";
+"There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Steady frame rate under Performance, at the top of this page." = "لا يوجد مفتاح VSync لأن iOS يزامن الإطارات دائمًا مع تحديث الشاشة نفسه، فلا تتمزق الصورة ولا شيء لإيقافه. لانتظام إيقاع الإطارات، استخدم معدل الإطارات الثابت ضمن الأداء، في أعلى هذه الصفحة.";
 "There's no save for this game yet. Play it once, then export." = "لا يوجد حفظ لهذه اللعبة بعد. العبها مرة، ثم صدّر.";
 "These act when Screen Layout is Single Screen (Screen and sound > Display). Your layout shows both screens, so nothing is paused now." = "تعمل هذه عندما يكون تخطيط الشاشة شاشة واحدة (الشاشة والصوت > الشاشة). يعرض تخطيطك الشاشتين، لذا لا شيء متوقف مؤقتًا الآن.";
 "These are independent projects, listed for information. MuffinEMU doesn't host them, and there's no server address built in for them: import the network_services.xml their host gives you.\n\nPretendo Network is built in under Network Service, but it needs a Wii U's account and console files." = "هذه مشاريع مستقلة، مدرجة للمعلومات. لا يستضيفها MuffinEMU، ولا يوجد عنوان خادم مدمج لها: استورد ملف network_services.xml الذي يعطيك إياه مضيفها.\n\nPretendo Network مدمجة ضمن خدمة الشبكة، لكنها تحتاج إلى حساب Wii U وملفات الجهاز.";

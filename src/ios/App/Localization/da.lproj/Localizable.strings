@@ -1202,7 +1202,7 @@
 "Rename" = "Omdøb";
 "Rename…" = "Omdøb…";
 "Renderer" = "Renderer";
-"Renderer, resolution, filtering, frame rate and graphic packs." = "Renderer, opløsning, filtrering, billedhastighed og grafikpakker.";
+"Renderer, resolution, filtering and graphic packs." = "Renderer, opløsning, filtrering og grafikpakker.";
 "Rendering comes first: steady frames at the game's own Wii U frame rate, never faster." = "Rendering kommer først: stabile billeder i spillets egen Wii U-billedhastighed, aldrig hurtigere.";
 "Reopens the first-launch guide to keys, games, speed and controls." = "Åbner guiden ved første start igen, om nøgler, spil, hastighed og kontroller.";
 "Replace" = "Erstat";
@@ -1607,7 +1607,7 @@
 "The overlay is the engine's own readout. Position picks a corner of the TV screen; Off hides it, and the other rows stay dimmed until a corner is chosen.\n\nFPS is the frame rate the game is producing. CPU, per-core CPU, RAM and VRAM usage measure MuffinEMU itself, not the whole device. Draw calls counts draw commands in the current frame. Debug info adds a few lines of renderer state.\n\nThe panel only appears while at least one of FPS, draw calls, CPU, per-core CPU or RAM is on. VRAM usage and debug info are extra lines inside it, so on their own they show nothing.\n\nText size and colour change the readout's look. Changes show up straight away." = "Overlayet er motorens egen visning. Placering vælger et hjørne af tv-skærmen; Fra skjuler det, og de andre rækker forbliver nedtonede, til et hjørne er valgt.\n\nFPS er den billedhastighed, spillet producerer. CPU, CPU pr. kerne, RAM- og VRAM-forbrug måler MuffinEMU selv, ikke hele enheden. Tegnekald tæller tegnekommandoer i det aktuelle billede. Fejlfindingsinfo tilføjer et par linjer med rendererens tilstand.\n\nPanelet vises kun, mens mindst én af FPS, tegnekald, CPU, CPU pr. kerne eller RAM er slået til. VRAM-forbrug og fejlfindingsinfo er ekstra linjer i det, så alene viser de intet.\n\nTekststørrelse og farve ændrer visningens udseende. Ændringer vises med det samme.";
 "The pack unpacked, but no images were found in it." = "Pakken blev udpakket, men der blev ikke fundet billeder i den.";
 "The pack's download address is invalid." = "Pakkens downloadadresse er ugyldig.";
-"The performance profile, pausing a hidden screen, and cooling down." = "Ydelsesprofilen, pause af en skjult skærm og nedkøling.";
+"The performance profile, Steady frame rate, pausing a hidden screen, and cooling down." = "Ydelsesprofilen, Stabil billedhastighed, pause af en skjult skærm og nedkøling.";
 "The persistent ID must be %@ or higher." = "Det vedvarende ID skal være %@ eller højere.";
 "The persistent ID must be hexadecimal (0-9, A-F)." = "Det vedvarende ID skal være hexadecimalt (0-9, A-F).";
 "The picture froze" = "Billedet frøs";
@@ -1644,7 +1644,7 @@
 "Theme, app icon, Flat surfaces and Classic UI." = "Tema, app-ikon, Flade overflader og Klassisk brugerflade.";
 "There are no shader files for this game yet. Play it first." = "Der er ingen shaderfiler til dette spil endnu. Spil det først.";
 "There is no game data for this install yet. Scrape it from Settings > Cover + data scraping, or here." = "Der er ingen spildata til denne installation endnu. Hent dem fra Indstillinger > Cover- og dataindhentning eller her.";
-"There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Steady frame rate at the top of Graphics." = "Der er ingen VSync-kontakt, fordi iOS altid synkroniserer billeder med skærmens egen opdatering, så billedet aldrig river, og der er intet at slå fra. For jævn billedtakt, brug Stabil billedhastighed øverst under Grafik.";
+"There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Steady frame rate under Performance, at the top of this page." = "Der er ingen VSync-kontakt, fordi iOS altid synkroniserer billeder med skærmens egen opdatering, så billedet aldrig river, og der er intet at slå fra. For jævn billedtakt, brug Stabil billedhastighed under Ydelse, øverst på denne side.";
 "There's no save for this game yet. Play it once, then export." = "Der er ikke noget gemt spil til dette spil endnu. Spil det én gang, og eksportér så.";
 "These act when Screen Layout is Single Screen (Screen and sound > Display). Your layout shows both screens, so nothing is paused now." = "Disse virker, når Skærmlayout er Enkelt skærm (Skærm og lyd > Skærm). Dit layout viser begge skærme, så intet er sat på pause nu.";
 "These are independent projects, listed for information. MuffinEMU doesn't host them, and there's no server address built in for them: import the network_services.xml their host gives you.\n\nPretendo Network is built in under Network Service, but it needs a Wii U's account and console files." = "Det er uafhængige projekter, vist til information. MuffinEMU hoster dem ikke, og der er ingen serveradresse indbygget til dem: importér den network_services.xml, deres vært giver dig.\n\nPretendo Network er indbygget under Netværkstjeneste, men det kræver en Wii U-konto og konsolfiler.";

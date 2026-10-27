@@ -1202,7 +1202,7 @@
 "Rename" = "이름 변경";
 "Rename…" = "이름 변경…";
 "Renderer" = "렌더러";
-"Renderer, resolution, filtering, frame rate and graphic packs." = "렌더러, 해상도, 필터링, 프레임 속도, 그래픽 팩.";
+"Renderer, resolution, filtering and graphic packs." = "렌더러, 해상도, 필터링, 그래픽 팩.";
 "Rendering comes first: steady frames at the game's own Wii U frame rate, never faster." = "렌더링이 우선입니다: 게임 자체 Wii U 프레임 속도에 맞춘 일정한 프레임이며 그보다 빠르지 않습니다.";
 "Reopens the first-launch guide to keys, games, speed and controls." = "키, 게임, 속도, 컨트롤을 안내하는 첫 실행 가이드를 다시 엽니다.";
 "Replace" = "교체";
@@ -1607,7 +1607,7 @@
 "The overlay is the engine's own readout. Position picks a corner of the TV screen; Off hides it, and the other rows stay dimmed until a corner is chosen.\n\nFPS is the frame rate the game is producing. CPU, per-core CPU, RAM and VRAM usage measure MuffinEMU itself, not the whole device. Draw calls counts draw commands in the current frame. Debug info adds a few lines of renderer state.\n\nThe panel only appears while at least one of FPS, draw calls, CPU, per-core CPU or RAM is on. VRAM usage and debug info are extra lines inside it, so on their own they show nothing.\n\nText size and colour change the readout's look. Changes show up straight away." = "오버레이는 엔진 자체의 표시 정보입니다. 위치는 TV 화면의 모서리를 고르며, 끔은 숨기고 모서리를 고르기 전까지 다른 행은 흐리게 유지됩니다.\n\nFPS는 게임이 만들어 내는 프레임 속도입니다. CPU, 코어별 CPU, RAM, VRAM 사용량은 기기 전체가 아니라 MuffinEMU 자체를 측정합니다. 드로 콜은 현재 프레임의 그리기 명령 수를 셉니다. 디버그 정보는 렌더러 상태 몇 줄을 추가합니다.\n\n패널은 FPS, 드로 콜, CPU, 코어별 CPU, RAM 중 하나 이상이 켜져 있을 때만 나타납니다. VRAM 사용량과 디버그 정보는 그 안의 추가 줄이므로 단독으로는 아무것도 표시하지 않습니다.\n\n텍스트 크기와 색상은 표시 정보의 모양을 바꿉니다. 변경 사항은 바로 반영됩니다.";
 "The pack unpacked, but no images were found in it." = "팩의 압축을 풀었지만 이미지를 찾을 수 없었습니다.";
 "The pack's download address is invalid." = "팩의 다운로드 주소가 올바르지 않습니다.";
-"The performance profile, pausing a hidden screen, and cooling down." = "성능 프로필, 숨겨진 화면 일시 정지, 냉각.";
+"The performance profile, Steady frame rate, pausing a hidden screen, and cooling down." = "성능 프로필, 일정한 프레임 속도, 숨겨진 화면 일시 정지, 냉각.";
 "The persistent ID must be %@ or higher." = "고유 ID는 %@ 이상이어야 합니다.";
 "The persistent ID must be hexadecimal (0-9, A-F)." = "고유 ID는 16진수(0-9, A-F)여야 합니다.";
 "The picture froze" = "화면이 멈췄습니다";
@@ -1644,7 +1644,7 @@
 "Theme, app icon, Flat surfaces and Classic UI." = "테마, 앱 아이콘, 플랫 표면, 클래식 UI.";
 "There are no shader files for this game yet. Play it first." = "이 게임의 셰이더 파일이 아직 없습니다. 먼저 플레이하세요.";
 "There is no game data for this install yet. Scrape it from Settings > Cover + data scraping, or here." = "이 설치본의 게임 데이터가 아직 없습니다. 설정 > 커버 + 데이터 수집 또는 여기서 수집하세요.";
-"There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Steady frame rate at the top of Graphics." = "iOS는 항상 프레임을 화면 자체의 주사율에 맞추므로 화면 찢김이 없고 끌 것도 없어서 수직 동기화 스위치는 없습니다. 고른 프레임 간격을 원하면 그래픽 맨 위의 일정한 프레임 속도를 사용하세요.";
+"There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Steady frame rate under Performance, at the top of this page." = "iOS는 항상 프레임을 화면 자체의 주사율에 맞추므로 화면 찢김이 없고 끌 것도 없어서 수직 동기화 스위치는 없습니다. 고른 프레임 간격을 원하면 이 페이지 맨 위 성능의 일정한 프레임 속도를 사용하세요.";
 "There's no save for this game yet. Play it once, then export." = "이 게임의 저장 데이터가 아직 없습니다. 한 번 플레이한 후 내보내세요.";
 "These act when Screen Layout is Single Screen (Screen and sound > Display). Your layout shows both screens, so nothing is paused now." = "화면 레이아웃이 단일 화면일 때 작동합니다(화면 및 소리 > 디스플레이). 현재 레이아웃은 두 화면을 모두 표시하므로 일시 정지되는 것이 없습니다.";
 "These are independent projects, listed for information. MuffinEMU doesn't host them, and there's no server address built in for them: import the network_services.xml their host gives you.\n\nPretendo Network is built in under Network Service, but it needs a Wii U's account and console files." = "이들은 정보 제공을 위해 나열한 독립 프로젝트입니다. MuffinEMU는 이를 호스팅하지 않으며 내장된 서버 주소도 없습니다. 호스트가 알려 주는 network_services.xml을 가져오세요.\n\nPretendo Network는 네트워크 서비스에 내장되어 있지만 Wii U의 계정과 콘솔 파일이 필요합니다.";

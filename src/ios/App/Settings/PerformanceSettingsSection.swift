@@ -12,6 +12,8 @@ struct PerformanceSettingsSection: View {
     @AppStorage("muffin.cpu.favourAccuracy") private var favourAccuracy = false
     @AppStorage(FavourPerformance.storageKey) private var favourPerformance = FavourPerformance.defaultValue
     @AppStorage(OneCoreMode.storageKey) private var oneCoreMode = OneCoreMode.defaultValue
+    @AppStorage(FullSpeedRenders.storageKey) private var fullSpeedRenders = FullSpeedRenders.defaultValue
+    @AppStorage(FullSpeedRenders.shaderModeKey) private var fullSpeedShaderMode = FullSpeedRenders.defaultShaderMode.rawValue
     @AppStorage(ThermalMonitor.autoThrottleKey) private var autoReduceWhenHot = ThermalMonitor.autoThrottleDefault
     @AppStorage(ThermalSettings.thresholdKey) private var coolDownThresholdRaw = ThermalSettings.defaultThreshold.rawValue
     @ObservedObject private var thermal = ThermalMonitor.shared
@@ -60,6 +62,16 @@ struct PerformanceSettingsSection: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             PerGameOverrideNote(field: .performanceProfile)
+
+            // Advanced mode only: Basic keeps them at their defaults (see AdvancedSettings).
+            if advanced {
+                fullSpeedRendersToggle
+                PerGameOverrideNote(field: .fullSpeedRenders)
+                if fullSpeedRenders {
+                    fullSpeedShaderPicker
+                    PerGameOverrideNote(field: .fullSpeedShaderMode)
+                }
+            }
 
             HiddenScreenPauseRows(explainsLayout: true)
 
@@ -125,8 +137,43 @@ struct PerformanceSettingsSection: View {
             InfoButton.footer(
                 "The profile applies the next time you start a game. Cool down automatically only acts when the device overheats; Battery saver is the always-on version.".localized,
                 title: "Performance".localized,
-                text: "Performance profile picks one trade-off. Balanced is the default.\n\nAccuracy is slower but can fix a game that glitches, desyncs or crashes. It runs on one CPU core and builds every shader before it is needed, whatever Compile shaders in the background is set to.\n\nSpeed is the opposite trade: everything runs as fast as MuffinEMU can make it, and some quality goes. The picture is drawn at Balanced at most with linear scaling, so it's softer. Shaders skip the Wii U's exact multiply rule, which is faster but can make lighting or shadows look wrong in some games. Shaders always compile in the background, so things can pop in for a moment instead of the game pausing. Crash reports carry less detail.\n\nBattery saver runs on one CPU core whatever CPU cores is set to, for less heat and battery use, at some cost in frame rate.\n\nA game can have its own profile in its Game settings.\n\nPause the TV screen and Pause the GamePad screen stop drawing whichever Wii U screen is out of sight while Screen Layout is Single Screen. The game keeps running and the screen picks up again the moment you swap to it. The same two switches are under Display.\n\nCool down automatically acts when iOS reports the device is overheating, and Device heat shows that same state. In Advanced mode, Cool down starts at picks the point: Serious (the default) acts as soon as iOS starts throttling, Critical waits until iOS is throttling hard.\n\nThe profile applies the next time you start a game.".localized)
+                text: ["Performance profile picks one trade-off. Balanced is the default.\n\nAccuracy is slower but can fix a game that glitches, desyncs or crashes. It runs on one CPU core and builds every shader before it is needed, whatever Compile shaders in the background is set to.\n\nSpeed is the opposite trade: everything runs as fast as MuffinEMU can make it, and some quality goes. The picture is drawn at Balanced at most with linear scaling, so it's softer. Shaders skip the Wii U's exact multiply rule, which is faster but can make lighting or shadows look wrong in some games. Shaders always compile in the background, so things can pop in for a moment instead of the game pausing. Crash reports carry less detail.\n\nBattery saver runs on one CPU core whatever CPU cores is set to, for less heat and battery use, at some cost in frame rate.\n\nA game can have its own profile in its Game settings.\n\nPause the TV screen and Pause the GamePad screen stop drawing whichever Wii U screen is out of sight while Screen Layout is Single Screen. The game keeps running and the screen picks up again the moment you swap to it. The same two switches are under Display.\n\nCool down automatically acts when iOS reports the device is overheating, and Device heat shows that same state. In Advanced mode, Cool down starts at picks the point: Serious (the default) acts as soon as iOS starts throttling, Critical waits until iOS is throttling hard.\n\nThe profile applies the next time you start a game.".localized,
+                       "Steady frame rate puts rendering ahead of everything else MuffinEMU does: the graphics thread gets first call on the fastest cores, each frame is shown at the game's own Wii U frame rate (steady, and never faster than the console), and debugging extras are skipped. Every shader the game has used before is built while the game loads, so those never cause a hitch or a flicker. The first time something brand new appears, its shader has to be built: \"Wait for it\" holds the frame until it's ready (a short hitch, never a missing object), \"Keep going\" draws without it once (no hitch, but it can be missing for a moment). Either way it's saved, so it happens only once. This choice wins over the Accuracy and Speed performance profiles and Compile shaders in the background. Takes effect the next time you start a game.".localized].joined(separator: "\n\n"))
         }
         .foregroundColor(MuffinTheme.brownDarkest)
+    }
+
+    private var fullSpeedRendersToggle: some View {
+        Toggle(isOn: $fullSpeedRenders) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Steady frame rate")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                Text(fullSpeedRenders
+                     ? "Rendering comes first: steady frames at the game's own Wii U frame rate, never faster.".localized
+                     : "Off: frames are shown the moment they're ready.".localized)
+                    .font(.system(size: 12))
+                    .foregroundColor(MuffinTheme.secondaryText)
+            }
+        }
+        .tint(MuffinTheme.accentText)
+        .onChange(of: fullSpeedRenders) { _ in FullSpeedRenders.applyToBridge() }
+    }
+
+    private var fullSpeedShaderPicker: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Picker("First time a new effect appears", selection: $fullSpeedShaderMode) {
+                ForEach(FullSpeedRenders.ShaderMode.allCases) { mode in
+                    Text(mode.title).tag(mode.rawValue)
+                }
+            }
+            .pickerStyle(.menu)
+            .tint(MuffinTheme.accentText)
+            .foregroundColor(MuffinTheme.brownDarkest)
+            .onChange(of: fullSpeedShaderMode) { _ in FullSpeedRenders.applyToBridge() }
+            Text((FullSpeedRenders.ShaderMode(rawValue: fullSpeedShaderMode) ?? FullSpeedRenders.defaultShaderMode).summary)
+                .font(.system(size: 12))
+                .foregroundColor(MuffinTheme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }

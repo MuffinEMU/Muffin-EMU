@@ -1202,7 +1202,7 @@
 "Rename" = "שינוי שם";
 "Rename…" = "שינוי שם…";
 "Renderer" = "מנוע";
-"Renderer, resolution, filtering, frame rate and graphic packs." = "מנוע, רזולוציה, סינון, קצב פריימים וחבילות גרפיקה.";
+"Renderer, resolution, filtering and graphic packs." = "מנוע, רזולוציה, סינון וחבילות גרפיקה.";
 "Rendering comes first: steady frames at the game's own Wii U frame rate, never faster." = "הרינדור קודם: פריימים יציבים בקצב הפריימים של ה-Wii U של המשחק עצמו, אף פעם לא מהר יותר.";
 "Reopens the first-launch guide to keys, games, speed and controls." = "פותח שוב את מדריך ההפעלה הראשונה למפתחות, משחקים, מהירות ובקרה.";
 "Replace" = "החלפה";
@@ -1607,7 +1607,7 @@
 "The overlay is the engine's own readout. Position picks a corner of the TV screen; Off hides it, and the other rows stay dimmed until a corner is chosen.\n\nFPS is the frame rate the game is producing. CPU, per-core CPU, RAM and VRAM usage measure MuffinEMU itself, not the whole device. Draw calls counts draw commands in the current frame. Debug info adds a few lines of renderer state.\n\nThe panel only appears while at least one of FPS, draw calls, CPU, per-core CPU or RAM is on. VRAM usage and debug info are extra lines inside it, so on their own they show nothing.\n\nText size and colour change the readout's look. Changes show up straight away." = "השכבה היא החיווי של המנוע עצמו. מיקום בוחר פינה במסך הטלוויזיה; כבוי מסתיר אותה, והשורות האחרות נשארות מעומעמות עד שנבחרת פינה.\n\nFPS הוא קצב הפריימים שהמשחק מייצר. שימוש ב-CPU, CPU לכל ליבה, RAM ו-VRAM מודדים את MuffinEMU עצמו, לא את כל המכשיר. קריאות ציור סופר פקודות ציור בפריים הנוכחי. מידע ניפוי מוסיף כמה שורות של מצב המנוע.\n\nהלוח מופיע רק כשלפחות אחד מ-FPS, קריאות ציור, CPU, CPU לכל ליבה או RAM פועל. שימוש ב-VRAM ומידע ניפוי הם שורות נוספות בתוכו, ולכן לבדן הן לא מציגות כלום.\n\nגודל טקסט וצבע משנים את מראה החיווי. השינויים מופיעים מיד.";
 "The pack unpacked, but no images were found in it." = "החבילה נפרסה, אבל לא נמצאו בה תמונות.";
 "The pack's download address is invalid." = "כתובת ההורדה של החבילה אינה תקינה.";
-"The performance profile, pausing a hidden screen, and cooling down." = "פרופיל הביצועים, השהיית מסך מוסתר וקירור.";
+"The performance profile, Steady frame rate, pausing a hidden screen, and cooling down." = "פרופיל הביצועים, קצב פריימים יציב, השהיית מסך מוסתר וקירור.";
 "The persistent ID must be %@ or higher." = "המזהה הקבוע חייב להיות %@ או יותר.";
 "The persistent ID must be hexadecimal (0-9, A-F)." = "המזהה הקבוע חייב להיות הקסדצימלי (0-9, A-F).";
 "The picture froze" = "התמונה קפאה";
@@ -1644,7 +1644,7 @@
 "Theme, app icon, Flat surfaces and Classic UI." = "ערכת נושא, סמל אפליקציה, משטחים שטוחים וממשק קלאסי.";
 "There are no shader files for this game yet. Play it first." = "אין עדיין קובצי שיידרים למשחק הזה. שחקו בו קודם.";
 "There is no game data for this install yet. Scrape it from Settings > Cover + data scraping, or here." = "אין עדיין נתוני משחק להתקנה הזו. אספו אותם מ-הגדרות > עטיפות + איסוף נתונים, או מכאן.";
-"There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Steady frame rate at the top of Graphics." = "אין מתג VSync כי iOS תמיד מסנכרן פריימים לקצב הרענון של המסך עצמו, ולכן התמונה אף פעם לא נקרעת ואין מה לכבות. לקצב פריימים אחיד, השתמשו בקצב פריימים יציב בראש גרפיקה.";
+"There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Steady frame rate under Performance, at the top of this page." = "אין מתג VSync כי iOS תמיד מסנכרן פריימים לקצב הרענון של המסך עצמו, ולכן התמונה אף פעם לא נקרעת ואין מה לכבות. לקצב פריימים אחיד, השתמשו בקצב פריימים יציב תחת ביצועים, בראש דף זה.";
 "There's no save for this game yet. Play it once, then export." = "אין עדיין שמירה למשחק הזה. שחקו בו פעם אחת, ואז ייצאו.";
 "These act when Screen Layout is Single Screen (Screen and sound > Display). Your layout shows both screens, so nothing is paused now." = "אלה פועלים כשפריסת המסך היא מסך יחיד (מסך וצליל > תצוגה). הפריסה שלכם מציגה שני מסכים, ולכן שום דבר לא מושהה עכשיו.";
 "These are independent projects, listed for information. MuffinEMU doesn't host them, and there's no server address built in for them: import the network_services.xml their host gives you.\n\nPretendo Network is built in under Network Service, but it needs a Wii U's account and console files." = "אלה פרויקטים עצמאיים, מפורטים לידיעה. MuffinEMU לא מארח אותם, ואין עבורם כתובת שרת מובנית: ייבאו את network_services.xml שהמארח שלהם נותן לכם.\n\nPretendo Network מובנה תחת שירות רשת, אבל הוא צריך חשבון וקובצי קונסולה של Wii U.";

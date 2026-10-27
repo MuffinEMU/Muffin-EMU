@@ -1202,7 +1202,7 @@
 "Rename" = "नाम बदलें";
 "Rename…" = "नाम बदलें…";
 "Renderer" = "रेंडरर";
-"Renderer, resolution, filtering, frame rate and graphic packs." = "रेंडरर, रिज़ॉल्यूशन, फ़िल्टरिंग, फ़्रेम दर और ग्राफ़िक पैक।";
+"Renderer, resolution, filtering and graphic packs." = "रेंडरर, रिज़ॉल्यूशन, फ़िल्टरिंग और ग्राफ़िक पैक।";
 "Rendering comes first: steady frames at the game's own Wii U frame rate, never faster." = "रेंडरिंग पहले आती है: गेम की अपनी Wii U फ़्रेम दर पर स्थिर फ़्रेम, उससे तेज़ कभी नहीं।";
 "Reopens the first-launch guide to keys, games, speed and controls." = "कुंजियों, गेम, गति और नियंत्रण की पहली लॉन्च गाइड फिर खोलता है।";
 "Replace" = "बदलें";
@@ -1607,7 +1607,7 @@
 "The overlay is the engine's own readout. Position picks a corner of the TV screen; Off hides it, and the other rows stay dimmed until a corner is chosen.\n\nFPS is the frame rate the game is producing. CPU, per-core CPU, RAM and VRAM usage measure MuffinEMU itself, not the whole device. Draw calls counts draw commands in the current frame. Debug info adds a few lines of renderer state.\n\nThe panel only appears while at least one of FPS, draw calls, CPU, per-core CPU or RAM is on. VRAM usage and debug info are extra lines inside it, so on their own they show nothing.\n\nText size and colour change the readout's look. Changes show up straight away." = "ओवरले इंजन का अपना रीडआउट है। स्थिति TV स्क्रीन का कोना चुनती है; बंद इसे छिपा देता है, और बाक़ी पंक्तियाँ तब तक धुँधली रहती हैं जब तक कोना न चुना जाए।\n\nFPS वह फ़्रेम दर है जो गेम बना रहा है। CPU, हर कोर का CPU, RAM और VRAM उपयोग पूरे डिवाइस को नहीं, MuffinEMU को ही मापते हैं। ड्रॉ कॉल मौजूदा फ़्रेम में ड्रॉ कमांड गिनता है। डीबग जानकारी रेंडरर की स्थिति की कुछ पंक्तियाँ जोड़ती है।\n\nपैनल तभी दिखता है जब FPS, ड्रॉ कॉल, CPU, हर कोर का CPU या RAM में से कम से कम एक चालू हो। VRAM उपयोग और डीबग जानकारी उसके अंदर की अतिरिक्त पंक्तियाँ हैं, इसलिए अकेले वे कुछ नहीं दिखातीं।\n\nटेक्स्ट का आकार और रंग रीडआउट का रूप बदलते हैं। बदलाव तुरंत दिखते हैं।";
 "The pack unpacked, but no images were found in it." = "पैक खुल गया, लेकिन उसमें कोई इमेज नहीं मिली।";
 "The pack's download address is invalid." = "पैक का डाउनलोड पता अमान्य है।";
-"The performance profile, pausing a hidden screen, and cooling down." = "परफ़ॉर्मेंस प्रोफ़ाइल, छिपी स्क्रीन को रोकना, और ठंडा करना।";
+"The performance profile, Steady frame rate, pausing a hidden screen, and cooling down." = "परफ़ॉर्मेंस प्रोफ़ाइल, स्थिर फ़्रेम दर, छिपी स्क्रीन को रोकना, और ठंडा करना।";
 "The persistent ID must be %@ or higher." = "पर्सिस्टेंट ID %@ या उससे ऊपर होनी चाहिए।";
 "The persistent ID must be hexadecimal (0-9, A-F)." = "पर्सिस्टेंट ID हेक्साडेसिमल (0-9, A-F) होनी चाहिए।";
 "The picture froze" = "तस्वीर फ़्रीज़ हो गई";
@@ -1644,7 +1644,7 @@
 "Theme, app icon, Flat surfaces and Classic UI." = "थीम, ऐप आइकन, सपाट सतहें और क्लासिक UI।";
 "There are no shader files for this game yet. Play it first." = "इस गेम के लिए अभी कोई शेडर फ़ाइलें नहीं हैं। पहले इसे खेलें।";
 "There is no game data for this install yet. Scrape it from Settings > Cover + data scraping, or here." = "इस इंस्टॉल के लिए अभी कोई गेम डेटा नहीं है। इसे सेटिंग्ज़ > कवर + डेटा स्क्रैपिंग से, या यहाँ से स्क्रैप करें।";
-"There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Steady frame rate at the top of Graphics." = "VSync स्विच नहीं है क्योंकि iOS हमेशा फ़्रेम को स्क्रीन के अपने रिफ़्रेश से सिंक करता है, इसलिए तस्वीर कभी नहीं फटती और बंद करने को कुछ नहीं है। फ़्रेम की समान गति के लिए ग्राफ़िक्स के ऊपर स्थिर फ़्रेम दर इस्तेमाल करें।";
+"There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Steady frame rate under Performance, at the top of this page." = "VSync स्विच नहीं है क्योंकि iOS हमेशा फ़्रेम को स्क्रीन के अपने रिफ़्रेश से सिंक करता है, इसलिए तस्वीर कभी नहीं फटती और बंद करने को कुछ नहीं है। फ़्रेम की समान गति के लिए इस पेज के ऊपर परफ़ॉर्मेंस में स्थिर फ़्रेम दर इस्तेमाल करें।";
 "There's no save for this game yet. Play it once, then export." = "इस गेम के लिए अभी कोई सेव नहीं है। इसे एक बार खेलें, फिर एक्सपोर्ट करें।";
 "These act when Screen Layout is Single Screen (Screen and sound > Display). Your layout shows both screens, so nothing is paused now." = "ये तब काम करते हैं जब स्क्रीन लेआउट सिंगल स्क्रीन हो (स्क्रीन और आवाज़ > डिस्प्ले)। आपका लेआउट दोनों स्क्रीन दिखाता है, इसलिए अभी कुछ रुका नहीं है।";
 "These are independent projects, listed for information. MuffinEMU doesn't host them, and there's no server address built in for them: import the network_services.xml their host gives you.\n\nPretendo Network is built in under Network Service, but it needs a Wii U's account and console files." = "ये स्वतंत्र प्रोजेक्ट हैं, जानकारी के लिए सूचीबद्ध। MuffinEMU इन्हें होस्ट नहीं करता, और इनके लिए कोई सर्वर पता अंतर्निहित नहीं है: इनका होस्ट जो network_services.xml देता है उसे इंपोर्ट करें।\n\nPretendo Network नेटवर्क सेवा के अंतर्गत अंतर्निहित है, लेकिन उसे Wii U के खाते और कंसोल फ़ाइलें चाहिए।";

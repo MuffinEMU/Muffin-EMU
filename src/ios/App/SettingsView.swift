@@ -65,10 +65,10 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         case .changedSettings: return "Every setting you've changed, and games with settings of their own.".localized
         case .appearance: return "Theme, app icon, Flat surfaces and Classic UI.".localized
         case .about: return "Version, credits, licences and reset.".localized
-        case .performance: return "The performance profile, pausing a hidden screen, and cooling down.".localized
+        case .performance: return "The performance profile, Steady frame rate, pausing a hidden screen, and cooling down.".localized
         case .cpu: return "What the CPU runs, CPU cores and memory.".localized
         case .jit: return "The recompiler, whether JIT is on, and the enabler that turns it on.".localized
-        case .graphics: return "Renderer, resolution, filtering, frame rate and graphic packs.".localized
+        case .graphics: return "Renderer, resolution, filtering and graphic packs.".localized
         case .shaderCache: return "Compiling in the background, cache size and clearing.".localized
         case .emulatedClock: return "The emulated console's clock speed.".localized
         case .onScreenControls: return "The touch pad: size, opacity, sticks and when it hides.".localized
@@ -102,10 +102,10 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         case .changedSettings: return "changed modified custom different defaults per game overrides"
         case .appearance: return "theme colours colors icon dark light classic flat look"
         case .about: return "version credits licences licenses reset support defaults github documentation"
-        case .performance: return "speed performance profile accuracy balanced battery saver heat thermal cool hot throttle pause hidden screen tv gamepad"
+        case .performance: return "speed performance profile accuracy balanced battery saver heat thermal cool hot throttle pause hidden screen tv gamepad steady frame rate stutter hitch effect shader"
         case .cpu: return "cores threads multicore interpreter processor memory"
         case .jit: return "recompiler interpreter stikjit stikdebug pairing debugger enabler"
-        case .graphics: return "resolution upscale vsync vulkan metal renderer filter gamma frame rate texture filtering anisotropic sharp blurry distance steady graphic packs mods patches"
+        case .graphics: return "resolution upscale vsync vulkan metal renderer filter gamma texture filtering anisotropic sharp blurry distance graphic packs mods patches"
         case .shaderCache: return "shaders stutter precompile cache compile background"
         case .emulatedClock: return "timing advanced clock speed"
         case .onScreenControls: return "pad gamepad touch layout buttons skin controller sticks haptic opacity size deadzone top bar hide"

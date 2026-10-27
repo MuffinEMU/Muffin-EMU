@@ -1202,7 +1202,7 @@
 "Rename" = "Đổi tên";
 "Rename…" = "Đổi tên…";
 "Renderer" = "Trình kết xuất";
-"Renderer, resolution, filtering, frame rate and graphic packs." = "Trình kết xuất, độ phân giải, lọc, tốc độ khung hình và gói đồ họa.";
+"Renderer, resolution, filtering and graphic packs." = "Trình kết xuất, độ phân giải, lọc và gói đồ họa.";
 "Rendering comes first: steady frames at the game's own Wii U frame rate, never faster." = "Kết xuất đặt lên hàng đầu: khung hình ổn định ở đúng tốc độ khung hình Wii U của trò chơi, không bao giờ nhanh hơn.";
 "Reopens the first-launch guide to keys, games, speed and controls." = "Mở lại hướng dẫn lần đầu về khóa, trò chơi, tốc độ và điều khiển.";
 "Replace" = "Thay thế";
@@ -1607,7 +1607,7 @@
 "The overlay is the engine's own readout. Position picks a corner of the TV screen; Off hides it, and the other rows stay dimmed until a corner is chosen.\n\nFPS is the frame rate the game is producing. CPU, per-core CPU, RAM and VRAM usage measure MuffinEMU itself, not the whole device. Draw calls counts draw commands in the current frame. Debug info adds a few lines of renderer state.\n\nThe panel only appears while at least one of FPS, draw calls, CPU, per-core CPU or RAM is on. VRAM usage and debug info are extra lines inside it, so on their own they show nothing.\n\nText size and colour change the readout's look. Changes show up straight away." = "Lớp phủ là chỉ báo riêng của lõi. Vị trí chọn một góc của màn hình TV; Tắt sẽ ẩn nó, và các hàng khác bị mờ cho đến khi chọn một góc.\n\nFPS là tốc độ khung hình trò chơi tạo ra. Mức dùng CPU, CPU theo nhân, RAM và VRAM đo chính MuffinEMU, không phải cả thiết bị. Lệnh vẽ đếm các lệnh vẽ trong khung hình hiện tại. Thông tin gỡ lỗi thêm vài dòng về trạng thái trình kết xuất.\n\nBảng chỉ hiện khi ít nhất một trong FPS, lệnh vẽ, CPU, CPU theo nhân hoặc RAM đang bật. Mức dùng VRAM và thông tin gỡ lỗi là các dòng thêm bên trong nên riêng chúng không hiện gì.\n\nCỡ chữ và màu thay đổi giao diện của chỉ báo. Thay đổi hiện ngay.";
 "The pack unpacked, but no images were found in it." = "Gói đã giải nén nhưng không thấy ảnh nào trong đó.";
 "The pack's download address is invalid." = "Địa chỉ tải của gói không hợp lệ.";
-"The performance profile, pausing a hidden screen, and cooling down." = "Hồ sơ hiệu năng, tạm dừng màn hình bị khuất, và làm mát.";
+"The performance profile, Steady frame rate, pausing a hidden screen, and cooling down." = "Hồ sơ hiệu năng, Tốc độ khung hình ổn định, tạm dừng màn hình bị khuất, và làm mát.";
 "The persistent ID must be %@ or higher." = "ID cố định phải là %@ trở lên.";
 "The persistent ID must be hexadecimal (0-9, A-F)." = "ID cố định phải ở dạng thập lục phân (0-9, A-F).";
 "The picture froze" = "Hình bị đứng";
@@ -1644,7 +1644,7 @@
 "Theme, app icon, Flat surfaces and Classic UI." = "Chủ đề, biểu tượng ứng dụng, Bề mặt phẳng và UI cổ điển.";
 "There are no shader files for this game yet. Play it first." = "Chưa có tệp shader nào cho trò chơi này. Hãy chơi nó trước.";
 "There is no game data for this install yet. Scrape it from Settings > Cover + data scraping, or here." = "Chưa có dữ liệu trò chơi cho bản cài đặt này. Hãy thu thập từ Cài đặt > Thu thập bìa + dữ liệu, hoặc tại đây.";
-"There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Steady frame rate at the top of Graphics." = "Không có công tắc VSync vì iOS luôn đồng bộ khung hình với tần số quét của màn hình, nên hình không bao giờ bị xé và không có gì để tắt. Để nhịp khung hình đều, hãy dùng Tốc độ khung hình ổn định ở đầu Đồ họa.";
+"There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Steady frame rate under Performance, at the top of this page." = "Không có công tắc VSync vì iOS luôn đồng bộ khung hình với tần số quét của màn hình, nên hình không bao giờ bị xé và không có gì để tắt. Để nhịp khung hình đều, hãy dùng Tốc độ khung hình ổn định trong Hiệu năng, ở đầu trang này.";
 "There's no save for this game yet. Play it once, then export." = "Chưa có bản lưu cho trò chơi này. Hãy chơi một lần rồi xuất.";
 "These act when Screen Layout is Single Screen (Screen and sound > Display). Your layout shows both screens, so nothing is paused now." = "Các mục này hoạt động khi Bố cục màn hình là Một màn hình (Màn hình và âm thanh > Màn hình). Bố cục của bạn hiện cả hai màn hình nên hiện không có gì bị tạm dừng.";
 "These are independent projects, listed for information. MuffinEMU doesn't host them, and there's no server address built in for them: import the network_services.xml their host gives you.\n\nPretendo Network is built in under Network Service, but it needs a Wii U's account and console files." = "Đây là các dự án độc lập, liệt kê để tham khảo. MuffinEMU không lưu trữ chúng, và không có sẵn địa chỉ máy chủ cho chúng: hãy nhập network_services.xml mà người vận hành đưa bạn.\n\nPretendo Network có sẵn trong Dịch vụ mạng, nhưng cần tài khoản và tệp máy của một Wii U.";

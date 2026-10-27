@@ -1202,7 +1202,7 @@
 "Rename" = "Rename";
 "Rename…" = "Rename…";
 "Renderer" = "Renderer";
-"Renderer, resolution, filtering, frame rate and graphic packs." = "Renderer, resolution, filtering, frame rate and graphic packs.";
+"Renderer, resolution, filtering and graphic packs." = "Renderer, resolution, filtering and graphic packs.";
 "Rendering comes first: steady frames at the game's own Wii U frame rate, never faster." = "Rendering comes first: steady frames at the game's own Wii U frame rate, never faster.";
 "Reopens the first-launch guide to keys, games, speed and controls." = "Reopens the first-launch guide to keys, games, speed and controls.";
 "Replace" = "Replace";
@@ -1607,7 +1607,7 @@
 "The overlay is the engine's own readout. Position picks a corner of the TV screen; Off hides it, and the other rows stay dimmed until a corner is chosen.\n\nFPS is the frame rate the game is producing. CPU, per-core CPU, RAM and VRAM usage measure MuffinEMU itself, not the whole device. Draw calls counts draw commands in the current frame. Debug info adds a few lines of renderer state.\n\nThe panel only appears while at least one of FPS, draw calls, CPU, per-core CPU or RAM is on. VRAM usage and debug info are extra lines inside it, so on their own they show nothing.\n\nText size and colour change the readout's look. Changes show up straight away." = "The overlay is the engine's own readout. Position picks a corner of the TV screen; Off hides it, and the other rows stay dimmed until a corner is chosen.\n\nFPS is the frame rate the game is producing. CPU, per-core CPU, RAM and VRAM usage measure MuffinEMU itself, not the whole device. Draw calls counts draw commands in the current frame. Debug info adds a few lines of renderer state.\n\nThe panel only appears while at least one of FPS, draw calls, CPU, per-core CPU or RAM is on. VRAM usage and debug info are extra lines inside it, so on their own they show nothing.\n\nText size and colour change the readout's look. Changes show up straight away.";
 "The pack unpacked, but no images were found in it." = "The pack unpacked, but no images were found in it.";
 "The pack's download address is invalid." = "The pack's download address is invalid.";
-"The performance profile, pausing a hidden screen, and cooling down." = "The performance profile, pausing a hidden screen, and cooling down.";
+"The performance profile, Steady frame rate, pausing a hidden screen, and cooling down." = "The performance profile, Steady frame rate, pausing a hidden screen, and cooling down.";
 "The persistent ID must be %@ or higher." = "The persistent ID must be %@ or higher.";
 "The persistent ID must be hexadecimal (0-9, A-F)." = "The persistent ID must be hexadecimal (0-9, A-F).";
 "The picture froze" = "The picture froze";
@@ -1644,7 +1644,7 @@
 "Theme, app icon, Flat surfaces and Classic UI." = "Theme, app icon, Flat surfaces and Classic UI.";
 "There are no shader files for this game yet. Play it first." = "There are no shader files for this game yet. Play it first.";
 "There is no game data for this install yet. Scrape it from Settings > Cover + data scraping, or here." = "There is no game data for this install yet. Scrape it from Settings > Cover + data scraping, or here.";
-"There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Steady frame rate at the top of Graphics." = "There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Steady frame rate at the top of Graphics.";
+"There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Steady frame rate under Performance, at the top of this page." = "There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Steady frame rate under Performance, at the top of this page.";
 "There's no save for this game yet. Play it once, then export." = "There's no save for this game yet. Play it once, then export.";
 "These act when Screen Layout is Single Screen (Screen and sound > Display). Your layout shows both screens, so nothing is paused now." = "These act when Screen Layout is Single Screen (Screen and sound > Display). Your layout shows both screens, so nothing is paused now.";
 "These are independent projects, listed for information. MuffinEMU doesn't host them, and there's no server address built in for them: import the network_services.xml their host gives you.\n\nPretendo Network is built in under Network Service, but it needs a Wii U's account and console files." = "These are independent projects, listed for information. MuffinEMU doesn't host them, and there's no server address built in for them: import the network_services.xml their host gives you.\n\nPretendo Network is built in under Network Service, but it needs a Wii U's account and console files.";

@@ -1202,7 +1202,7 @@
 "Rename" = "Premenovať";
 "Rename…" = "Premenovať…";
 "Renderer" = "Renderer";
-"Renderer, resolution, filtering, frame rate and graphic packs." = "Renderer, rozlíšenie, filtrovanie, snímková frekvencia a grafické balíky.";
+"Renderer, resolution, filtering and graphic packs." = "Renderer, rozlíšenie, filtrovanie a grafické balíky.";
 "Rendering comes first: steady frames at the game's own Wii U frame rate, never faster." = "Vykresľovanie je na prvom mieste: stabilné snímky pri vlastnej snímkovej frekvencii hry na Wii U, nikdy rýchlejšie.";
 "Reopens the first-launch guide to keys, games, speed and controls." = "Znova otvorí sprievodcu prvým spustením ku kľúčom, hrám, rýchlosti a ovládaniu.";
 "Replace" = "Nahradiť";
@@ -1607,7 +1607,7 @@
 "The overlay is the engine's own readout. Position picks a corner of the TV screen; Off hides it, and the other rows stay dimmed until a corner is chosen.\n\nFPS is the frame rate the game is producing. CPU, per-core CPU, RAM and VRAM usage measure MuffinEMU itself, not the whole device. Draw calls counts draw commands in the current frame. Debug info adds a few lines of renderer state.\n\nThe panel only appears while at least one of FPS, draw calls, CPU, per-core CPU or RAM is on. VRAM usage and debug info are extra lines inside it, so on their own they show nothing.\n\nText size and colour change the readout's look. Changes show up straight away." = "Prekrytie je vlastný údaj enginu. Poloha vyberá roh obrazovky TV; Vypnuté ho skryje a ostatné riadky zostanú stlmené, kým sa nezvolí roh.\n\nFPS je snímková frekvencia, ktorú hra vytvára. Využitie CPU, CPU podľa jadra, RAM a VRAM meria samotný MuffinEMU, nie celé zariadenie. Volania kreslenia počítajú príkazy kreslenia v aktuálnom snímku. Ladiace informácie pridávajú pár riadkov o stave renderera.\n\nPanel sa zobrazí, iba kým je zapnuté aspoň jedno z FPS, volania kreslenia, CPU, CPU podľa jadra alebo RAM. Využitie VRAM a ladiace informácie sú ďalšie riadky v ňom, takže samotné nezobrazia nič.\n\nVeľkosť textu a farba menia vzhľad údaja. Zmeny sa prejavia hneď.";
 "The pack unpacked, but no images were found in it." = "Balík sa rozbalil, ale nenašli sa v ňom žiadne obrázky.";
 "The pack's download address is invalid." = "Adresa na stiahnutie balíka je neplatná.";
-"The performance profile, pausing a hidden screen, and cooling down." = "Profil výkonu, pozastavenie skrytej obrazovky a chladenie.";
+"The performance profile, Steady frame rate, pausing a hidden screen, and cooling down." = "Profil výkonu, Stabilná snímková frekvencia, pozastavenie skrytej obrazovky a chladenie.";
 "The persistent ID must be %@ or higher." = "Trvalé ID musí byť %@ alebo vyššie.";
 "The persistent ID must be hexadecimal (0-9, A-F)." = "Trvalé ID musí byť hexadecimálne (0-9, A-F).";
 "The picture froze" = "Obraz zamrzol";
@@ -1644,7 +1644,7 @@
 "Theme, app icon, Flat surfaces and Classic UI." = "Motív, ikona aplikácie, Ploché povrchy a Klasické UI.";
 "There are no shader files for this game yet. Play it first." = "Pre túto hru zatiaľ nie sú súbory shaderov. Najprv ju zahrajte.";
 "There is no game data for this install yet. Scrape it from Settings > Cover + data scraping, or here." = "Pre túto inštaláciu zatiaľ nie sú údaje o hrách. Získajte ich z Nastavenia > Získavanie obalov a údajov, alebo tu.";
-"There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Steady frame rate at the top of Graphics." = "Prepínač VSync neexistuje, pretože iOS vždy synchronizuje snímky s obnovovaním samotnej obrazovky, takže obraz sa nikdy nerozdelí a nie je čo vypnúť. Pre rovnomerné tempo snímok použite Stabilnú snímkovú frekvenciu v hornej časti Grafiky.";
+"There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Steady frame rate under Performance, at the top of this page." = "Prepínač VSync neexistuje, pretože iOS vždy synchronizuje snímky s obnovovaním samotnej obrazovky, takže obraz sa nikdy nerozdelí a nie je čo vypnúť. Pre rovnomerné tempo snímok použite Stabilnú snímkovú frekvenciu v časti Výkon, v hornej časti tejto stránky.";
 "There's no save for this game yet. Play it once, then export." = "Pre túto hru zatiaľ nie je uloženie. Raz ju zahrajte a potom exportujte.";
 "These act when Screen Layout is Single Screen (Screen and sound > Display). Your layout shows both screens, so nothing is paused now." = "Tieto sa uplatnia, keď je Rozloženie obrazovky Jedna obrazovka (Obrazovka a zvuk > Displej). Vaše rozloženie zobrazuje obe obrazovky, takže teraz sa nič nepozastavuje.";
 "These are independent projects, listed for information. MuffinEMU doesn't host them, and there's no server address built in for them: import the network_services.xml their host gives you.\n\nPretendo Network is built in under Network Service, but it needs a Wii U's account and console files." = "Ide o nezávislé projekty uvedené na informáciu. MuffinEMU ich nehostuje a nemá pre ne vstavanú adresu servera: importujte network_services.xml, ktorý vám dá ich hostiteľ.\n\nPretendo Network je vstavané v časti Sieťová služba, ale potrebuje účet a súbory konzoly Wii U.";

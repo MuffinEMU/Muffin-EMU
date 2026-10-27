@@ -1202,7 +1202,7 @@
 "Rename" = "Yeniden adlandır";
 "Rename…" = "Yeniden adlandır…";
 "Renderer" = "Oluşturucu";
-"Renderer, resolution, filtering, frame rate and graphic packs." = "Oluşturucu, çözünürlük, filtreleme, kare hızı ve grafik paketleri.";
+"Renderer, resolution, filtering and graphic packs." = "Oluşturucu, çözünürlük, filtreleme ve grafik paketleri.";
 "Rendering comes first: steady frames at the game's own Wii U frame rate, never faster." = "Önce oluşturma gelir: oyunun kendi Wii U kare hızında sabit kareler, asla daha hızlı değil.";
 "Reopens the first-launch guide to keys, games, speed and controls." = "Anahtarlar, oyunlar, hız ve kontrollere dair ilk açılış kılavuzunu yeniden açar.";
 "Replace" = "Değiştir";
@@ -1607,7 +1607,7 @@
 "The overlay is the engine's own readout. Position picks a corner of the TV screen; Off hides it, and the other rows stay dimmed until a corner is chosen.\n\nFPS is the frame rate the game is producing. CPU, per-core CPU, RAM and VRAM usage measure MuffinEMU itself, not the whole device. Draw calls counts draw commands in the current frame. Debug info adds a few lines of renderer state.\n\nThe panel only appears while at least one of FPS, draw calls, CPU, per-core CPU or RAM is on. VRAM usage and debug info are extra lines inside it, so on their own they show nothing.\n\nText size and colour change the readout's look. Changes show up straight away." = "Yer paylaşımı motorun kendi göstergesidir. Konum, TV ekranının bir köşesini seçer; Kapalı onu gizler ve diğer satırlar bir köşe seçilene kadar soluk kalır.\n\nFPS, oyunun ürettiği kare hızıdır. CPU, çekirdek başına CPU, RAM ve VRAM kullanımı tüm cihazı değil MuffinEMU'nun kendisini ölçer. Çizim çağrıları, geçerli karedeki çizim komutlarını sayar. Hata ayıklama bilgisi birkaç satır oluşturucu durumu ekler.\n\nPanel yalnızca FPS, çizim çağrıları, CPU, çekirdek başına CPU veya RAM'den en az biri açıkken görünür. VRAM kullanımı ve hata ayıklama bilgisi onun içinde ek satırlardır, bu yüzden tek başlarına bir şey göstermezler.\n\nMetin boyutu ve renk göstergenin görünümünü değiştirir. Değişiklikler hemen görünür.";
 "The pack unpacked, but no images were found in it." = "Paket açıldı ama içinde hiç görsel bulunamadı.";
 "The pack's download address is invalid." = "Paketin indirme adresi geçersiz.";
-"The performance profile, pausing a hidden screen, and cooling down." = "Performans profili, gizli ekranı duraklatma ve soğutma.";
+"The performance profile, Steady frame rate, pausing a hidden screen, and cooling down." = "Performans profili, Sabit kare hızı, gizli ekranı duraklatma ve soğutma.";
 "The persistent ID must be %@ or higher." = "Kalıcı kimlik %@ veya daha yüksek olmalı.";
 "The persistent ID must be hexadecimal (0-9, A-F)." = "Kalıcı kimlik onaltılık olmalı (0-9, A-F).";
 "The picture froze" = "Görüntü dondu";
@@ -1644,7 +1644,7 @@
 "Theme, app icon, Flat surfaces and Classic UI." = "Tema, uygulama simgesi, Düz yüzeyler ve Klasik Arayüz.";
 "There are no shader files for this game yet. Play it first." = "Bu oyun için henüz gölgelendirici dosyası yok. Önce oynayın.";
 "There is no game data for this install yet. Scrape it from Settings > Cover + data scraping, or here." = "Bu kurulum için henüz oyun verisi yok. Ayarlar > Kapak + veri kazıma'dan veya buradan kazıyın.";
-"There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Steady frame rate at the top of Graphics." = "VSync anahtarı yoktur, çünkü iOS kareleri her zaman ekranın kendi yenilemesiyle eşler; bu yüzden görüntü asla yırtılmaz ve kapatılacak bir şey yoktur. Eşit kare aralığı için Grafikler'in en üstündeki Sabit kare hızı'nı kullanın.";
+"There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Steady frame rate under Performance, at the top of this page." = "VSync anahtarı yoktur, çünkü iOS kareleri her zaman ekranın kendi yenilemesiyle eşler; bu yüzden görüntü asla yırtılmaz ve kapatılacak bir şey yoktur. Eşit kare aralığı için Performans altında bu sayfanın en üstündeki Sabit kare hızı'nı kullanın.";
 "There's no save for this game yet. Play it once, then export." = "Bu oyun için henüz kayıt yok. Bir kez oynayın, sonra dışa aktarın.";
 "These act when Screen Layout is Single Screen (Screen and sound > Display). Your layout shows both screens, so nothing is paused now." = "Bunlar Ekran Düzeni Tek Ekran olduğunda geçerlidir (Ekran ve ses > Ekran). Düzeniniz her iki ekranı da gösteriyor, bu yüzden şu an hiçbir şey duraklatılmıyor.";
 "These are independent projects, listed for information. MuffinEMU doesn't host them, and there's no server address built in for them: import the network_services.xml their host gives you.\n\nPretendo Network is built in under Network Service, but it needs a Wii U's account and console files." = "Bunlar bilgi için listelenen bağımsız projelerdir. MuffinEMU bunları barındırmaz ve onlar için yerleşik sunucu adresi yoktur: sunucuyu işletenin verdiği network_services.xml dosyasını içe aktarın.\n\nPretendo Network, Ağ Hizmeti altında yerleşiktir ama bir Wii U'nun hesabını ve konsol dosyalarını gerektirir.";

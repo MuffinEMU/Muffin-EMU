@@ -76,6 +76,8 @@ enum SettingsIndex {
         stored("Performance profile: Accuracy", .performance, "muffin.cpu.favourAccuracy", false, "favour accuracy glitch crash fix"),
         stored("Performance profile: Speed", .performance, FavourPerformance.storageKey, FavourPerformance.defaultValue, "favour performance fast"),
         stored("Performance profile: Battery saver", .performance, OneCoreMode.storageKey, OneCoreMode.defaultValue, "one-core mode single core low power heat"),
+        stored("Steady frame rate", .performance, FullSpeedRenders.storageKey, FullSpeedRenders.defaultValue, "full speed stutter vsync"),
+        stored("First time a new effect appears", .performance, FullSpeedRenders.shaderModeKey, FullSpeedRenders.defaultShaderMode.rawValue, "shader"),
         // Also listed under Display, where they are drawn too; Changed from default lists each key once.
         stored("Pause the TV screen when it isn't shown", .performance, HiddenScreenSettings.pauseHiddenTVKey, false, "battery heat hidden"),
         stored("Pause the GamePad screen when it isn't shown", .performance, HiddenScreenSettings.pauseHiddenPadKey, false, "battery heat hidden"),
@@ -92,8 +94,6 @@ enum SettingsIndex {
         stored("Resolution", .graphics, RenderScale.storageKey, RenderScale.deviceDefault.rawValue, "upscale render scale 1080p 720p"),
         stored("Filter when enlarging", .graphics, UpscaleFilterSetting.storageKey, UpscaleFilterSetting.defaultValue.rawValue, "upscale bilinear bicubic"),
         stored("Filter when shrinking", .graphics, DownscaleFilterSetting.storageKey, DownscaleFilterSetting.defaultValue.rawValue, "downscale"),
-        stored("Steady frame rate", .graphics, FullSpeedRenders.storageKey, FullSpeedRenders.defaultValue, "full speed stutter vsync"),
-        stored("First time a new effect appears", .graphics, FullSpeedRenders.shaderModeKey, FullSpeedRenders.defaultShaderMode.rawValue, "shader"),
         stored("Display gamma", .graphics, DisplayGammaSetting.storageKey, DisplayGammaSetting.defaultValue, "dark bright"),
         stored("Fast blending", .graphics, "muffin.render.framebufferFetch", true, "framebuffer fetch"),
         stored("Emulate missing effects", .graphics, "muffin.render.emulateMissingEffects", false, "geometry shaders"),

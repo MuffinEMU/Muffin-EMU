@@ -1202,7 +1202,7 @@
 "Rename" = "Ubah nama";
 "Rename…" = "Ubah nama…";
 "Renderer" = "Renderer";
-"Renderer, resolution, filtering, frame rate and graphic packs." = "Renderer, resolusi, pemfilteran, frame rate, dan paket grafis.";
+"Renderer, resolution, filtering and graphic packs." = "Renderer, resolusi, pemfilteran, dan paket grafis.";
 "Rendering comes first: steady frames at the game's own Wii U frame rate, never faster." = "Rendering didahulukan: frame stabil pada frame rate Wii U asli game, tidak pernah lebih cepat.";
 "Reopens the first-launch guide to keys, games, speed and controls." = "Membuka kembali panduan peluncuran pertama tentang kunci, game, kecepatan, dan kontrol.";
 "Replace" = "Ganti";
@@ -1607,7 +1607,7 @@
 "The overlay is the engine's own readout. Position picks a corner of the TV screen; Off hides it, and the other rows stay dimmed until a corner is chosen.\n\nFPS is the frame rate the game is producing. CPU, per-core CPU, RAM and VRAM usage measure MuffinEMU itself, not the whole device. Draw calls counts draw commands in the current frame. Debug info adds a few lines of renderer state.\n\nThe panel only appears while at least one of FPS, draw calls, CPU, per-core CPU or RAM is on. VRAM usage and debug info are extra lines inside it, so on their own they show nothing.\n\nText size and colour change the readout's look. Changes show up straight away." = "Overlay adalah indikator engine sendiri. Posisi memilih sudut layar TV; Mati menyembunyikannya, dan baris lain tetap redup sampai sudut dipilih.\n\nFPS adalah frame rate yang dihasilkan game. Penggunaan CPU, CPU per inti, RAM, dan VRAM mengukur MuffinEMU sendiri, bukan seluruh perangkat. Draw call menghitung perintah gambar di frame saat ini. Info debug menambahkan beberapa baris status renderer.\n\nPanel hanya muncul selama setidaknya satu dari FPS, draw call, CPU, CPU per inti, atau RAM aktif. Penggunaan VRAM dan info debug adalah baris tambahan di dalamnya, jadi sendirian tidak menampilkan apa pun.\n\nUkuran teks dan warna mengubah tampilan indikator. Perubahan langsung terlihat.";
 "The pack unpacked, but no images were found in it." = "Paket berhasil diekstrak, tetapi tidak ada gambar di dalamnya.";
 "The pack's download address is invalid." = "Alamat unduhan paket tidak valid.";
-"The performance profile, pausing a hidden screen, and cooling down." = "Profil performa, menjeda layar tersembunyi, dan pendinginan.";
+"The performance profile, Steady frame rate, pausing a hidden screen, and cooling down." = "Profil performa, Frame rate stabil, menjeda layar tersembunyi, dan pendinginan.";
 "The persistent ID must be %@ or higher." = "ID persisten harus %@ atau lebih tinggi.";
 "The persistent ID must be hexadecimal (0-9, A-F)." = "ID persisten harus heksadesimal (0-9, A-F).";
 "The picture froze" = "Gambar membeku";
@@ -1644,7 +1644,7 @@
 "Theme, app icon, Flat surfaces and Classic UI." = "Tema, ikon app, Permukaan datar, dan UI Klasik.";
 "There are no shader files for this game yet. Play it first." = "Belum ada file shader untuk game ini. Mainkan dulu.";
 "There is no game data for this install yet. Scrape it from Settings > Cover + data scraping, or here." = "Belum ada data game untuk instalasi ini. Ambil dari Pengaturan > Pengambilan sampul + data, atau di sini.";
-"There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Steady frame rate at the top of Graphics." = "Tidak ada sakelar VSync karena iOS selalu menyinkronkan frame dengan refresh layar itu sendiri, jadi gambar tidak pernah sobek dan tidak ada yang perlu dimatikan. Untuk pacing frame yang merata, gunakan Frame rate stabil di bagian atas Grafis.";
+"There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Steady frame rate under Performance, at the top of this page." = "Tidak ada sakelar VSync karena iOS selalu menyinkronkan frame dengan refresh layar itu sendiri, jadi gambar tidak pernah sobek dan tidak ada yang perlu dimatikan. Untuk pacing frame yang merata, gunakan Frame rate stabil di Performa, di bagian atas halaman ini.";
 "There's no save for this game yet. Play it once, then export." = "Belum ada simpanan untuk game ini. Mainkan sekali, lalu ekspor.";
 "These act when Screen Layout is Single Screen (Screen and sound > Display). Your layout shows both screens, so nothing is paused now." = "Ini bekerja saat Tata Letak Layar adalah Layar Tunggal (Layar dan suara > Tampilan). Tata letak Anda menampilkan kedua layar, jadi tidak ada yang dijeda sekarang.";
 "These are independent projects, listed for information. MuffinEMU doesn't host them, and there's no server address built in for them: import the network_services.xml their host gives you.\n\nPretendo Network is built in under Network Service, but it needs a Wii U's account and console files." = "Ini proyek independen, dicantumkan sebagai informasi. MuffinEMU tidak menghostingnya, dan tidak ada alamat server bawaan untuknya: impor network_services.xml yang diberikan host mereka.\n\nPretendo Network tertanam di Layanan Jaringan, tetapi memerlukan akun dan file konsol Wii U.";

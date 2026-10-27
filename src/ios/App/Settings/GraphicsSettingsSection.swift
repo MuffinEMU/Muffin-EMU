@@ -105,8 +105,6 @@ struct GraphicsSettingsSection: View {
     @AppStorage(DownscaleFilterSetting.storageKey) private var downscaleRaw = DownscaleFilterSetting.defaultValue.rawValue
     @AppStorage(RenderScale.storageKey) private var renderScaleRaw = RenderScale.deviceDefault.rawValue
     @AppStorage(FavourPerformance.storageKey) private var favourPerformance = FavourPerformance.defaultValue
-    @AppStorage(FullSpeedRenders.storageKey) private var fullSpeedRenders = FullSpeedRenders.defaultValue
-    @AppStorage(FullSpeedRenders.shaderModeKey) private var fullSpeedShaderMode = FullSpeedRenders.defaultShaderMode.rawValue
     @AppStorage(MoltenVKBuild.storageKey) private var moltenVKRaw = MoltenVKBuild.defaultValue.rawValue
     @AppStorage(DisplayGammaSetting.storageKey) private var displayGamma = DisplayGammaSetting.defaultValue
     // Default true: matches CemuConfig's framebuffer_fetch default.
@@ -125,15 +123,9 @@ struct GraphicsSettingsSection: View {
 
     var body: some View {
         Section {
-            // The renderer, filters, Steady frame rate and the picture tweaks are Advanced mode only:
-            // Basic keeps them at their defaults (see AdvancedSettings).
+            // The renderer, filters and the picture tweaks are Advanced mode only: Basic keeps them at
+            // their defaults (see AdvancedSettings). Steady frame rate is under Performance.
             if advanced {
-                fullSpeedRendersToggle
-                PerGameOverrideNote(field: .fullSpeedRenders)
-                if fullSpeedRenders {
-                    fullSpeedShaderPicker
-                    PerGameOverrideNote(field: .fullSpeedShaderMode)
-                }
                 rendererPicker
                 // Only the Vulkan renderer loads MoltenVK, so Metal users have nothing to pick here.
                 if rendererRaw == RendererAPI.vulkan.rawValue {
@@ -267,40 +259,6 @@ struct GraphicsSettingsSection: View {
         .foregroundColor(MuffinTheme.brownDarkest)
     }
 
-    private var fullSpeedRendersToggle: some View {
-        Toggle(isOn: $fullSpeedRenders) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Steady frame rate")
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                Text(fullSpeedRenders
-                     ? "Rendering comes first: steady frames at the game's own Wii U frame rate, never faster.".localized
-                     : "Off: frames are shown the moment they're ready.".localized)
-                    .font(.system(size: 12))
-                    .foregroundColor(MuffinTheme.secondaryText)
-            }
-        }
-        .tint(MuffinTheme.accentText)
-        .onChange(of: fullSpeedRenders) { _ in FullSpeedRenders.applyToBridge() }
-    }
-
-    private var fullSpeedShaderPicker: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Picker("First time a new effect appears", selection: $fullSpeedShaderMode) {
-                ForEach(FullSpeedRenders.ShaderMode.allCases) { mode in
-                    Text(mode.title).tag(mode.rawValue)
-                }
-            }
-            .pickerStyle(.menu)
-            .tint(MuffinTheme.accentText)
-            .foregroundColor(MuffinTheme.brownDarkest)
-            .onChange(of: fullSpeedShaderMode) { _ in FullSpeedRenders.applyToBridge() }
-            Text((FullSpeedRenders.ShaderMode(rawValue: fullSpeedShaderMode) ?? FullSpeedRenders.defaultShaderMode).summary)
-                .font(.system(size: 12))
-                .foregroundColor(MuffinTheme.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
     private var resolutionPicker: some View {
         Picker("Resolution", selection: $renderScaleRaw) {
             ForEach(RenderScale.allCases) { scale in
@@ -409,13 +367,12 @@ struct GraphicsSettingsSection: View {
 
     private var fullText: String {
         [
-            "Steady frame rate puts rendering ahead of everything else MuffinEMU does: the graphics thread gets first call on the fastest cores, each frame is shown at the game's own Wii U frame rate (steady, and never faster than the console), and debugging extras are skipped. Every shader the game has used before is built while the game loads, so those never cause a hitch or a flicker. The first time something brand new appears, its shader has to be built: \"Wait for it\" holds the frame until it's ready (a short hitch, never a missing object), \"Keep going\" draws without it once (no hitch, but it can be missing for a moment). Either way it's saved, so it happens only once. This choice wins over the Accuracy and Speed performance profiles and Compile shaders in the background. Takes effect the next time you start a game.".localized,
             "Metal is the default renderer. Vulkan (MoltenVK) goes through a translation layer and may work better for some games, at some cost to speed. Takes effect the next time you launch a game.".localized,
             "MoltenVK is the layer that turns Vulkan into Metal, so it only matters with the Vulkan renderer. 1.4.3 is the default; 1.2.8 is an older build that some games run better on. A change applies the next time MuffinEMU starts.".localized,
             "Filter when enlarging is used when MuffinEMU draws the game's picture larger than the game rendered it; Filter when shrinking is used when drawing it smaller. Bicubic (the default for enlarging) is smoother than linear; Bicubic Hermite sharpens that further; Nearest Neighbor keeps hard pixel edges with no blending at all. Linear is the default for shrinking.".localized,
             renderScale.summary,
             "Resolution changes the size of the picture MuffinEMU draws, not the resolution the game runs at - nothing about the emulation changes with it. Takes effect the next time you launch a game.".localized,
-            "There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Steady frame rate at the top of Graphics.".localized,
+            "There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Steady frame rate under Performance, at the top of this page.".localized,
             "Fast blending lets some Metal shaders blend using the picture already on screen instead of an extra step, which is quicker. It is on by default, Metal only, and takes effect the next time you launch a game.".localized,
             "Display gamma adjusts how bright the mid-tones look without changing pure black or pure white. 2.2 is the standard display gamma and the default; lower looks flatter and brighter in the mids, higher looks more contrasty and darker in the mids. Takes effect on the next frame.".localized,
             "Override the game's gamma and Override gamma are a separate stage from Display gamma above, not a second copy of it: some games ask for their own gamma value, and this either adds Override gamma on top of that request (off) or replaces the game's request with Override gamma entirely (on) - before Display gamma is applied to the result. Off by default; most games never ask for a specific gamma at all, so this has nothing to override until one does.".localized,
