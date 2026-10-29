@@ -1099,27 +1099,61 @@ namespace {
             && thermalState == 0;
     }
 
-    NSString* ios_two_core_hang_key() { return @"muffin.cpu.twoCoreHung"; }
+    // A two-core run that never reaches GX2Init (ios_two_core_watch_entry) puts its title on one core for the next
+    // launches, then two cores are tried again: the first hang costs one launch, a second hang in a row two, then
+    // four, up to kTwoCoreMaxDemotedLaunches. A two-core run that reaches GX2Init clears the title. Per title the
+    // entry is {hangs: consecutive hangs, left: one-core launches still owed}.
+    // This replaced a permanent list ("muffin.cpu.twoCoreHung"): a one-core launch never runs the watch, so nothing
+    // could take a title off it, and one slow or stuck boot kept that title on one core for good.
+    NSString* ios_two_core_backoff_key() { return @"muffin.cpu.twoCoreHangBackoff"; }
+    constexpr NSInteger kTwoCoreMaxDemotedLaunches = 32;
 
     NSString* ios_title_key(uint64_t titleId) { return [NSString stringWithFormat:@"%016llx", (unsigned long long)titleId]; }
 
-    bool ios_two_core_hang_recorded(uint64_t titleId)
+    NSInteger ios_two_core_entry_value(NSDictionary* entry, NSString* field)
     {
-        return [[[NSUserDefaults standardUserDefaults] stringArrayForKey:ios_two_core_hang_key()] containsObject:ios_title_key(titleId)];
+        id value = [entry isKindOfClass:[NSDictionary class]] ? entry[field] : nil;
+        return [value isKindOfClass:[NSNumber class]] ? [value integerValue] : 0;
     }
 
-    void ios_two_core_hang_set(uint64_t titleId, bool hung)
+    // If the title still owes one-core launches, uses one up and returns how many are left after this one; otherwise -1.
+    NSInteger ios_two_core_take_demoted_launch(uint64_t titleId)
     {
         NSUserDefaults* defaults = [NSUserDefaults standardUserDefaults];
-        NSMutableArray<NSString*>* list = [([defaults stringArrayForKey:ios_two_core_hang_key()] ?: @[]) mutableCopy];
+        // Titles on the old permanent list get two cores again; a real hang is caught afresh by the watch.
+        [defaults removeObjectForKey:@"muffin.cpu.twoCoreHung"];
+        NSDictionary* all = [defaults dictionaryForKey:ios_two_core_backoff_key()];
         NSString* key = ios_title_key(titleId);
-        if (hung && ![list containsObject:key])
-            [list addObject:key];
-        else if (!hung && [list containsObject:key])
-            [list removeObject:key];
+        NSDictionary* entry = all[key];
+        const NSInteger left = ios_two_core_entry_value(entry, @"left");
+        if (left <= 0)
+            return -1;
+        NSMutableDictionary* updated = [all mutableCopy];
+        updated[key] = @{ @"hangs": @(ios_two_core_entry_value(entry, @"hangs")), @"left": @(left - 1) };
+        [defaults setObject:updated forKey:ios_two_core_backoff_key()];
+        return left - 1;
+    }
+
+    // Records how a watched two-core run went. Returns the one-core launches now owed (0 when it reached GX2Init).
+    NSInteger ios_two_core_record_run(uint64_t titleId, bool hung)
+    {
+        NSUserDefaults* defaults = [NSUserDefaults standardUserDefaults];
+        NSDictionary* all = [defaults dictionaryForKey:ios_two_core_backoff_key()];
+        NSString* key = ios_title_key(titleId);
+        NSMutableDictionary* updated = [(all ?: @{}) mutableCopy];
+        NSInteger left = 0;
+        if (hung)
+        {
+            const NSInteger hangs = std::min<NSInteger>(ios_two_core_entry_value(all[key], @"hangs") + 1, 16);
+            left = std::min<NSInteger>((NSInteger)1 << (hangs - 1), kTwoCoreMaxDemotedLaunches);
+            updated[key] = @{ @"hangs": @(hangs), @"left": @(left) };
+        }
+        else if (all[key])
+            [updated removeObjectForKey:key];
         else
-            return;
-        [defaults setObject:list forKey:ios_two_core_hang_key()];
+            return 0;
+        [defaults setObject:updated forKey:ios_two_core_backoff_key()];
+        return left;
     }
 
     struct CoreDecision
@@ -1177,9 +1211,11 @@ namespace {
             cemu_bridge_log_line((std::string("CPU cores: ") + (setting == kCoreModeTwo ? "two" : "three") + " cores chosen in Advanced settings, more than this device can run (up to " + std::to_string(maxThreads) + " host thread(s); " + deviceText + "). Attempting it anyway").c_str());
         if (setting == kCoreModeTwo)
         {
-            if (titleId != 0 && ios_two_core_hang_recorded(titleId))
+            const NSInteger demotedLeft = titleId != 0 ? ios_two_core_take_demoted_launch(titleId) : -1;
+            if (demotedLeft >= 0)
             {
-                d.reason = std::string("one core: a two-core run of this title never reached GX2Init before (") + deviceText + ")";
+                d.reason = std::string("one core: a recent two-core run of this title never reached GX2Init; two cores are tried again after ")
+                    + std::to_string((long)demotedLeft) + " more one-core launch(es) (" + deviceText + ")";
                 return d;
             }
             d.singleCore = false;
@@ -4811,7 +4847,8 @@ void cemu_bridge_set_skip_hidden_screen(bool tv, bool pad) {
 }
 
 // Two-core guard. A two-core run cannot be turned into a one-core run while the title is up, so a
-// run that never reaches GX2Init is remembered and the next launch of that title uses one core.
+// run that never reaches GX2Init is remembered and the next launches of that title use one core, backing off
+// before two cores are tried again (ios_two_core_record_run).
 static constexpr int kTwoCoreGx2InitSeconds = 240;
 static std::atomic<bool> g_twoCoreWatchRunning{false};
 static std::thread g_twoCoreWatchThread;
@@ -4826,14 +4863,14 @@ static void ios_two_core_watch_entry(uint64_t titleId) {
         if (IOSTitlePause_IsPaused())
             continue;
         if (LatteGPUState.gx2InitCalled > 0) {
-            ios_two_core_hang_set(titleId, false);
+            ios_two_core_record_run(titleId, false);
             cemuLog_log(LogType::Force, "CPU cores: the two-core run reached GX2Init after {:.1f}s", waitedHalfSeconds / 2.0);
             return;
         }
         if (++waitedHalfSeconds >= kTwoCoreGx2InitSeconds * 2) {
-            ios_two_core_hang_set(titleId, true);
-            cemuLog_log(LogType::Force, "CPU cores: the two-core run has not reached GX2Init after {}s. The next launch of this title uses one core.",
-                kTwoCoreGx2InitSeconds);
+            const NSInteger demoted = ios_two_core_record_run(titleId, true);
+            cemuLog_log(LogType::Force, "CPU cores: the two-core run has not reached GX2Init after {}s. The next {} launch(es) of this title use one core, then two cores are tried again.",
+                kTwoCoreGx2InitSeconds, (long)demoted);
             return;
         }
     }
