@@ -117,6 +117,15 @@ namespace coreinit
 			return currentTick >= g_soonestAlarm;
 		}
 
+		// Every pending alarm moves by the same amount, so the set's order holds without re-sorting.
+		static void ShiftAll(uint64 ticks)
+		{
+			cemu_assert_debug(__OSHasSchedulerLock());
+			for (OSHostAlarm* alarm : g_activeAlarmList)
+				alarm->m_nextFire += ticks;
+			updateEarliestAlarmAtomic();
+		}
+
         static void Reset()
         {
             g_activeAlarmList.clear();
@@ -500,6 +509,28 @@ namespace coreinit
 				PPCCoreCallback(_swapEndianU32(alarm->handler), alarm, &(g_alarmThread.GetPtr()->context));
 			}
 		}
+	}
+
+	// MuffinEMU: moves the console's date and time forward while a title runs (HOME > Console clock).
+	// OSGetTime is also the clock every alarm, sleep and timeout is measured on, so each pending one
+	// moves by the same amount: a periodic alarm re-arms one period at a time, and a jump of a day
+	// would otherwise make a 16 ms alarm catch up millions of times. Only the date and time a game
+	// reads change; how long anything waits does not.
+	void AdvanceConsoleClock(uint64 timerTicks)
+	{
+		__OSLockScheduler();
+		ppcCyclesSince2000TimerClock += timerTicks;
+		ppcCyclesSince2000 += timerTicks * 20ULL;
+		ppcCyclesSince2000_UTC += timerTicks * 20ULL;
+		for (auto& itr : g_activeAlarms)
+		{
+			OSAlarm_t* alarm = itr.first;
+			alarm->nextTime = _swapEndianU64(_swapEndianU64(alarm->nextTime) + timerTicks);
+			if (alarm->period != 0)
+				alarm->startTime = _swapEndianU64(_swapEndianU64(alarm->startTime) + timerTicks);
+		}
+		OSHostAlarm::ShiftAll(timerTicks);
+		__OSUnlockScheduler();
 	}
 
 	void MapAlarmExports()

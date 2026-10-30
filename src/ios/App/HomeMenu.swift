@@ -41,6 +41,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
     case recordAudio
     case recordScreen
     case scanAmiibo
+    case consoleClock
     case recentreAim
     case quit
     // case wiiUMenu   // see EXTENSION POINT above
@@ -69,6 +70,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
         case .recordAudio: return "Record audio".localized
         case .recordScreen: return "Record screen".localized
         case .scanAmiibo: return "Scan amiibo".localized
+        case .consoleClock: return "Console clock".localized
         case .recentreAim: return "Recentre aim".localized
         case .quit: return "Quit game".localized
         }
@@ -84,6 +86,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
         case .recordAudio: return "record.circle"
         case .recordScreen: return "video.circle"
         case .scanAmiibo: return "wave.3.right"
+        case .consoleClock: return "clock.arrow.circlepath"
         case .recentreAim: return "scope"
         case .quit: return "xmark.circle"
         }
@@ -99,6 +102,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
         case .recordAudio: return "Records the game's sound to an M4A file in the Recordings folder in Files. Choose it again to stop.".localized
         case .recordScreen: return "Records the screen the game is showing, at the game's own resolution and with its sound, to a video in the Recordings folder in Files. Choose it again to stop.".localized
         case .scanAmiibo: return "Opens a list of amiibo files to scan. The game has to be asking for an amiibo.".localized
+        case .consoleClock: return "Moves the game's date and time forward.".localized
         case .recentreAim: return "Takes the way you are holding the device now as straight ahead, then goes back to the game.".localized
         case .quit: return "Asks before leaving the game.".localized
         }
@@ -218,12 +222,18 @@ struct HomeMenuOverlay: View {
     let canQuit: Bool
     let actions: HomeMenuActions
 
-    private enum Page { case root, layout, external, confirmQuit }
+    private enum Page { case root, layout, external, confirmQuit, clock, clockCustom }
     @ObservedObject private var recorder = AudioRecorder.shared
     @ObservedObject private var screenRecorder = ScreenRecorder.shared
     @State private var page = Page.root
     @State private var focus = 0
     @State private var rowsHeight: CGFloat = 280
+    /// The console clock as of the last jump, and what that jump did, for the clock page's header.
+    @State private var clockNow = ConsoleClock.now
+    @State private var clockResult: String?
+    /// The custom jump, kept while the menu is open so a second jump can reuse it.
+    @State private var customDays = 1
+    @State private var customHours = 0
     /// The highlight is for controller players: shown from the start when one is connected, and once
     /// a controller button is used otherwise, so a touch player is not handed a row that looks chosen.
     @State private var usingController = ControllerPresence.isConnected()
@@ -308,6 +318,8 @@ struct HomeMenuOverlay: View {
         case .layout: return "Screen layout".localized
         case .external: return "External display".localized
         case .confirmQuit: return "Quit game?".localized
+        case .clock: return "Console clock".localized
+        case .clockCustom: return "Custom amount".localized
         }
     }
 
@@ -331,6 +343,20 @@ struct HomeMenuOverlay: View {
                     .fixedSize(horizontal: false, vertical: true)
             case .layout:
                 EmptyView()
+            case .clock:
+                Text(ConsoleClockFormat.string(clockNow))
+                    .font(MuffinTheme.Font.caption)
+                    .foregroundColor(MuffinTheme.brownMid)
+                if let result = clockResult {
+                    Text(result)
+                        .font(MuffinTheme.Font.caption)
+                        .foregroundColor(MuffinTheme.brownMid)
+                }
+            case .clockCustom:
+                Text(customSeconds > 0 ? ConsoleClockFormat.duration(days: customDays, hours: customHours)
+                                        : "Add at least an hour.".localized)
+                    .font(MuffinTheme.Font.caption)
+                    .foregroundColor(MuffinTheme.brownMid)
             case .external:
                 Text(externalDisplayEnabled
                      ? "Changes apply right away. AirPlay mirroring doesn't count as an external display.".localized
@@ -352,6 +378,8 @@ struct HomeMenuOverlay: View {
         case .layout: return layoutRows
         case .external: return externalRows
         case .confirmQuit: return confirmQuitRows
+        case .clock: return clockRows
+        case .clockCustom: return clockCustomRows
         }
     }
 
@@ -392,6 +420,12 @@ struct HomeMenuOverlay: View {
             row.isSelected = screenRecorder.isRecording
             return row
         case .scanAmiibo: return make(actions.scanAmiibo)
+        case .consoleClock:
+            return make(chevron: true, {
+                clockNow = ConsoleClock.now
+                clockResult = nil
+                show(.clock)
+            })
         case .recentreAim:
             // Same call as Settings > Motion & Aiming > Recentre aim. The pose at the tap is the new
             // straight ahead, so the player is already holding the device the way they play.
@@ -463,6 +497,58 @@ struct HomeMenuOverlay: View {
         return result
     }
 
+    /// The preset jumps, then the custom one. The menu stays open after a jump, so the new time shows
+    /// in the header and another press moves it again.
+    private var clockRows: [HomeMenuRow] {
+        var result = ConsoleClockStep.allCases.map { step in
+            HomeMenuRow(id: "clock.\(step.rawValue)", title: step.title, symbol: "forward.fill",
+                        hint: "Moves the game's clock forward. Some games only check the date when they start.".localized,
+                        action: { jumpClock(by: step.rawValue) })
+        }
+        result.append(HomeMenuRow(id: "clock.custom", title: "Custom amount".localized, symbol: "slider.horizontal.3",
+                                  hint: "Choose a number of days and hours.".localized, showsChevron: true,
+                                  action: { show(.clockCustom) }))
+        result.append(HomeMenuRow(id: "back", title: "Back".localized, symbol: "chevron.left",
+                                  hint: "Returns to the HOME menu.".localized, showsChevron: false, action: { show(.root) }))
+        return result
+    }
+
+    private var customSeconds: Int { customDays * 86_400 + customHours * 3_600 }
+
+    /// Buttons rather than a picker, so a controller can set the amount too.
+    private var clockCustomRows: [HomeMenuRow] {
+        [
+            HomeMenuRow(id: "custom.dayUp", title: "Add a day".localized, symbol: "plus.circle",
+                        hint: "Up to 365 days.".localized, action: { customDays = min(customDays + 1, 365) }),
+            HomeMenuRow(id: "custom.dayDown", title: "Remove a day".localized, symbol: "minus.circle",
+                        hint: "Down to none.".localized, action: { customDays = max(customDays - 1, 0) }),
+            HomeMenuRow(id: "custom.hourUp", title: "Add an hour".localized, symbol: "plus.circle",
+                        hint: "Up to 23 hours.".localized, action: { customHours = min(customHours + 1, 23) }),
+            HomeMenuRow(id: "custom.hourDown", title: "Remove an hour".localized, symbol: "minus.circle",
+                        hint: "Down to none.".localized, action: { customHours = max(customHours - 1, 0) }),
+            HomeMenuRow(id: "custom.go",
+                        title: customSeconds > 0
+                            ? String(format: "Move forward by %@".localized, ConsoleClockFormat.duration(days: customDays, hours: customHours))
+                            : "Move forward".localized,
+                        symbol: "forward.fill",
+                        hint: "Moves the game's clock forward by this amount, then shows the new time.".localized,
+                        isPrimary: true, action: {
+                            guard customSeconds > 0 else { return }
+                            jumpClock(by: customSeconds)
+                            show(.clock)
+                        }),
+            HomeMenuRow(id: "back", title: "Back".localized, symbol: "chevron.left",
+                        hint: "Returns to the console clock.".localized, showsChevron: false, action: { show(.clock) })
+        ]
+    }
+
+    private func jumpClock(by seconds: Int) {
+        clockResult = ConsoleClock.advance(by: seconds)
+            ? "Moved forward.".localized
+            : "Couldn't move the clock.".localized
+        clockNow = ConsoleClock.now
+    }
+
     /// Shorter than DeviceScreenMode.string, which is written to follow a label in Settings; menu rows are one line.
     private static func deviceShowsTitle(for mode: DeviceScreenMode) -> String {
         switch mode {
@@ -501,6 +587,7 @@ struct HomeMenuOverlay: View {
             switch previous {
             case .confirmQuit: opener = .quit
             case .external: opener = .externalDisplay
+            case .clock, .clockCustom: opener = .consoleClock
             default: opener = .screenLayout
             }
             focus = HomeMenuDestination.visible.firstIndex(of: opener) ?? 0
@@ -510,11 +597,19 @@ struct HomeMenuOverlay: View {
             focus = 0
         case .confirmQuit:
             focus = 0
+        case .clock:
+            focus = previous == .clockCustom ? (clockRows.firstIndex(where: { $0.id == "clock.custom" }) ?? 0) : 0
+        case .clockCustom:
+            focus = 0
         }
     }
 
     private func goBack() {
-        if page != .root { show(.root) } else { actions.resume() }
+        switch page {
+        case .root: actions.resume()
+        case .clockCustom: show(.clock)
+        default: show(.root)
+        }
     }
 
     private func handle(_ event: HomeMenuEvent) {

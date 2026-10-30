@@ -481,6 +481,18 @@ void cemu_bridge_set_timebase_shift(int shift);
 /// The shift currently in effect. See above for the scale.
 int cemu_bridge_get_timebase_shift(void);
 
+/// The console clock (Settings > Console Clock), as seconds between it and this device's clock:
+/// positive is ahead, 0 follows real time. Read when a title starts, so a change made here shows
+/// in the next game, as setting a real Wii U's clock does. Unrelated to the timebase above, which
+/// changes how fast time passes, not what time it is.
+void cemu_bridge_set_console_clock_offset(int64_t seconds);
+
+/// Moves the running title's console clock forward by `seconds` (HOME > Console clock). Every
+/// pending alarm, sleep and timeout moves with it, so the game sees a later date and time and
+/// nothing it is waiting on fires early. Returns false, and changes nothing, when no title is
+/// running or `seconds` isn't positive. Doesn't change the stored offset; the caller does that.
+bool cemu_bridge_advance_console_clock(int64_t seconds);
+
 /// Turns the automatic clock ladder on or off.
 ///
 /// While a title boots on the interpreter and has not reached GX2Init, the ladder steps

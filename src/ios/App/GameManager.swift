@@ -1484,6 +1484,8 @@ class GameManager: ObservableObject {
             // explicitly chosen a value, so someone who never opens Settings keeps the
             // default that was chosen with the CPU mode in hand.
             TimebaseScale.applyStoredChoiceIfAny()
+            // The console clock is read once while the title starts.
+            ConsoleClock.applyForLaunch()
 
             // Read here rather than only from the switches, because the engine reads both
             // of these once while a title starts and cannot see UserDefaults. A switch
