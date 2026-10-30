@@ -373,6 +373,14 @@ uint32 LoadSharedData()
 	return mmuRange_SHARED_AREA.getBase() + sizeof(SharedDataEntry) * numEntries;
 }
 
+// MuffinEMU: Settings > Console Clock, as seconds from the host's clock. Read once per title start.
+static std::atomic<sint64> s_consoleClockOffsetSeconds{0};
+
+void CafeSystem::SetConsoleClockOffset(sint64 seconds)
+{
+	s_consoleClockOffsetSeconds = seconds;
+}
+
 void cemu_initForGame()
 {
 	WindowSystem::UpdateWindowTitles(false, true, 0.0);
@@ -380,9 +388,10 @@ void cemu_initForGame()
 	// input manager apply game profile
 	InputManager::instance().apply_game_profile();
 	// determine cycle offset since 1.1.2000
-	uint64 secondsSince2000_UTC = (uint64)(time(NULL) - 946684800);
+	const sint64 clockOffset = s_consoleClockOffsetSeconds.load();
+	uint64 secondsSince2000_UTC = (uint64)(time(NULL) + clockOffset - 946684800);
 	ppcCyclesSince2000_UTC = secondsSince2000_UTC * (uint64)ESPRESSO_CORE_CLOCK;
-	time_t theTime = (time(NULL) - 946684800);
+	time_t theTime = (time(NULL) + clockOffset - 946684800);
 	{
 		tm* lt = localtime(&theTime);
 #if BOOST_OS_WINDOWS

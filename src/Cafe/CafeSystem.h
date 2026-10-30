@@ -79,6 +79,10 @@ namespace CafeSystem
 	void NotifyTitleSwitchFailed(TitleId titleId);
 	void NotifyTitleSwitching(TitleId titleId);
 
+	// MuffinEMU: seconds between the console clock and the host's, applied when a title starts
+	// (Settings > Console Clock). 0 follows the host's clock.
+	void SetConsoleClockOffset(sint64 seconds);
+
 };
 
 extern RPLModule* applicationRPX;

@@ -10,7 +10,7 @@ import SwiftUI
 /// touches its storage keys.
 enum SettingsItem: String, CaseIterable, Identifiable {
     case language, settingsMode, changedSettings, appearance, about
-    case performance, cpu, jit, graphics, shaderCache, emulatedClock
+    case performance, cpu, jit, graphics, shaderCache, emulatedClock, consoleClock
     case onScreenControls, motion, emulatedDevices
     case display, externalDisplay, audio, overlay, notifications
     case library, coverArt, keys, wiiUMenu
@@ -33,6 +33,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         case .graphics: return "Graphics".localized
         case .shaderCache: return "Shaders".localized
         case .emulatedClock: return "Emulated Clock".localized
+        case .consoleClock: return "Date & Time".localized
         case .onScreenControls: return "On-screen Controls".localized
         case .motion: return "Motion & Aiming".localized
         case .emulatedDevices: return "Emulated Devices".localized
@@ -71,6 +72,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         case .graphics: return "Renderer, resolution, filtering and graphic packs.".localized
         case .shaderCache: return "Compiling in the background, cache size and clearing.".localized
         case .emulatedClock: return "The emulated console's clock speed.".localized
+        case .consoleClock: return "The date and time games see.".localized
         case .onScreenControls: return "The touch pad: size, opacity, sticks and when it hides.".localized
         case .motion: return "Aiming by tilting this device or a controller.".localized
         case .emulatedDevices: return "Skylanders, Disney Infinity and LEGO Dimensions.".localized
@@ -108,6 +110,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         case .graphics: return "resolution upscale vsync vulkan metal renderer filter gamma texture filtering anisotropic sharp blurry distance graphic packs mods patches"
         case .shaderCache: return "shaders stutter precompile cache compile background"
         case .emulatedClock: return "timing advanced clock speed"
+        case .consoleClock: return "date time day calendar clock year events"
         case .onScreenControls: return "pad gamepad touch layout buttons skin controller sticks haptic opacity size deadzone top bar hide"
         case .motion: return "gyro motion controller aim gyroscope tilt sensitivity"
         case .emulatedDevices: return "skylanders disney infinity lego dimensions toypad portal figures toys amiibo devices"
@@ -210,7 +213,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     var items: [SettingsItem] {
         switch self {
         case .general: return [.language, .settingsMode, .changedSettings, .appearance, .premium, .about]
-        case .emulation: return [.performance, .cpu, .jit, .graphics, .shaderCache, .emulatedClock]
+        case .emulation: return [.performance, .cpu, .jit, .graphics, .shaderCache, .emulatedClock, .consoleClock]
         case .controls: return [.onScreenControls, .motion, .emulatedDevices]
         case .screenAndSound: return [.display, .externalDisplay, .audio, .overlay, .notifications]
         case .library: return [.keys, .library, .coverArt]
@@ -322,6 +325,7 @@ struct SettingsView: View {
         case .graphics: GraphicsSettingsSection()
         case .shaderCache: ShaderCacheSection()
         case .emulatedClock: EmulatedClockSection()
+        case .consoleClock: ConsoleClockSection()
         case .onScreenControls: OnScreenControlsSection()
         case .motion: MotionSettingsSection()
         case .emulatedDevices: EmulatedDevicesSettingsSection()

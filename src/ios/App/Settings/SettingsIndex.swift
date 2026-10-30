@@ -104,6 +104,7 @@ enum SettingsIndex {
         row("Clear compiled shaders", .shaderCache, "delete free space"),
         row("Clear everything, including learned", .shaderCache, "delete clear all"),
         stored("Speed", .emulatedClock, TimebaseScale.storageKey, nil, "clock timing"),
+        stored("Console date and time", .consoleClock, ConsoleClock.offsetKey, nil, "date time day calendar clock"),
     ]
 
     private static let controls: [SettingEntry] = [

@@ -57,6 +57,7 @@
 #include <sys/ucontext.h>
 
 #include "Cafe/CafeSystem.h"
+#include "Cafe/OS/libs/coreinit/coreinit_Alarm.h"
 #include "Cafe/OS/libs/nn_ac/nn_ac_reachability.h"
 #include "Cafe/Filesystem/FST/KeyCache.h"
 #include "Cafe/Filesystem/fsc.h"
@@ -4252,6 +4253,19 @@ void cemu_bridge_set_timebase_shift(int shift) {
 
 int cemu_bridge_get_timebase_shift(void) {
     return (int)ActiveSettings::GetTimerShiftFactor();
+}
+
+void cemu_bridge_set_console_clock_offset(int64_t seconds) {
+    CafeSystem::SetConsoleClockOffset((sint64)seconds);
+    cemuLog_log(LogType::Force, "Console clock: {} s from real time at the next title start", (sint64)seconds);
+}
+
+bool cemu_bridge_advance_console_clock(int64_t seconds) {
+    if (seconds <= 0 || !cemu_bridge_is_title_running())
+        return false;
+    coreinit::AdvanceConsoleClock((uint64)seconds * (uint64)ESPRESSO_TIMER_CLOCK);
+    cemuLog_log(LogType::Force, "Console clock: moved forward {} s", (sint64)seconds);
+    return true;
 }
 
 // The automatic clock ladder: while an interpreter boot has not reached GX2Init, step the

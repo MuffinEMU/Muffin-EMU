@@ -63,6 +63,9 @@ namespace coreinit
 
 	void alarm_update();
 
+	// MuffinEMU: moves the console clock and every pending alarm forward by the same number of timer ticks.
+	void AdvanceConsoleClock(uint64 timerTicks);
+
 	void MapAlarmExports();
 	void InitializeAlarm();
 }
