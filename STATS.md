@@ -1,10 +1,10 @@
 # MuffinEMU community stats
 
-Updated 2026-10-30 by the Community stats workflow. History: [history.jsonl](history.jsonl) and [traffic-daily.csv](traffic-daily.csv).
+Updated 2026-10-31 by the Community stats workflow. History: [history.jsonl](history.jsonl) and [traffic-daily.csv](traffic-daily.csv).
 
 | | |
 |---|---|
-| IPA downloads, all releases | **1032** (+168 in 7 days) |
+| IPA downloads, all releases | **1534** (+636 in 7 days) |
 | Stars | 4 (+0 in 7 days) |
 | Forks | 0 (+0 in 7 days) |
 | Watchers | 1 |
@@ -13,36 +13,36 @@ Updated 2026-10-30 by the Community stats workflow. History: [history.jsonl](his
 
 | Channel | Downloads |
 |---|---|
-| stable | 968 |
-| experimental | 33 |
-| other | 30 |
-| audit | 1 |
-| nightly | 0 |
+| stable | 1320 |
+| experimental | 121 |
+| other | 89 |
+| audit | 3 |
+| nightly | 1 |
 
 ## Stable releases (newest first)
 
 | Release | Downloads |
 |---|---|
-| v10.5 | 43 |
-| v10.4 | 83 |
-| v10.3 | 256 |
-| v10.2 | 33 |
-| v10.1 | 14 |
-| v10.0 | 17 |
-| v9.9 | 6 |
-| v9.8 | 11 |
-| v9.7 | 9 |
-| v9.6 | 23 |
-| v9.5 | 6 |
-| v9.4 | 3 |
-| v9.3 | 0 |
-| v9.2 | 9 |
-| v9.1 | 2 |
-| v9.0 | 0 |
-| v8.9 | 26 |
-| v8.8 | 4 |
-| v8.7 | 1 |
-| v8.6 | 2 |
+| v10.6 | 11 |
+| v10.5 | 64 |
+| v10.4 | 87 |
+| v10.3 | 259 |
+| v10.2 | 36 |
+| v10.1 | 18 |
+| v10.0 | 21 |
+| v9.9 | 10 |
+| v9.8 | 14 |
+| v9.7 | 13 |
+| v9.6 | 26 |
+| v9.5 | 10 |
+| v9.4 | 6 |
+| v9.3 | 4 |
+| v9.2 | 12 |
+| v9.1 | 5 |
+| v9.0 | 2 |
+| v8.9 | 29 |
+| v8.8 | 8 |
+| v8.7 | 4 |
 
 _Traffic (views, clones, referrers) is missing: HTTP 403 (no STATS_TOKEN secret). Add a STATS_TOKEN secret; see the workflow file._
 
