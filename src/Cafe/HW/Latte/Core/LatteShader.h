@@ -105,6 +105,12 @@ void LatteShader_GetDecompilerOptions(struct LatteDecompilerOptions& options, La
 // fewer GPU instructions per multiply, at the risk of lighting or shadow glitches in the games
 // that rely on the console's behaviour.
 extern std::atomic<bool> g_latteRelaxShaderMul;
+// Whether shaders for the running title are built with the strict multiply. A game profile that asks for it
+// (accurateShaderMul = true: Breath of the Wild and the few others whose lighting breaks without it) keeps it
+// even under Favour performance; the relaxed multiply only applies to titles whose profile leaves it open.
+bool LatteShader_UseStrictMul();
+// Whether the running title's shaders differ from a strict build and need a cache file of their own.
+bool LatteShader_UsesRelaxedMul();
 LatteDecompilerShader* LatteShader_CreateShaderFromDecompilerOutput(LatteDecompilerOutput_t& decompilerOutput, uint64 baseHash, bool calculateAuxHash, uint64 optionalAuxHash, uint32* contextRegister);
 
 void LatteShader_CreateRendererShader(LatteDecompilerShader* shader, bool compileAsync);

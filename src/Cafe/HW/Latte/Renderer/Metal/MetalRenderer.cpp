@@ -4079,21 +4079,32 @@ void MetalRenderer::UpdateMemoryStatsAndRelievePressure()
     }
     // Textures the GPU wrote (render targets) cannot be restored from guest memory: the next use finds whatever the
     // CPU last left there, usually nothing, and the surface comes back black or stale until the game redraws it. So
-    // they are the last resort: only when the restorable ones above did not free enough to get back over the low mark,
-    // only ones nobody has touched for half a minute, and the largest first so as few as possible are lost.
+    // they are the last resort: only when the restorable ones above did not free enough to get back over the
+    // critical mark (not the low mark: that gap is over 600 MB on a 6 GB iPad, so every pass took its full 16 and
+    // Breath of the Wild lost its terrain atlases after a shrine or a long look at the inventory), only ones nobody
+    // has touched for half a minute of running time, and the largest first so as few as possible are lost.
+    const uint32 currentTick = GetTickCount();
+    const uint32 currentFrame = LatteGPUState.frameCounter;
+    const bool frameAdvanced = currentFrame != m_memoryLastSeenFrame || m_memoryLastFrameAdvanceTick == 0;
+    if (frameAdvanced)
+    {
+        m_memoryLastSeenFrame = currentFrame;
+        m_memoryLastFrameAdvanceTick = currentTick;
+    }
     if (available < criticalMark)
     {
-        const uint64 needed = lowMark > available ? lowMark - available : 0;
+        const uint64 needed = criticalMark > available ? criticalMark - available : 0;
         if (freedBytes < needed)
         {
-            const uint32 currentTick = GetTickCount();
-            const uint32 currentFrame = LatteGPUState.frameCounter;
+            // While the title is paused no frame is presented, so idleness is measured up to the last frame that
+            // was: a texture the game used right before the lock screen is not idle when the screen comes back.
+            const uint32 idleReferenceTick = frameAdvanced ? currentTick : m_memoryLastFrameAdvanceTick;
             std::vector<std::pair<uint64, LatteTexture*>> idleGpuWritten;
             for (LatteTexture* texture : LatteTexture::GetAllTextures())
             {
                 if (!texture || texture->lastAccessFrameCount == 0)
                     continue;
-                if ((currentTick - texture->lastAccessTick) < 30000 || (currentFrame - texture->lastAccessFrameCount) < 300)
+                if ((sint32)(idleReferenceTick - texture->lastAccessTick) < 30000 || (currentFrame - texture->lastAccessFrameCount) < 300)
                     continue;
                 auto* mtlTexture = static_cast<LatteTextureMtl*>(texture)->GetTexture();
                 idleGpuWritten.emplace_back(mtlTexture ? (uint64)mtlTexture->allocatedSize() : 0, texture);
@@ -4112,6 +4123,9 @@ void MetalRenderer::UpdateMemoryStatsAndRelievePressure()
                 ++deleted;
                 ++lost;
             }
+            // Logged on its own: these are the deletions a player can see (a surface stays black until redrawn).
+            if (lost > 0 && m_memoryLostLogs++ < 12)
+                cemuLog_log(LogType::Force, "Metal: memory is critical ({} MB left), deleted {} GPU-written textures that cannot be restored", os_proc_available_memory() / MB, lost);
         }
     }
     if (deleted > 0)
