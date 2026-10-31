@@ -734,6 +734,11 @@ private:
 
     std::chrono::steady_clock::time_point m_lastMemoryCheck;
     uint32 m_memoryPressureLogs = 0;
+    uint32 m_memoryLostLogs = 0;
+    // The guest frame seen by the last memory pass and the tick it last changed, so time the title spends
+    // paused (lock screen, HOME menu, app switch) does not count as a texture being idle.
+    uint32 m_memoryLastSeenFrame = 0;
+    uint32 m_memoryLastFrameAdvanceTick = 0;
     uint64 m_startAvailableMemory = 0;
 
     // Draw breadcrumbs (see MetalDrawBreadcrumb)
