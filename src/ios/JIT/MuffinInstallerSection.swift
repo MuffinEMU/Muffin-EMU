@@ -15,10 +15,12 @@ import UniformTypeIdentifiers
 final class MuffinInstallerModel: ObservableObject {
     enum Sheet: Identifiable {
         case signIn
+        case certificate
         case code(textedTo: String?)
         var id: String {
             switch self {
             case .signIn: return "signIn"
+            case .certificate: return "certificate"
             case .code: return "code"
             }
         }
@@ -28,6 +30,7 @@ final class MuffinInstallerModel: ObservableObject {
     @Published var appleID = MuffinInstaller.appleID
     @Published var team = UserDefaults.standard.string(forKey: MuffinInstaller.teamKey)
     @Published var signedIn = MuffinInstaller.isSignedIn
+    @Published var hasCertificate = MuffinInstaller.hasCertificate
     @Published var latestVersion: String?
     @Published var busy = false
     @Published var step: String?
@@ -41,6 +44,7 @@ final class MuffinInstallerModel: ObservableObject {
     var methodText: String {
         switch MuffinInstaller.method {
         case "appleID": return "MuffinInstaller, with your Apple ID"
+        case "certificate": return "MuffinInstaller, with your own certificate"
         case "signedIPA": return "MuffinInstaller, from a signed IPA"
         default:
             return signature.expires == nil
@@ -54,6 +58,7 @@ final class MuffinInstallerModel: ObservableObject {
         appleID = MuffinInstaller.appleID
         team = UserDefaults.standard.string(forKey: MuffinInstaller.teamKey)
         signedIn = MuffinInstaller.isSignedIn
+        hasCertificate = MuffinInstaller.hasCertificate
         JITPillModel.shared.refresh()
         Task { latestVersion = await MuffinInstaller.latestReleaseVersion() }
     }
@@ -122,7 +127,7 @@ final class MuffinInstallerModel: ObservableObject {
     func refreshNow() {
         let app = Bundle.main.bundleURL
         run("Refreshing…") { callbacks in
-            try MuffinInstaller.signAndInstall(appPath: app, callbacks: callbacks)
+            try MuffinInstaller.resign(appPath: app, callbacks: callbacks)
             return "Refreshed."
         }
     }
@@ -138,7 +143,7 @@ final class MuffinInstallerModel: ObservableObject {
                 let ipa = try await MuffinInstaller.downloadLatestRelease()
                 busy = false
                 run("Installing the update…") { callbacks in
-                    try MuffinInstaller.signAndInstall(appPath: ipa, callbacks: callbacks)
+                    try MuffinInstaller.resign(appPath: ipa, callbacks: callbacks)
                     return "Updated."
                 }
             } catch {
@@ -147,6 +152,33 @@ final class MuffinInstallerModel: ObservableObject {
                 errorLine = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             }
         }
+    }
+
+    /// Keeps the picked certificate, profile and password, then signs and installs MuffinEMU with them.
+    func useCertificate(p12: URL, profile: URL, password: String) {
+        func read(_ url: URL) throws -> Data {
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            return try Data(contentsOf: url)
+        }
+        do {
+            try MuffinInstaller.storeCertificate(p12: read(p12), password: password, profile: read(profile))
+        } catch {
+            errorLine = "Couldn't read those files: \(error.localizedDescription)"
+            return
+        }
+        sheet = nil
+        let app = Bundle.main.bundleURL
+        run("Signing with your certificate…") { callbacks in
+            let note = try MuffinInstaller.signWithCertificateAndInstall(appPath: app, callbacks: callbacks)
+            return note ?? "Installed with your certificate."
+        }
+    }
+
+    func removeCertificate() {
+        MuffinInstaller.removeCertificate()
+        statusLine = "Your certificate is removed from this device."
+        refresh()
     }
 
     func installSigned(_ picked: URL) {
@@ -206,6 +238,7 @@ struct MuffinInstallerSection: View {
         .sheet(item: $model.sheet, onDismiss: model.sheetDismissed) { sheet in
             switch sheet {
             case .signIn: InstallerSignInSheet(model: model)
+            case .certificate: InstallerCertificateSheet(model: model)
             case .code(let textedTo): InstallerCodeSheet(model: model, textedTo: textedTo)
             }
         }
@@ -234,7 +267,7 @@ struct MuffinInstallerSection: View {
         row("JIT", jitText)
         row("This version", versionText)
 
-        if model.signedIn {
+        if model.signedIn || model.hasCertificate {
             Toggle(isOn: $autoRefresh) {
                 Text("Refresh automatically")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
@@ -246,6 +279,8 @@ struct MuffinInstallerSection: View {
                 Button { confirm = .update } label: { Label("Update to \(latest)", systemImage: "arrow.down.circle") }
                     .disabled(model.busy)
             }
+        }
+        if model.signedIn {
             Button(role: .destructive) { model.signOut() } label: {
                 Label("Sign out", systemImage: "person.crop.circle.badge.xmark")
             }
@@ -253,6 +288,17 @@ struct MuffinInstallerSection: View {
         } else {
             Button { model.sheet = .signIn } label: {
                 Label("Sign in with your Apple ID", systemImage: "person.crop.circle")
+            }
+            .disabled(model.busy)
+        }
+        if model.hasCertificate {
+            Button(role: .destructive) { model.removeCertificate() } label: {
+                Label("Remove your certificate", systemImage: "trash")
+            }
+            .disabled(model.busy)
+        } else {
+            Button { model.sheet = .certificate } label: {
+                Label("Use your own certificate", systemImage: "doc.badge.gearshape")
             }
             .disabled(model.busy)
         }
@@ -380,6 +426,72 @@ private struct InstallerSignInSheet: View {
     }
 }
 
+/// Your own certificate: a .p12 with its password and a matching .mobileprovision.
+private struct InstallerCertificateSheet: View {
+    @ObservedObject var model: MuffinInstallerModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var p12: URL?
+    @State private var profile: URL?
+    @State private var password = ""
+    @State private var picking: Picking?
+
+    private enum Picking: Identifiable {
+        case p12, profile
+        var id: Int { self == .p12 ? 0 : 1 }
+    }
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section {
+                    Button { picking = .p12 } label: {
+                        row("Certificate (.p12)", p12?.lastPathComponent ?? "Choose…")
+                    }
+                    SecureField("Certificate password", text: $password)
+                        .textContentType(.password)
+                    Button { picking = .profile } label: {
+                        row("Profile (.mobileprovision)", profile?.lastPathComponent ?? "Choose…")
+                    }
+                } footer: {
+                    Text("Use a development or ad hoc certificate from your own developer account, with a profile that includes this device. A wildcard profile keeps built-in JIT's helper. Both stay on this device, and the password goes into its Keychain.")
+                }
+                if let error = model.errorLine {
+                    Text(error).foregroundColor(MuffinTheme.cautionText).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .navigationTitle("Your certificate")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Sign and install") {
+                        if let p12, let profile { model.useCertificate(p12: p12, profile: profile, password: password) }
+                    }
+                    .disabled(p12 == nil || profile == nil || model.busy)
+                }
+            }
+            .fileImporter(isPresented: Binding(get: { picking != nil }, set: { if !$0 { picking = nil } }),
+                          allowedContentTypes: picking == .profile
+                              ? [UTType(filenameExtension: "mobileprovision") ?? .data]
+                              : [UTType(filenameExtension: "p12") ?? .data, .pkcs12]) { result in
+                if case .success(let url) = result {
+                    if picking == .profile { profile = url } else { p12 = url }
+                }
+                picking = nil
+            }
+        }
+        .navigationViewStyle(.stack)
+    }
+
+    private func row(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label).foregroundColor(MuffinTheme.brownDarkest)
+            Spacer()
+            Text(value).foregroundColor(MuffinTheme.secondaryText).lineLimit(1)
+        }
+    }
+}
+
 private struct InstallerCodeSheet: View {
     @ObservedObject var model: MuffinInstallerModel
     let textedTo: String?
@@ -431,7 +543,7 @@ enum MuffinInstallerAutoRefresh {
     }
 
     static func schedule() {
-        guard UserDefaults.standard.bool(forKey: MuffinInstaller.autoRefreshKey), MuffinInstaller.isSignedIn else { return }
+        guard UserDefaults.standard.bool(forKey: MuffinInstaller.autoRefreshKey), MuffinInstaller.canSign else { return }
         let request = BGProcessingTaskRequest(identifier: identifier)
         request.requiresNetworkConnectivity = true
         // Two days before the signature ends (a free Apple ID's lasts 7), and never sooner than an hour from now.
@@ -449,7 +561,7 @@ enum MuffinInstallerAutoRefresh {
         let worker = Thread {
             let callbacks = MuffinInstaller.Callbacks(step: { _ in }, askCode: { _, reply in reply(nil) })
             do {
-                try MuffinInstaller.signAndInstall(appPath: Bundle.main.bundleURL, callbacks: callbacks)
+                try MuffinInstaller.resign(appPath: Bundle.main.bundleURL, callbacks: callbacks)
                 task.setTaskCompleted(success: true)
             } catch {
                 schedule()

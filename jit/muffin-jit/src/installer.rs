@@ -335,3 +335,202 @@ fn unpack_ipa(ipa: &Path, work: &Path) -> Result<PathBuf, String> {
         .find(|p| p.extension().map(|x| x == "app").unwrap_or(false))
         .ok_or_else(|| "that IPA has no app inside Payload".to_string())
 }
+
+// ---------------------------------------------------------------------------------------------
+// Signing with the person's own certificate (a .p12 and a .mobileprovision they made), instead
+// of an Apple ID. Same signer (isideload::sideload::sign), same install over the link.
+
+/// The parts of a provisioning profile the signer needs, read from its CMS-wrapped plist.
+struct ProfileInfo {
+    team_id: String,
+    team_name: Option<String>,
+    app_id: String,
+    name: String,
+    uuid: String,
+    expires: Option<plist::Date>,
+    entitlements: plist::Dictionary,
+}
+
+fn read_profile(bytes: &[u8]) -> Result<ProfileInfo, String> {
+    let start = find(bytes, b"<?xml").ok_or("that file isn't a provisioning profile")?;
+    let end = find(&bytes[start..], b"</plist>").ok_or("that file isn't a provisioning profile")? + start + 8;
+    let value = plist::Value::from_reader_xml(&bytes[start..end]).map_err(|e| format!("couldn't read the profile: {e}"))?;
+    let dict = value.as_dictionary().ok_or("couldn't read the profile")?;
+    let entitlements = dict.get("Entitlements").and_then(|v| v.as_dictionary()).cloned().unwrap_or_default();
+    let team_id = dict
+        .get("TeamIdentifier")
+        .and_then(|v| v.as_array())
+        .and_then(|a| a.first())
+        .and_then(|v| v.as_string())
+        .ok_or("the profile has no team")?
+        .to_string();
+    let app_id = entitlements
+        .get("application-identifier")
+        .and_then(|v| v.as_string())
+        .ok_or("the profile has no app ID")?
+        .to_string();
+    Ok(ProfileInfo {
+        team_name: dict.get("TeamName").and_then(|v| v.as_string()).map(str::to_string),
+        name: dict.get("Name").and_then(|v| v.as_string()).unwrap_or("Profile").to_string(),
+        uuid: dict.get("UUID").and_then(|v| v.as_string()).unwrap_or_default().to_string(),
+        expires: dict.get("ExpirationDate").and_then(|v| v.as_date()),
+        team_id,
+        app_id,
+        entitlements,
+    })
+}
+
+fn find(hay: &[u8], needle: &[u8]) -> Option<usize> {
+    hay.windows(needle.len()).position(|w| w == needle)
+}
+
+fn read_identity(p12: &[u8], password: &str) -> Result<isideload::sideload::cert_identity::CertificateIdentity, String> {
+    use rsa::pkcs8::DecodePrivateKey;
+    use x509_cert::der::Decode;
+    let store = p12_keystore::KeyStore::from_pkcs12(p12, password, p12_keystore::Pkcs12ImportPolicy::Relaxed)
+        .map_err(|e| format!("couldn't open the certificate (check its password): {e}"))?;
+    let (_, chain) = store.private_key_chain().ok_or("the certificate file has no private key")?;
+    let cert_der = chain.certs().first().ok_or("the certificate file has no certificate")?.as_der();
+    let private_key = rsa::RsaPrivateKey::from_pkcs8_der(chain.key().as_der())
+        .map_err(|e| format!("the certificate's key isn't an RSA key MuffinInstaller can use: {e}"))?;
+    let certificate = x509_cert::Certificate::from_der(cert_der).map_err(|e| format!("couldn't read the certificate: {e}"))?;
+    Ok(isideload::sideload::cert_identity::CertificateIdentity {
+        machine_id: String::new(),
+        machine_name: "MuffinEMU".to_string(),
+        private_key,
+        certificate,
+    })
+}
+
+/// Signs `app_path` (an .app folder the caller can modify; pass a copy) with the person's own certificate
+/// and profile, and installs it over `link`. A profile for one exact app ID renames the app to that ID and
+/// leaves out its app extensions (the profile can't cover them); `*out_note` then says so (free with
+/// muffin_jit_string_free).
+#[no_mangle]
+pub unsafe extern "C" fn muffin_installer_sign_with_certificate_and_install(
+    link: *mut MuffinJitLink,
+    app_path: *const c_char,
+    p12: *const u8,
+    p12_len: usize,
+    p12_password: *const c_char,
+    profile: *const u8,
+    profile_len: usize,
+    cb: MjProgress,
+    ctx: *mut c_void,
+    out_note: *mut *mut c_char,
+    out_err: *mut *mut c_char,
+) -> i32 {
+    init_once();
+    if link.is_null() || p12.is_null() || p12_len == 0 || profile.is_null() || profile_len == 0 {
+        set_err(out_err, "missing link, certificate or profile");
+        return MjStatus::InvalidArg as i32;
+    }
+    let link = &mut *link;
+    let p12 = std::slice::from_raw_parts(p12, p12_len).to_vec();
+    let profile_bytes = std::slice::from_raw_parts(profile, profile_len).to_vec();
+    let args = (|| {
+        Ok::<_, String>((
+            PathBuf::from(cstr(app_path, "app_path")?),
+            if p12_password.is_null() { String::new() } else { cstr(p12_password, "p12_password")?.to_string() },
+        ))
+    })();
+    let (path, password) = match args {
+        Ok(v) => v,
+        Err(e) => {
+            set_err(out_err, e);
+            return MjStatus::InvalidArg as i32;
+        }
+    };
+    report(cb, ctx, 60, "Reading your certificate");
+    let res = crate::run_blocking(async {
+        use isideload::dev::app_ids::Profile;
+        use isideload::dev::teams::DeveloperTeam;
+        use isideload::sideload::application::Application;
+
+        let identity = read_identity(&p12, &password)?;
+        let info = read_profile(&profile_bytes)?;
+        let team = DeveloperTeam { name: info.team_name.clone(), team_id: info.team_id.clone(), r#type: None, status: None };
+
+        let mut app = Application::new(path.clone()).map_err(|e| format!("couldn't read the app: {e}"))?;
+        let main_id = app.main_bundle_id().map_err(|e| format!("couldn't read the app's ID: {e}"))?;
+        // "TEAMID.com.example.app", "TEAMID.com.example.*" or "TEAMID.*".
+        let pattern = info.app_id.strip_prefix(&format!("{}.", info.team_id)).unwrap_or(&info.app_id).to_string();
+        let mut note = String::new();
+        let new_id = if let Some(prefix) = pattern.strip_suffix('*') {
+            if prefix.is_empty() || main_id.starts_with(prefix) { main_id.clone() } else { format!("{prefix}muffinemu") }
+        } else {
+            // An exact app ID covers the main app only: leave the extensions out.
+            if !app.bundle.app_extensions().is_empty() {
+                let plugins = app.bundle.bundle_dir.join("PlugIns");
+                std::fs::remove_dir_all(&plugins).map_err(|e| format!("couldn't leave out the app extensions: {e}"))?;
+                app = Application::new(path.clone()).map_err(|e| format!("couldn't read the app: {e}"))?;
+                note = "This profile is for one app ID, so the built-in JIT helper was left out. Use a wildcard profile to keep it.".to_string();
+            }
+            pattern.clone()
+        };
+        if new_id != main_id {
+            app.update_bundle_id(&main_id, &new_id).map_err(|e| format!("couldn't set the app ID: {e}"))?;
+        }
+        app.bundle.write_info().map_err(|e| format!("couldn't update the app: {e}"))?;
+        for ext in app.bundle.app_extensions() {
+            ext.write_info().map_err(|e| format!("couldn't update an app extension: {e}"))?;
+        }
+
+        let profile = Profile {
+            encoded_profile: plist::Data::new(profile_bytes.clone()),
+            filename: "embedded.mobileprovision".to_string(),
+            provisioning_profile_id: info.uuid.clone(),
+            name: info.name.clone(),
+            status: "Active".to_string(),
+            r#type: String::new(),
+            distribution_method: String::new(),
+            pro_pro_platorm: None,
+            uuid: info.uuid.clone(),
+            date_expire: info.expires.unwrap_or_else(|| plist::Date::from(std::time::SystemTime::now())),
+            managing_app: None,
+            app_id_id: String::new(),
+            is_template_profile: false,
+            is_team_profile: None,
+            is_free_provisioning_profile: None,
+        };
+        // A wildcard profile's entitlements name "TEAMID.*"; the signature has to name the real ID.
+        let entitlements_for = |bundle_id: &str| {
+            let mut e = info.entitlements.clone();
+            e.insert("application-identifier".to_string(), plist::Value::String(format!("{}.{}", info.team_id, bundle_id)));
+            e
+        };
+        let mut all_profiles = vec![(new_id.clone(), profile.clone(), entitlements_for(&new_id))];
+        for ext in app.bundle.app_extensions() {
+            if let Some(id) = ext.bundle_identifier() {
+                all_profiles.push((id.to_string(), profile.clone(), entitlements_for(id)));
+            }
+        }
+
+        report(cb, ctx, 61, "Signing MuffinEMU");
+        isideload::sideload::sign::sign(
+            &mut app,
+            &identity,
+            &profile,
+            &mut all_profiles,
+            &None,
+            &team,
+            None::<fn(f32) -> std::future::Ready<()>>,
+        )
+        .await
+        .map_err(|e| format!("signing failed: {e}"))?;
+
+        report(cb, ctx, 62, "Installing");
+        install_app_rsd(&mut link.provider, &mut link.handshake, &app.bundle.bundle_dir, |_| {})
+            .await
+            .map_err(|e| format!("installing failed: {e}"))?;
+        Ok::<String, String>(note)
+    });
+    let (code, val) = err_out(res, out_err, MjStatus::Internal);
+    if let Some(note) = val {
+        if !note.is_empty() {
+            copy_out(out_note, &note);
+        }
+        report(cb, ctx, 63, "Installed");
+    }
+    code
+}

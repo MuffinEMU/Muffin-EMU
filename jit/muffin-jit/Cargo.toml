@@ -50,6 +50,10 @@ mdns-sd = "0.19.1"
 isideload = { version = "0.5.2", default-features = false, features = ["install", "fs-storage", "tokio-mt"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "tls12", "std"] }
 zip = { version = "8.3", default-features = false, features = ["deflate"] }
+# Signing with the person's own certificate: open their .p12 (same crates and versions isideload uses).
+p12-keystore = { package = "isideload-p12-keystore", version = "0.3.0-rc4" }
+rsa = "0.9.10"
+x509-cert = "0.2.5"
 
 [profile.release]
 opt-level = "z"

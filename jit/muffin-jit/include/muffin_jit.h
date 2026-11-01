@@ -124,6 +124,15 @@ int32_t muffin_installer_install_signed(MuffinJitLink *link, const char *app_pat
                                         const char *work_dir, MuffinJitProgress cb, void *ctx,
                                         char **out_err);
 
+// Signs app_path (an .app folder copy) with the person's own .p12 and .mobileprovision and installs it.
+// A profile for one exact app ID renames the app and leaves out its extensions; *out_note says so.
+int32_t muffin_installer_sign_with_certificate_and_install(MuffinJitLink *link, const char *app_path,
+                                                          const uint8_t *p12, size_t p12_len,
+                                                          const char *p12_password,
+                                                          const uint8_t *profile, size_t profile_len,
+                                                          MuffinJitProgress cb, void *ctx,
+                                                          char **out_note, char **out_err);
+
 #ifdef __cplusplus
 }
 #endif

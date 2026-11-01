@@ -67,6 +67,7 @@ xcrun -sdk iphoneos clang -arch arm64 -dynamiclib \
   -Wl,-exported_symbol,_muffin_installer_sign_in \
   -Wl,-exported_symbol,_muffin_installer_sign_and_install \
   -Wl,-exported_symbol,_muffin_installer_install_signed \
+  -Wl,-exported_symbol,_muffin_installer_sign_with_certificate_and_install \
   -Wl,-dead_strip \
   -framework Security \
   -framework CoreFoundation \
@@ -94,7 +95,7 @@ cat > "$FW/Info.plist" <<PLIST
 </plist>
 PLIST
 exported="$(nm -gU "$FW/MuffinJITPairing" 2>/dev/null || true)"
-for sym in _muffin_jit_pair_on_device _muffin_jit_bytes_free _muffin_jit_string_free _muffin_jit_connect _muffin_jit_link_free _muffin_installer_sign_in _muffin_installer_sign_and_install _muffin_installer_install_signed; do
+for sym in _muffin_jit_pair_on_device _muffin_jit_bytes_free _muffin_jit_string_free _muffin_jit_connect _muffin_jit_link_free _muffin_installer_sign_in _muffin_installer_sign_and_install _muffin_installer_install_signed _muffin_installer_sign_with_certificate_and_install; do
   if ! printf '%s\n' "$exported" | grep -q " T $sym$"; then
     echo "::error::MuffinJITPairing.framework does not export $sym"
     exit 1

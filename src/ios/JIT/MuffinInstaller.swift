@@ -17,7 +17,7 @@ import Security
 enum MuffinInstaller {
     // MARK: What the app knows about how it was installed
 
-    /// How MuffinInstaller last installed this copy: "appleID" or "signedIPA". Nil when another tool
+    /// How MuffinInstaller last installed this copy: "appleID", "certificate" or "signedIPA". Nil when another tool
     /// (SideStore, AltStore, TrollStore, a computer) did.
     static let methodKey = "muffin.installer.method"
     static let lastInstallKey = "muffin.installer.lastInstall"
@@ -29,6 +29,16 @@ enum MuffinInstaller {
     static var method: String? { UserDefaults.standard.string(forKey: methodKey) }
     static var appleID: String? { UserDefaults.standard.string(forKey: appleIDKey) }
     static var isSignedIn: Bool { appleID.map { Keychain.password(for: $0) != nil } ?? false }
+
+    /// The person's own certificate (.p12) and profile, kept for refreshes; its password is in the Keychain.
+    static var certificateURL: URL { storageDirectory.appendingPathComponent("certificate.p12") }
+    static var profileURL: URL { storageDirectory.appendingPathComponent("certificate.mobileprovision") }
+    static let certificateAccount = "own-certificate"
+    static var hasCertificate: Bool {
+        FileManager.default.fileExists(atPath: certificateURL.path) && FileManager.default.fileExists(atPath: profileURL.path)
+    }
+    /// Refresh and Update work when MuffinInstaller can sign: with the Apple ID, or with a stored certificate.
+    static var canSign: Bool { isSignedIn || hasCertificate }
 
     /// iOS 17.4 or later with the device-link framework in the app.
     static var isAvailable: Bool {
@@ -86,6 +96,12 @@ enum MuffinInstaller {
                                                         ProgressFn?, UnsafeMutableRawPointer?,
                                                         UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Int32
     private typealias StringFreeFn = @convention(c) (UnsafeMutablePointer<CChar>?) -> Void
+    private typealias SignWithCertificateFn = @convention(c) (OpaquePointer?, UnsafePointer<CChar>?,
+                                                              UnsafePointer<UInt8>?, Int, UnsafePointer<CChar>?,
+                                                              UnsafePointer<UInt8>?, Int, ProgressFn?,
+                                                              UnsafeMutableRawPointer?,
+                                                              UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?,
+                                                              UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Int32
 
     private static func symbol<T>(_ name: String, as type: T.Type) throws -> T {
         guard isAvailable, let handle = dlopen(libraryPath, RTLD_NOW | RTLD_LOCAL),
@@ -212,6 +228,68 @@ enum MuffinInstaller {
             let status = fn(link, id, password, anisetteURL, storageDirectory.path, appPath.path,
                             onTwoFactor, ctx, onStep, ctx, &err)
             guard status == 0 else { try takeError(err, status: status) }
+        }
+    }
+
+    /// Keeps the person's own certificate, profile and its password for refreshes.
+    static func storeCertificate(p12: Data, password: String, profile: Data) throws {
+        try p12.write(to: certificateURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        try profile.write(to: profileURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        try Keychain.setPassword(password, for: certificateAccount)
+    }
+
+    static func removeCertificate() {
+        try? FileManager.default.removeItem(at: certificateURL)
+        try? FileManager.default.removeItem(at: profileURL)
+        Keychain.removePassword(for: certificateAccount)
+    }
+
+    /// Signs `appPath` with the stored certificate and profile and installs it. Returns a note when the
+    /// profile is for one exact app ID (the JIT helper extension is then left out).
+    @discardableResult
+    static func signWithCertificateAndInstall(appPath: URL, callbacks: Callbacks) throws -> String? {
+        guard let p12 = try? Data(contentsOf: certificateURL), let profile = try? Data(contentsOf: profileURL) else {
+            throw Failure.failed("Add your certificate and profile first.")
+        }
+        let password = Keychain.password(for: certificateAccount) ?? ""
+        let fn = try symbol("muffin_installer_sign_with_certificate_and_install", as: SignWithCertificateFn.self)
+        let session = Session(callbacks)
+        let ctx = Unmanaged.passRetained(session).toOpaque()
+        defer { Unmanaged<Session>.fromOpaque(ctx).release() }
+        // The signer edits the bundle it's given, so it gets a copy of an .app (an .ipa is unpacked by the library).
+        var source = appPath
+        if appPath.pathExtension == "app" {
+            let copy = FileManager.default.temporaryDirectory.appendingPathComponent("MuffinInstallerSign/\(appPath.lastPathComponent)")
+            try? FileManager.default.removeItem(at: copy.deletingLastPathComponent())
+            try FileManager.default.createDirectory(at: copy.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.copyItem(at: appPath, to: copy)
+            source = copy
+        }
+        return try withLink(session) { link -> String? in
+            var note: UnsafeMutablePointer<CChar>?
+            var err: UnsafeMutablePointer<CChar>?
+            UserDefaults.standard.set("certificate", forKey: methodKey)
+            UserDefaults.standard.set(Date(), forKey: lastInstallKey)
+            let status = p12.withUnsafeBytes { p12Raw in
+                profile.withUnsafeBytes { profileRaw in
+                    fn(link, source.path, p12Raw.bindMemory(to: UInt8.self).baseAddress, p12.count, password,
+                       profileRaw.bindMemory(to: UInt8.self).baseAddress, profile.count, onStep, ctx, &note, &err)
+                }
+            }
+            guard status == 0 else { try takeError(err, status: status) }
+            let text = note.map { String(cString: $0) }
+            if let note, let free = try? symbol("muffin_jit_string_free", as: StringFreeFn.self) { free(note) }
+            return text
+        }
+    }
+
+    /// Re-signs and installs `appPath` with whichever way MuffinInstaller signs: the stored certificate if
+    /// that's how it was last installed, otherwise the Apple ID.
+    static func resign(appPath: URL, callbacks: Callbacks) throws {
+        if (method == "certificate" || !isSignedIn), hasCertificate {
+            try signWithCertificateAndInstall(appPath: appPath, callbacks: callbacks)
+        } else {
+            try signAndInstall(appPath: appPath, callbacks: callbacks)
         }
     }
 
