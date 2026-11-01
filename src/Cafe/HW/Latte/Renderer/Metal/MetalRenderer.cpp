@@ -4096,7 +4096,11 @@ void MetalRenderer::UpdateMemoryStatsAndRelievePressure()
     // has touched for half a minute of running time, and the largest first so as few as possible are lost.
     if (available < criticalMark)
     {
-        const uint64 needed = criticalMark > available ? criticalMark - available : 0;
+        // Devices with small headroom (about 3-4 GB, under 1.5 GB free at the first frame) keep freeing toward the low
+        // mark as 10.6 did: their gap is only 200-375 MB, and that cushion is what absorbs an allocation spike between
+        // two passes. Larger devices stop at the critical mark, where at least 400 MB stays free.
+        const uint64 target = smallHeadroom ? lowMark : criticalMark;
+        const uint64 needed = target > available ? target - available : 0;
         if (freedBytes < needed)
         {
             // While the title is paused no frame is presented, so idleness is measured up to the last frame that
