@@ -3,8 +3,9 @@
 # SPDX-License-Identifier: GPL-3.0-only
 #
 # Builds muffin-jit (MuffinEMU's own device-link crate, in jit/muffin-jit) as a
-# static library for iOS arm64, for the JIT helper app extension to link. Pure Rust
-# plus idevice (MIT); no C toolchain needed because the crypto backend is rustcrypto.
+# static library for iOS arm64, for the JIT helper app extension to link, plus the
+# framework the app opens for on-device pairing and MuffinInstaller. idevice (MIT) and
+# isideload (MIT); ring (via isideload) compiles a little C with Xcode's clang.
 #
 # Output:
 #   jit/muffin-jit/target/aarch64-apple-ios/release/libmuffin_jit.a   (linked by the helper extension)
@@ -61,6 +62,11 @@ xcrun -sdk iphoneos clang -arch arm64 -dynamiclib \
   -Wl,-exported_symbol,_muffin_jit_pair_on_device \
   -Wl,-exported_symbol,_muffin_jit_bytes_free \
   -Wl,-exported_symbol,_muffin_jit_string_free \
+  -Wl,-exported_symbol,_muffin_jit_connect \
+  -Wl,-exported_symbol,_muffin_jit_link_free \
+  -Wl,-exported_symbol,_muffin_installer_sign_in \
+  -Wl,-exported_symbol,_muffin_installer_sign_and_install \
+  -Wl,-exported_symbol,_muffin_installer_install_signed \
   -Wl,-dead_strip \
   -framework Security \
   -o "$FW/MuffinJITPairing"
@@ -86,7 +92,7 @@ cat > "$FW/Info.plist" <<PLIST
 </plist>
 PLIST
 exported="$(nm -gU "$FW/MuffinJITPairing" 2>/dev/null || true)"
-for sym in _muffin_jit_pair_on_device _muffin_jit_bytes_free _muffin_jit_string_free; do
+for sym in _muffin_jit_pair_on_device _muffin_jit_bytes_free _muffin_jit_string_free _muffin_jit_connect _muffin_jit_link_free _muffin_installer_sign_in _muffin_installer_sign_and_install _muffin_installer_install_signed; do
   if ! printf '%s\n' "$exported" | grep -q " T $sym$"; then
     echo "::error::MuffinJITPairing.framework does not export $sym"
     exit 1

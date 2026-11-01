@@ -97,6 +97,33 @@ int32_t muffin_jit_pair_on_device(const char *name, const char *model,
                                   uint8_t **out_pairing, size_t *out_pairing_len,
                                   char **out_err);
 
+// MuffinInstaller (iOS 17.4+): sign with the person's own Apple ID and install over a link from
+// muffin_jit_connect. Passwords are passed per call, never stored by the library. storage_dir holds
+// the signing key, certificate and anisette state. anisette_url may be NULL for the default server.
+// Two-factor: answer 1 with the code written into out_code, 2 to send it to the person's devices,
+// 0 to cancel.
+typedef int32_t (*MuffinInstallerTwoFactor)(void *ctx, int32_t via_sms, const char *destination,
+                                            char *out_code, size_t out_cap);
+
+// Signs in and opens the developer account; *out_team is the team it signs with (free with
+// muffin_jit_string_free).
+int32_t muffin_installer_sign_in(const char *apple_id, const char *password,
+                                 const char *anisette_url, const char *storage_dir,
+                                 MuffinInstallerTwoFactor tfa, void *tfa_ctx,
+                                 char **out_team, char **out_err);
+
+// Registers this device, signs app_path (.app or .ipa) and installs it over link.
+int32_t muffin_installer_sign_and_install(MuffinJitLink *link, const char *apple_id,
+                                          const char *password, const char *anisette_url,
+                                          const char *storage_dir, const char *app_path,
+                                          MuffinInstallerTwoFactor tfa, void *tfa_ctx,
+                                          MuffinJitProgress cb, void *ctx, char **out_err);
+
+// Installs an already signed .ipa or .app over link, unchanged. work_dir is scratch space.
+int32_t muffin_installer_install_signed(MuffinJitLink *link, const char *app_path,
+                                        const char *work_dir, MuffinJitProgress cb, void *ctx,
+                                        char **out_err);
+
 #ifdef __cplusplus
 }
 #endif
