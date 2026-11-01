@@ -1904,5 +1904,17 @@
  "Up to 365 days.": "App/HomeMenu.swift:522",
  "Use this device's date and time": "App/Settings/ConsoleClockSection.swift:41",
  "Smaller texture cache": "App/Settings/ShaderSettingsSections.swift:36",
- "Keeps up to 1 GB of converted textures per game instead of 2 GB. A game with more than that may load more slowly. Applies the next time a game starts.": "App/Settings/ShaderSettingsSections.swift:38"
+ "Keeps up to 1 GB of converted textures per game instead of 2 GB. A game with more than that may load more slowly. Applies the next time a game starts.": "App/Settings/ShaderSettingsSections.swift:38",
+ "Built-in JIT": "JIT/JITSetupView.swift:228",
+ "Cancel pairing": "JIT/JITSetupView.swift:269",
+ "Import pairing file": "JIT/JITSetupView.swift:219",
+ "In sync from the next game you start. This game's clock can only move forward.": "App/HomeMenu.swift:553",
+ "In sync with this device.": "App/HomeMenu.swift:552",
+ "Pair on this device": "JIT/JITSetupView.swift:214",
+ "Sets the console clock back to this device's date and time.": "App/HomeMenu.swift:510",
+ "Show JIT status in the top bar": "JIT/JITSetupView.swift:223",
+ "Shows the JIT status and setup.": "JIT/JITStatusPill.swift:99",
+ "Sync to this device": "App/HomeMenu.swift:509",
+ "Type this code where iOS asks for it:": "JIT/JITSetupView.swift:248",
+ "iOS offers to pair with MuffinEMU. Tap it there, and the code to type appears here. This waits up to 3 minutes.": "JIT/JITSetupView.swift:262"
 }

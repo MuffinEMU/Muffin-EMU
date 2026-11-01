@@ -106,7 +106,8 @@ def package_keys(keys):
 def main():
     keys, interpolated = {}, []
     if os.path.isdir(PACKAGE): package_keys(keys)
-    for dirpath, _, files in os.walk(APP):
+    # App/ plus JIT/ (built-in JIT's setup page, pill and pairing, host side).
+    for dirpath, _, files in [w for d in (APP, os.path.join(ROOT, 'JIT')) for w in os.walk(d)]:
         for name in sorted(files):
             if not name.endswith('.swift'): continue
             path = os.path.join(dirpath, name)
