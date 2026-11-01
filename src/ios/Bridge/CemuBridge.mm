@@ -62,6 +62,7 @@
 #include "Cafe/Filesystem/FST/KeyCache.h"
 #include "Cafe/Filesystem/fsc.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
+#include "Cafe/HW/Latte/Core/LatteTextureASTCCache.h"
 #include "Cafe/HW/Latte/Core/LatteOverlay.h"
 #include "Cafe/HW/Latte/Core/LatteShader.h"
 #include "Cafe/HW/Latte/Core/LatteShaderCache.h"
@@ -1322,6 +1323,8 @@ void ios_apply_render_profile()
     if (performance)
         config.async_compile = true;
     g_latteRelaxShaderMul.store(performance, std::memory_order_relaxed);
+    // Settings > Shaders > Smaller texture cache: 512 MB per pack instead of 1 GB, for devices short on storage.
+    LatteTextureASTCCache_SetPackLimitMB([[NSUserDefaults standardUserDefaults] boolForKey:@"muffin.textureCache.smaller"] ? 512 : 1024);
     const bool fullSpeed = g_fullSpeedRenders.load();
     if (fullSpeed)
         config.async_compile = g_fullSpeedShaderMode.load() == 1;

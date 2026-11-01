@@ -23,3 +23,6 @@ struct ASTCCacheKey
 bool LatteTextureASTCCache_Lookup(const ASTCCacheKey& key, uint8* outputData, size_t outputSize);
 // Keeps an encoded image for next time. Silently skipped when the cache is full or cannot be written.
 void LatteTextureASTCCache_Store(const ASTCCacheKey& key, const uint8* data, size_t size);
+// The cap on one of a title's two packs, in MB (1024 unless the player picked the smaller cache in Settings). Read
+// on every store, so a change applies from the next texture written; the bridge sets it each time a title starts.
+void LatteTextureASTCCache_SetPackLimitMB(uint32 megabytes);
