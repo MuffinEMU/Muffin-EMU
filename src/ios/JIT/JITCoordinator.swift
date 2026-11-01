@@ -67,6 +67,8 @@ final class JITCoordinator: ObservableObject {
         isRunning = true
         defer { isRunning = false }
 
+        // The top-bar pill turns yellow while the last attempt stands failed.
+        UserDefaults.standard.set(true, forKey: JITPillModel.lastRunFailedKey)
         let resultData = try await runHelper(requestData)
         let result = try JSONDecoder().decode(JITHelperResult.self, from: resultData)
         lastLog = result.log
@@ -76,6 +78,7 @@ final class JITCoordinator: ObservableObject {
         if !result.success {
             throw CoordinatorError.helper(result.message)
         }
+        UserDefaults.standard.set(false, forKey: JITPillModel.lastRunFailedKey)
         return result.message
     }
 

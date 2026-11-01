@@ -701,6 +701,8 @@ struct GameBrowserView: View {
 
             VStack(alignment: .trailing, spacing: 4) {
                 HStack(spacing: 8) {
+                    // Green, red or yellow bolt: whether JIT is on. Hidden in Settings > JIT.
+                    JITStatusPill()
                     Button(action: { showingSettings = true }) {
                         // No foregroundColor here on purpose. MuffinSecondaryButtonStyle
                         // already paints its label MuffinTheme.brownDark, which is the ink

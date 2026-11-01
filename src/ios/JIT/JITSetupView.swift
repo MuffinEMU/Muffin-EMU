@@ -35,6 +35,7 @@ final class BuiltInJITModel: ObservableObject {
     @Published var pairingCode: String?
 
     func refresh() {
+        JITPillModel.shared.refresh()
         jitActive = JITStatus.isActive
         pairingImported = JITPairing.isImported
         rebuildChecks()
@@ -175,6 +176,7 @@ struct BuiltInJITSection: View {
     @StateObject private var model = BuiltInJITModel()
     @Environment(\.scenePhase) private var scenePhase
     @State private var importing = false
+    @AppStorage(JITPillModel.showKey) private var showPill = true
 
     var body: some View {
         Section {
@@ -216,6 +218,12 @@ struct BuiltInJITSection: View {
 
             Button("Import pairing file") { importing = true }
                 .disabled(model.running || model.pairing)
+
+            Toggle(isOn: $showPill) {
+                Text("Show JIT status in the top bar")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+            }
+            .tint(MuffinTheme.accentText)
         } header: {
             SettingsSectionHeader("Built-in JIT", icon: "bolt.fill", accent: .core)
         } footer: {
