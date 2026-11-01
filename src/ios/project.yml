@@ -181,6 +181,9 @@ targets:
         # The Rust crypto backend's randomness can resolve to SecRandomCopyBytes.
         - '-framework'
         - 'Security'
+        # MuffinInstaller's HTTP client (isideload's reqwest) reads the system proxy settings.
+        - '-framework'
+        - 'SystemConfiguration'
     sources:
       - path: JITHelper/MuffinJITHelperPrincipal.swift
       - path: JIT/MuffinJITLink.swift

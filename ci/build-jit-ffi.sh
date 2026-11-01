@@ -69,6 +69,8 @@ xcrun -sdk iphoneos clang -arch arm64 -dynamiclib \
   -Wl,-exported_symbol,_muffin_installer_install_signed \
   -Wl,-dead_strip \
   -framework Security \
+  -framework CoreFoundation \
+  -framework SystemConfiguration \
   -o "$FW/MuffinJITPairing"
 # MinimumOSVersion is the APP's floor (15.0), not the library's 17.4: installd checks every embedded
 # bundle against it, and a higher one could refuse the whole app on iOS 15 to 17.3. The binary is only
