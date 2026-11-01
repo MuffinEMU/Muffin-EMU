@@ -64,6 +64,9 @@ xcrun -sdk iphoneos clang -arch arm64 -dynamiclib \
   -Wl,-dead_strip \
   -framework Security \
   -o "$FW/MuffinJITPairing"
+# MinimumOSVersion is the APP's floor (15.0), not the library's 17.4: installd checks every embedded
+# bundle against it, and a higher one could refuse the whole app on iOS 15 to 17.3. The binary is only
+# ever opened (dlopen) on iOS 27, so nothing older loads it.
 cat > "$FW/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -78,7 +81,7 @@ cat > "$FW/Info.plist" <<PLIST
 	<key>CFBundleShortVersionString</key><string>1.0</string>
 	<key>CFBundleVersion</key><string>1</string>
 	<key>CFBundleSupportedPlatforms</key><array><string>iPhoneOS</string></array>
-	<key>MinimumOSVersion</key><string>$IPHONEOS_DEPLOYMENT_TARGET</string>
+	<key>MinimumOSVersion</key><string>15.0</string>
 </dict>
 </plist>
 PLIST
