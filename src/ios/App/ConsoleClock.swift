@@ -47,6 +47,31 @@ enum ConsoleClock {
         store(0)
     }
 
+    enum SyncResult {
+        /// The console clock already matched this device.
+        case alreadyInSync
+        /// The running game's clock now matches this device too.
+        case now
+        /// Saved; a running game keeps its later time until the next game starts (a running
+        /// game's clock can only move forward).
+        case nextGame
+    }
+
+    /// Sets the console clock back to this device's date and time. While a game runs, a clock that
+    /// is behind moves forward to now at once; one that is ahead can't move back mid-game, so the
+    /// running game keeps it until the next game starts.
+    @discardableResult
+    static func syncToDevice() -> SyncResult {
+        let ahead = offset
+        if ahead == 0 { return .alreadyInSync }
+        if ahead < 0, cemu_bridge_advance_console_clock(Int64((-ahead).rounded())) {
+            store(0)
+            return .now
+        }
+        store(0)
+        return .nextGame
+    }
+
     /// Moves the running game's clock forward by `seconds` and keeps the change, as changing a
     /// console's clock would. Returns false, and changes nothing, when no game is running.
     @discardableResult
