@@ -1906,3 +1906,15 @@
 "Use this device's date and time" = "שימוש בתאריך ובשעה של מכשיר זה";
 "Smaller texture cache" = "מטמון מרקמים קטן יותר";
 "Keeps up to 1 GB of converted textures per game instead of 2 GB. A game with more than that may load more slowly. Applies the next time a game starts." = "שומר עד 1 GB של מרקמים מומרים לכל משחק במקום 2 GB. משחק שצריך יותר מזה עשוי להיטען לאט יותר. ייכנס לתוקף בפעם הבאה שמשחק יופעל.";
+"Built-in JIT" = "JIT מובנה";
+"Cancel pairing" = "ביטול צימוד";
+"Import pairing file" = "ייבוא קובץ צימוד";
+"In sync from the next game you start. This game's clock can only move forward." = "מסונכרן החל מהמשחק הבא שתפעילו. השעון של המשחק הזה יכול רק להתקדם.";
+"In sync with this device." = "מסונכרן עם מכשיר זה.";
+"Pair on this device" = "צימוד במכשיר זה";
+"Sets the console clock back to this device's date and time." = "מחזיר את שעון הקונסולה לתאריך ולשעה של מכשיר זה.";
+"Show JIT status in the top bar" = "הצגת מצב JIT בסרגל העליון";
+"Shows the JIT status and setup." = "מציג את מצב JIT ואת ההגדרה שלו.";
+"Sync to this device" = "סנכרון למכשיר זה";
+"Type this code where iOS asks for it:" = "הקלידו את הקוד הזה במקום ש-iOS מבקש אותו:";
+"iOS offers to pair with MuffinEMU. Tap it there, and the code to type appears here. This waits up to 3 minutes." = "iOS מציע צימוד עם MuffinEMU. הקישו עליו שם, והקוד להקלדה יופיע כאן. ההמתנה נמשכת עד 3 דקות.";

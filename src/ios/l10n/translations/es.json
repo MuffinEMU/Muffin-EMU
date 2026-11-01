@@ -1978,5 +1978,17 @@
  "Up to 365 days.": "Hasta 365 días.",
  "Use this device's date and time": "Usar la fecha y hora de este dispositivo",
  "Smaller texture cache": "Caché de texturas más pequeña",
- "Keeps up to 1 GB of converted textures per game instead of 2 GB. A game with more than that may load more slowly. Applies the next time a game starts.": "Guarda hasta 1 GB de texturas convertidas por juego en lugar de 2 GB. Un juego que necesite más puede cargar más despacio. Se aplica la próxima vez que se inicie un juego."
+ "Keeps up to 1 GB of converted textures per game instead of 2 GB. A game with more than that may load more slowly. Applies the next time a game starts.": "Guarda hasta 1 GB de texturas convertidas por juego en lugar de 2 GB. Un juego que necesite más puede cargar más despacio. Se aplica la próxima vez que se inicie un juego.",
+ "Built-in JIT": "JIT integrado",
+ "Cancel pairing": "Cancelar emparejamiento",
+ "Import pairing file": "Importar archivo de emparejamiento",
+ "In sync from the next game you start. This game's clock can only move forward.": "Sincronizado a partir del próximo juego que inicies. El reloj de este juego solo puede avanzar.",
+ "In sync with this device.": "Sincronizado con este dispositivo.",
+ "Pair on this device": "Emparejar en este dispositivo",
+ "Sets the console clock back to this device's date and time.": "Devuelve el reloj de la consola a la fecha y hora de este dispositivo.",
+ "Show JIT status in the top bar": "Mostrar el estado del JIT en la barra superior",
+ "Shows the JIT status and setup.": "Muestra el estado y la configuración del JIT.",
+ "Sync to this device": "Sincronizar con este dispositivo",
+ "Type this code where iOS asks for it:": "Escribe este código donde iOS lo pida:",
+ "iOS offers to pair with MuffinEMU. Tap it there, and the code to type appears here. This waits up to 3 minutes.": "iOS ofrece emparejarse con MuffinEMU. Tócalo allí y aquí aparecerá el código que debes escribir. Se espera hasta 3 minutos."
 }

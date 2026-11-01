@@ -1906,5 +1906,17 @@
  "Up to 365 days.": "До 365 дней.",
  "Use this device's date and time": "Использовать дату и время этого устройства",
  "Smaller texture cache": "Уменьшенный кэш текстур",
- "Keeps up to 1 GB of converted textures per game instead of 2 GB. A game with more than that may load more slowly. Applies the next time a game starts.": "Хранит до 1 ГБ преобразованных текстур для каждой игры вместо 2 ГБ. Игра, которой нужно больше, может загружаться медленнее. Применится при следующем запуске игры."
+ "Keeps up to 1 GB of converted textures per game instead of 2 GB. A game with more than that may load more slowly. Applies the next time a game starts.": "Хранит до 1 ГБ преобразованных текстур для каждой игры вместо 2 ГБ. Игра, которой нужно больше, может загружаться медленнее. Применится при следующем запуске игры.",
+ "Built-in JIT": "Встроенный JIT",
+ "Cancel pairing": "Отменить сопряжение",
+ "Import pairing file": "Импортировать файл сопряжения",
+ "In sync from the next game you start. This game's clock can only move forward.": "Синхронизировано начиная со следующей запущенной игры. Часы этой игры можно только перевести вперёд.",
+ "In sync with this device.": "Синхронизировано с этим устройством.",
+ "Pair on this device": "Создать пару на этом устройстве",
+ "Sets the console clock back to this device's date and time.": "Возвращает часы консоли к дате и времени этого устройства.",
+ "Show JIT status in the top bar": "Показывать статус JIT на верхней панели",
+ "Shows the JIT status and setup.": "Показывает статус и настройку JIT.",
+ "Sync to this device": "Синхронизировать с этим устройством",
+ "Type this code where iOS asks for it:": "Введите этот код там, где его запросит iOS:",
+ "iOS offers to pair with MuffinEMU. Tap it there, and the code to type appears here. This waits up to 3 minutes.": "iOS предложит создать пару с MuffinEMU. Нажмите там, и код для ввода появится здесь. Ожидание длится до 3 минут."
 }

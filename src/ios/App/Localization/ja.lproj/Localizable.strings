@@ -1906,3 +1906,15 @@
 "Use this device's date and time" = "この端末の日付と時刻を使う";
 "Smaller texture cache" = "テクスチャキャッシュを小さくする";
 "Keeps up to 1 GB of converted textures per game instead of 2 GB. A game with more than that may load more slowly. Applies the next time a game starts." = "変換済みテクスチャを、ゲームごとに2 GBではなく最大1 GBまで保持します。それより多く使うゲームは、読み込みが遅くなることがあります。次にゲームを起動したときから反映されます。";
+"Built-in JIT" = "内蔵JIT";
+"Cancel pairing" = "ペアリングをキャンセル";
+"Import pairing file" = "ペアリングファイルを読み込む";
+"In sync from the next game you start. This game's clock can only move forward." = "次に起動するゲームから同期します。このゲームの時計は進めることしかできません。";
+"In sync with this device." = "この端末と同期しています。";
+"Pair on this device" = "この端末でペアリング";
+"Sets the console clock back to this device's date and time." = "本体の時計をこの端末の日付と時刻に戻します。";
+"Show JIT status in the top bar" = "上部バーにJITの状態を表示";
+"Shows the JIT status and setup." = "JITの状態と設定を表示します。";
+"Sync to this device" = "この端末に合わせる";
+"Type this code where iOS asks for it:" = "iOSに求められた場所にこのコードを入力してください:";
+"iOS offers to pair with MuffinEMU. Tap it there, and the code to type appears here. This waits up to 3 minutes." = "iOSにMuffinEMUとのペアリングが表示されます。そこでタップすると、入力するコードがここに表示されます。最大3分間待ちます。";

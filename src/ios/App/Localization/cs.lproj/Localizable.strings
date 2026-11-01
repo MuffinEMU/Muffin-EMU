@@ -1906,3 +1906,15 @@
 "Use this device's date and time" = "Použít datum a čas tohoto zařízení";
 "Smaller texture cache" = "Menší mezipaměť textur";
 "Keeps up to 1 GB of converted textures per game instead of 2 GB. A game with more than that may load more slowly. Applies the next time a game starts." = "Uchovává až 1 GB převedených textur na hru místo 2 GB. Hra, která potřebuje víc, se může načítat pomaleji. Projeví se při dalším spuštění hry.";
+"Built-in JIT" = "Vestavěný JIT";
+"Cancel pairing" = "Zrušit párování";
+"Import pairing file" = "Importovat soubor párování";
+"In sync from the next game you start. This game's clock can only move forward." = "Synchronizováno od další spuštěné hry. Hodiny této hry se mohou posunout jen dopředu.";
+"In sync with this device." = "Synchronizováno s tímto zařízením.";
+"Pair on this device" = "Spárovat na tomto zařízení";
+"Sets the console clock back to this device's date and time." = "Vrátí hodiny konzole na datum a čas tohoto zařízení.";
+"Show JIT status in the top bar" = "Zobrazit stav JIT v horní liště";
+"Shows the JIT status and setup." = "Zobrazí stav a nastavení JIT.";
+"Sync to this device" = "Synchronizovat s tímto zařízením";
+"Type this code where iOS asks for it:" = "Zadejte tento kód tam, kde o něj iOS požádá:";
+"iOS offers to pair with MuffinEMU. Tap it there, and the code to type appears here. This waits up to 3 minutes." = "iOS nabídne spárování s MuffinEMU. Klepněte na něj tam a kód k zadání se objeví zde. Čeká se až 3 minuty.";

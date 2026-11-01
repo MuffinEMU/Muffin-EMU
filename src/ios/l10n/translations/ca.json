@@ -1906,5 +1906,17 @@
  "Up to 365 days.": "Fins a 365 dies.",
  "Use this device's date and time": "Fes servir la data i l'hora d'aquest dispositiu",
  "Smaller texture cache": "Memòria cau de textures més petita",
- "Keeps up to 1 GB of converted textures per game instead of 2 GB. A game with more than that may load more slowly. Applies the next time a game starts.": "Conserva fins a 1 GB de textures convertides per joc en lloc de 2 GB. Un joc que en necessiti més pot carregar més a poc a poc. S'aplica la pròxima vegada que s'iniciï un joc."
+ "Keeps up to 1 GB of converted textures per game instead of 2 GB. A game with more than that may load more slowly. Applies the next time a game starts.": "Conserva fins a 1 GB de textures convertides per joc en lloc de 2 GB. Un joc que en necessiti més pot carregar més a poc a poc. S'aplica la pròxima vegada que s'iniciï un joc.",
+ "Built-in JIT": "JIT integrat",
+ "Cancel pairing": "Cancel·la l'aparellament",
+ "Import pairing file": "Importa un fitxer d'aparellament",
+ "In sync from the next game you start. This game's clock can only move forward.": "Sincronitzat a partir del següent joc que iniciïs. El rellotge d'aquest joc només pot avançar.",
+ "In sync with this device.": "Sincronitzat amb aquest dispositiu.",
+ "Pair on this device": "Aparella en aquest dispositiu",
+ "Sets the console clock back to this device's date and time.": "Torna el rellotge de la consola a la data i l'hora d'aquest dispositiu.",
+ "Show JIT status in the top bar": "Mostra l'estat del JIT a la barra superior",
+ "Shows the JIT status and setup.": "Mostra l'estat i la configuració del JIT.",
+ "Sync to this device": "Sincronitza amb aquest dispositiu",
+ "Type this code where iOS asks for it:": "Escriu aquest codi on iOS te'l demani:",
+ "iOS offers to pair with MuffinEMU. Tap it there, and the code to type appears here. This waits up to 3 minutes.": "iOS ofereix aparellar-se amb MuffinEMU. Toca-ho allà i el codi que has d'escriure apareixerà aquí. Espera fins a 3 minuts."
 }

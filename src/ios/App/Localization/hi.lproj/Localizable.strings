@@ -1906,3 +1906,15 @@
 "Use this device's date and time" = "इस डिवाइस की तारीख और समय इस्तेमाल करें";
 "Smaller texture cache" = "छोटा टेक्सचर कैश";
 "Keeps up to 1 GB of converted textures per game instead of 2 GB. A game with more than that may load more slowly. Applies the next time a game starts." = "हर गेम के लिए 2 GB की जगह 1 GB तक बदले गए टेक्सचर रखता है। इससे ज़्यादा वाला गेम धीरे लोड हो सकता है। अगली बार कोई गेम शुरू होने पर लागू होता है।";
+"Built-in JIT" = "बिल्ट-इन JIT";
+"Cancel pairing" = "पेयरिंग रद्द करें";
+"Import pairing file" = "पेयरिंग फ़ाइल इंपोर्ट करें";
+"In sync from the next game you start. This game's clock can only move forward." = "अगले शुरू किए गए गेम से सिंक रहेगा। इस गेम की घड़ी सिर्फ़ आगे बढ़ सकती है।";
+"In sync with this device." = "इस डिवाइस के साथ सिंक है।";
+"Pair on this device" = "इसी डिवाइस पर पेयर करें";
+"Sets the console clock back to this device's date and time." = "कंसोल की घड़ी को फिर से इस डिवाइस की तारीख और समय पर ले आता है।";
+"Show JIT status in the top bar" = "ऊपर की बार में JIT की स्थिति दिखाएँ";
+"Shows the JIT status and setup." = "JIT की स्थिति और सेटअप दिखाता है।";
+"Sync to this device" = "इस डिवाइस से सिंक करें";
+"Type this code where iOS asks for it:" = "जहाँ iOS माँगे, वहाँ यह कोड टाइप करें:";
+"iOS offers to pair with MuffinEMU. Tap it there, and the code to type appears here. This waits up to 3 minutes." = "iOS MuffinEMU के साथ पेयर करने का विकल्प दिखाता है। वहाँ उस पर टैप करें, और टाइप करने वाला कोड यहाँ दिखेगा। यह 3 मिनट तक इंतज़ार करता है।";

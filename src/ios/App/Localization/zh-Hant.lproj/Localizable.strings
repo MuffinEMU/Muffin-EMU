@@ -1906,3 +1906,15 @@
 "Use this device's date and time" = "使用此裝置的日期與時間";
 "Smaller texture cache" = "較小的紋理快取";
 "Keeps up to 1 GB of converted textures per game instead of 2 GB. A game with more than that may load more slowly. Applies the next time a game starts." = "每個遊戲最多保留 1 GB 已轉換的紋理，而不是 2 GB。超過這個大小的遊戲可能載入得較慢。下次啟動遊戲時生效。";
+"Built-in JIT" = "內建 JIT";
+"Cancel pairing" = "取消配對";
+"Import pairing file" = "匯入配對檔案";
+"In sync from the next game you start. This game's clock can only move forward." = "從你下次啟動的遊戲開始同步。這個遊戲的時鐘只能往前調。";
+"In sync with this device." = "已與此裝置同步。";
+"Pair on this device" = "在此裝置上配對";
+"Sets the console clock back to this device's date and time." = "將主機時鐘恢復為此裝置的日期與時間。";
+"Show JIT status in the top bar" = "在頂端列顯示 JIT 狀態";
+"Shows the JIT status and setup." = "顯示 JIT 狀態和設定。";
+"Sync to this device" = "與此裝置同步";
+"Type this code where iOS asks for it:" = "在 iOS 要求的地方輸入此代碼：";
+"iOS offers to pair with MuffinEMU. Tap it there, and the code to type appears here. This waits up to 3 minutes." = "iOS 會提示與 MuffinEMU 配對。在那裡點一下後，要輸入的代碼會顯示在這裡。最多等待 3 分鐘。";
