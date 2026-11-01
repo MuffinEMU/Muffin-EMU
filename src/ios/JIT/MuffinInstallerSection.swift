@@ -43,13 +43,13 @@ final class MuffinInstallerModel: ObservableObject {
 
     var methodText: String {
         switch MuffinInstaller.method {
-        case "appleID": return "MuffinInstaller, with your Apple ID"
-        case "certificate": return "MuffinInstaller, with your own certificate"
-        case "signedIPA": return "MuffinInstaller, from a signed IPA"
+        case "appleID": return "MuffinInstaller, with your Apple ID".localized
+        case "certificate": return "MuffinInstaller, with your own certificate".localized
+        case "signedIPA": return "MuffinInstaller, from a signed IPA".localized
         default:
             return signature.expires == nil
-                ? "TrollStore or another ad-hoc install"
-                : "Another installer (SideStore, AltStore or a computer)"
+                ? "TrollStore or another ad-hoc install".localized
+                : "Another installer (SideStore, AltStore or a computer)".localized
         }
     }
 
@@ -80,8 +80,10 @@ final class MuffinInstallerModel: ObservableObject {
         reply?(answer)
     }
 
-    /// A sheet closed without an answer (swiped away): cancel whatever is waiting for a code.
+    /// A sheet closed without an answer (swiped away): cancel whatever is waiting for a code. Not when one
+    /// sheet was swapped for another (sign-in turning into the code sheet), which SwiftUI also reports as a dismissal.
     func sheetDismissed() {
+        guard sheet == nil else { return }
         if let reply = codeReply {
             codeReply = nil
             reply(nil)
@@ -111,40 +113,40 @@ final class MuffinInstallerModel: ObservableObject {
     }
 
     func signIn(appleID: String, password: String) {
-        run("Signing in…") { callbacks in
+        run("Signing in…".localized) { callbacks in
             let team = try MuffinInstaller.signIn(appleID: appleID, password: password, callbacks: callbacks)
-            return team.isEmpty ? "Signed in." : "Signed in. MuffinEMU signs with \(team)."
+            return team.isEmpty ? "Signed in.".localized : "Signed in. MuffinEMU signs with \(team)."
         }
     }
 
     func signOut() {
         MuffinInstaller.signOut()
         MuffinInstallerAutoRefresh.cancel()
-        statusLine = "Signed out. Your password is removed from this device."
+        statusLine = "Signed out. Your password is removed from this device.".localized
         refresh()
     }
 
     func refreshNow() {
         let app = Bundle.main.bundleURL
-        run("Refreshing…") { callbacks in
+        run("Refreshing…".localized) { callbacks in
             try MuffinInstaller.resign(appPath: app, callbacks: callbacks)
-            return "Refreshed."
+            return "Refreshed.".localized
         }
     }
 
     func updateToLatest() {
         guard !busy else { return }
         busy = true
-        step = "Downloading the latest release…"
+        step = "Downloading the latest release…".localized
         errorLine = nil
         statusLine = nil
         Task {
             do {
                 let ipa = try await MuffinInstaller.downloadLatestRelease()
                 busy = false
-                run("Installing the update…") { callbacks in
+                run("Installing the update…".localized) { callbacks in
                     try MuffinInstaller.resign(appPath: ipa, callbacks: callbacks)
-                    return "Updated."
+                    return "Updated.".localized
                 }
             } catch {
                 busy = false
@@ -169,15 +171,15 @@ final class MuffinInstallerModel: ObservableObject {
         }
         sheet = nil
         let app = Bundle.main.bundleURL
-        run("Signing with your certificate…") { callbacks in
+        run("Signing with your certificate…".localized) { callbacks in
             let note = try MuffinInstaller.signWithCertificateAndInstall(appPath: app, callbacks: callbacks)
-            return note ?? "Installed with your certificate."
+            return note ?? "Installed with your certificate.".localized
         }
     }
 
     func removeCertificate() {
         MuffinInstaller.removeCertificate()
-        statusLine = "Your certificate is removed from this device."
+        statusLine = "Your certificate is removed from this device.".localized
         refresh()
     }
 
@@ -192,9 +194,9 @@ final class MuffinInstallerModel: ObservableObject {
             errorLine = "Couldn't read that IPA: \(error.localizedDescription)"
             return
         }
-        run("Installing…") { callbacks in
+        run("Installing…".localized) { callbacks in
             try MuffinInstaller.installSigned(ipa: copy, callbacks: callbacks)
-            return "Installed."
+            return "Installed.".localized
         }
     }
 }
@@ -259,13 +261,13 @@ struct MuffinInstallerSection: View {
     @ViewBuilder
     private var content: some View {
         signatureRow
-        row("Installed with", model.methodText)
+        row("Installed with".localized, model.methodText)
         if let id = model.appleID, model.signedIn {
-            row("Apple ID", model.team.map { "\(id) (\($0))" } ?? id)
+            row("Apple ID".localized, model.team.map { "\(id) (\($0))" } ?? id)
         }
-        row("Pairing file", JITPairing.isImported ? "Imported" : "Missing")
-        row("JIT", jitText)
-        row("This version", versionText)
+        row("Pairing file".localized, JITPairing.isImported ? "Imported".localized : "Missing".localized)
+        row("JIT".localized, jitText)
+        row("This version".localized, versionText)
 
         if model.signedIn || model.hasCertificate {
             Toggle(isOn: $autoRefresh) {
@@ -333,9 +335,9 @@ struct MuffinInstallerSection: View {
 
     private var jitText: String {
         switch pill.state {
-        case .active: return "On"
-        case .off: return "Off"
-        case .attention: return pill.problem ?? "Needs attention"
+        case .active: return "On".localized
+        case .off: return "Off".localized
+        case .attention: return pill.problem ?? "Needs attention".localized
         }
     }
 
@@ -346,7 +348,7 @@ struct MuffinInstallerSection: View {
 
     private var signatureRow: some View {
         let sig = model.signature
-        var text = "No expiry"
+        var text = "No expiry".localized
         if let expires = sig.expires {
             let days = sig.daysLeft ?? 0
             text = DateFormatter.localizedString(from: expires, dateStyle: .medium, timeStyle: .short)
@@ -445,12 +447,12 @@ private struct InstallerCertificateSheet: View {
             Form {
                 Section {
                     Button { picking = .p12 } label: {
-                        row("Certificate (.p12)", p12?.lastPathComponent ?? "Choose…")
+                        row("Certificate (.p12)".localized, p12?.lastPathComponent ?? "Choose…".localized)
                     }
                     SecureField("Certificate password", text: $password)
                         .textContentType(.password)
                     Button { picking = .profile } label: {
-                        row("Profile (.mobileprovision)", profile?.lastPathComponent ?? "Choose…")
+                        row("Profile (.mobileprovision)".localized, profile?.lastPathComponent ?? "Choose…".localized)
                     }
                 } footer: {
                     Text("Use a development or ad hoc certificate from your own developer account, with a profile that includes this device. A wildcard profile keeps built-in JIT's helper. Both stay on this device, and the password goes into its Keychain.")
@@ -533,6 +535,9 @@ enum MuffinInstallerAutoRefresh {
 
     /// Call once while the app launches.
     static func register() {
+        // iOS throws (and the app crashes at launch) when registering an identifier its Info.plist doesn't
+        // list, so never register unless the bundle actually lists it.
+        guard isPermitted else { return }
         BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil) { task in
             guard let task = task as? BGProcessingTask else {
                 task.setTaskCompleted(success: false)
@@ -542,8 +547,12 @@ enum MuffinInstallerAutoRefresh {
         }
     }
 
+    private static var isPermitted: Bool {
+        (Bundle.main.object(forInfoDictionaryKey: "BGTaskSchedulerPermittedIdentifiers") as? [String])?.contains(identifier) ?? false
+    }
+
     static func schedule() {
-        guard UserDefaults.standard.bool(forKey: MuffinInstaller.autoRefreshKey), MuffinInstaller.canSign else { return }
+        guard isPermitted, UserDefaults.standard.bool(forKey: MuffinInstaller.autoRefreshKey), MuffinInstaller.canSign else { return }
         let request = BGProcessingTaskRequest(identifier: identifier)
         request.requiresNetworkConnectivity = true
         // Two days before the signature ends (a free Apple ID's lasts 7), and never sooner than an hour from now.

@@ -212,11 +212,24 @@ enum MuffinInstaller {
         return try body(link)
     }
 
+    /// The signer edits an .app folder in place (an .ipa it unpacks into a temporary folder itself), and an
+    /// installed app's own folder is read-only, so an .app is copied to a temporary folder first.
+    private static func workingCopy(of appPath: URL) throws -> URL {
+        guard appPath.pathExtension == "app" else { return appPath }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("MuffinInstallerSign", isDirectory: true)
+        try? FileManager.default.removeItem(at: folder)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let copy = folder.appendingPathComponent(appPath.lastPathComponent)
+        try FileManager.default.copyItem(at: appPath, to: copy)
+        return copy
+    }
+
     /// Signs `appPath` (an .app or .ipa) with the signed-in Apple ID and installs it. For MuffinEMU's own
     /// bundle that's a refresh; for a downloaded release, an update. iOS closes the app when it installs.
     static func signAndInstall(appPath: URL, callbacks: Callbacks) throws {
         guard let id = appleID, let password = Keychain.password(for: id) else { throw Failure.notSignedIn }
         let fn = try symbol("muffin_installer_sign_and_install", as: SignAndInstallFn.self)
+        let source = try workingCopy(of: appPath)
         let session = Session(callbacks)
         let ctx = Unmanaged.passRetained(session).toOpaque()
         defer { Unmanaged<Session>.fromOpaque(ctx).release() }
@@ -225,7 +238,7 @@ enum MuffinInstaller {
             // Marked before the call: a successful install ends this process before it returns.
             UserDefaults.standard.set("appleID", forKey: methodKey)
             UserDefaults.standard.set(Date(), forKey: lastInstallKey)
-            let status = fn(link, id, password, anisetteURL, storageDirectory.path, appPath.path,
+            let status = fn(link, id, password, anisetteURL, storageDirectory.path, source.path,
                             onTwoFactor, ctx, onStep, ctx, &err)
             guard status == 0 else { try takeError(err, status: status) }
         }
@@ -256,15 +269,7 @@ enum MuffinInstaller {
         let session = Session(callbacks)
         let ctx = Unmanaged.passRetained(session).toOpaque()
         defer { Unmanaged<Session>.fromOpaque(ctx).release() }
-        // The signer edits the bundle it's given, so it gets a copy of an .app (an .ipa is unpacked by the library).
-        var source = appPath
-        if appPath.pathExtension == "app" {
-            let copy = FileManager.default.temporaryDirectory.appendingPathComponent("MuffinInstallerSign/\(appPath.lastPathComponent)")
-            try? FileManager.default.removeItem(at: copy.deletingLastPathComponent())
-            try FileManager.default.createDirectory(at: copy.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try FileManager.default.copyItem(at: appPath, to: copy)
-            source = copy
-        }
+        let source = try workingCopy(of: appPath)
         return try withLink(session) { link -> String? in
             var note: UnsafeMutablePointer<CChar>?
             var err: UnsafeMutablePointer<CChar>?
