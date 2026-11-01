@@ -18,6 +18,7 @@
 #![allow(clippy::missing_safety_doc)]
 
 mod ffi;
+mod installer;
 mod jit;
 mod link;
 mod mount;

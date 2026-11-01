@@ -9,7 +9,7 @@ name: Build JIT device-link library
 on:
   workflow_dispatch:
   push:
-    branches: [jit/built-in]
+    branches: [jit/built-in, feature/builtin-jit, feature/muffininstaller]
     paths:
       - 'jit/muffin-jit/**'
       - 'ci/build-jit-ffi.sh'

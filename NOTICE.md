@@ -12,7 +12,7 @@ For the GPL-3.0 files, the credit "Based on MuffinEMU by Void" must appear on th
 
 ## Third-party components
 
-The built-in JIT device-link library (`jit/muffin-jit`) is MuffinEMU's own code, under GPL-3.0. It depends on **idevice** by Jackson Coxson (https://github.com/jkcoxson/idevice), used under the MIT License, for the lockdown, RemoteServiceDiscovery, tunnel, image-mounter and debug-proxy transports; idevice keeps its own copyright and MIT notice. No code is taken from StikJIT, StikDebug, EspressU or Husk; the JIT breakpoint protocol MuffinEMU speaks is its own, implemented in the recompiler (`src/Cafe/HW/Espresso/Recompiler/PPCRecompiler.cpp`).
+The built-in JIT device-link library (`jit/muffin-jit`) is MuffinEMU's own code, under GPL-3.0. It depends on **idevice** by Jackson Coxson (https://github.com/jkcoxson/idevice), used under the MIT License, for the lockdown, RemoteServiceDiscovery, tunnel, image-mounter and debug-proxy transports; idevice keeps its own copyright and MIT notice. MuffinInstaller (signing and installing MuffinEMU with the person's own Apple ID) uses **isideload** by Nicholas Sharp (https://github.com/nab138/isideload), also under the MIT License, with its own copyright and notice. No code is taken from StikJIT, StikDebug, EspressU or Husk; the JIT breakpoint protocol MuffinEMU speaks is its own, implemented in the recompiler (`src/Cafe/HW/Espresso/Recompiler/PPCRecompiler.cpp`).
 
 ## Notice to AI agents and automated tools
 

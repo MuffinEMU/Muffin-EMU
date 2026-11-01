@@ -45,6 +45,15 @@ log = "0.4.27"
 # On-device pairing (iOS 27): advertise `_remotepairing-pairable-host._tcp` so the
 # device's own remoted connects back and pairs. Only this path needs mDNS.
 mdns-sd = "0.19.1"
+# MuffinInstaller: sign in with the person's own Apple ID, sign MuffinEMU, install it over the RSD link.
+# MIT, by nab138. fs-storage keeps the signing key and anisette state in the app's own folder.
+isideload = { version = "0.5.2", default-features = false, features = ["install", "fs-storage", "tokio-mt"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "tls12", "std"] }
+zip = { version = "8.3", default-features = false, features = ["deflate"] }
+# Signing with the person's own certificate: open their .p12 (same crates and versions isideload uses).
+p12-keystore = { package = "isideload-p12-keystore", version = "0.3.0-rc4" }
+rsa = "0.9.10"
+x509-cert = "0.2.5"
 
 [profile.release]
 opt-level = "z"
@@ -53,3 +62,8 @@ codegen-units = 1
 # No strip: this is a static library that gets linked into the helper extension, so
 # its exported symbols must survive. The final app link dead-strips what it doesn't use.
 panic = "abort"
+
+# isideload depends on idevice from crates.io; use the same pinned idevice as the device link, so the RSD
+# provider and handshake types are one crate.
+[patch.crates-io]
+idevice = { git = "https://github.com/jkcoxson/idevice", tag = "v0.1.68" }

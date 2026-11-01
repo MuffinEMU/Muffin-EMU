@@ -19,6 +19,9 @@ struct CemuApp: App {
         // every device log starts with it, so reports from different devices compare.
         DeviceCapabilities.bootstrap()
         DeviceConnection.shared.start()
+        // MuffinInstaller's background refresh has to be registered before launch finishes.
+        MuffinInstallerAutoRefresh.register()
+        MuffinInstallerAutoRefresh.schedule()
         // Before anything reads the mode: an update must not switch off advanced settings already in use.
         SettingsMode.chooseInitialModeIfNeeded()
         // Settings that are Basic now get back what an older Basic set aside for them.
