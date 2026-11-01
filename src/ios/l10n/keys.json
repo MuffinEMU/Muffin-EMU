@@ -1979,5 +1979,9 @@
  "Installing MuffinEMU %@…": "JIT/MuffinInstallerSection.swift:204",
  "MuffinEMU %@ is installed.": "JIT/MuffinInstallerSection.swift:206",
  "Nightly": "JIT/MuffinInstallerSection.swift:590",
- "Older": "JIT/MuffinInstallerSection.swift:591"
+ "Older": "JIT/MuffinInstallerSection.swift:591",
+ "Install with your Apple ID": "JIT/MuffinInstallerSection.swift:384",
+ "Installed with your Apple ID.": "JIT/MuffinInstallerSection.swift:128",
+ "Installing with your Apple ID…": "JIT/MuffinInstallerSection.swift:125",
+ "This copy of MuffinEMU was installed another way, so it isn't managed here. Install it with your own Apple ID or certificate to let MuffinInstaller keep it signed and up to date.": "JIT/MuffinInstallerSection.swift:379"
 }

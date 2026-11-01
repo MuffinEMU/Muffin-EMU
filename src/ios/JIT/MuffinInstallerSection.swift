@@ -33,6 +33,7 @@ final class MuffinInstallerModel: ObservableObject {
     @Published var team = UserDefaults.standard.string(forKey: MuffinInstaller.teamKey)
     @Published var signedIn = MuffinInstaller.isSignedIn
     @Published var hasCertificate = MuffinInstaller.hasCertificate
+    @Published var managed = MuffinInstaller.isManaged
     @Published var latestVersion: String?
     @Published var releases: [MuffinInstaller.Release] = []
     @Published var busy = false
@@ -62,6 +63,7 @@ final class MuffinInstallerModel: ObservableObject {
         team = UserDefaults.standard.string(forKey: MuffinInstaller.teamKey)
         signedIn = MuffinInstaller.isSignedIn
         hasCertificate = MuffinInstaller.hasCertificate
+        managed = MuffinInstaller.isManaged
         JITPillModel.shared.refresh()
         Task {
             releases = await MuffinInstaller.releases()
@@ -118,10 +120,12 @@ final class MuffinInstallerModel: ObservableObject {
         }
     }
 
-    func signIn(appleID: String, password: String) {
-        run("Signing in…".localized) { callbacks in
-            let team = try MuffinInstaller.signIn(appleID: appleID, password: password, callbacks: callbacks)
-            return team.isEmpty ? "Signed in.".localized : "Signed in. MuffinEMU signs with \(team)."
+    /// Verifies the Apple ID and installs MuffinEMU with it, so this copy becomes MuffinInstaller-managed.
+    func adoptWithAppleID(appleID: String, password: String) {
+        run("Installing with your Apple ID…".localized) { callbacks in
+            _ = try MuffinInstaller.signIn(appleID: appleID, password: password, callbacks: callbacks)
+            try MuffinInstaller.signAndInstall(appPath: Bundle.main.bundleURL, callbacks: callbacks)
+            return "Installed with your Apple ID.".localized
         }
     }
 
@@ -292,61 +296,7 @@ struct MuffinInstallerSection: View {
 
     @ViewBuilder
     private var content: some View {
-        signatureRow
-        row("Installed with".localized, model.methodText)
-        if let id = model.appleID, model.signedIn {
-            row("Apple ID".localized, model.team.map { "\(id) (\($0))" } ?? id)
-        }
-        row("Pairing file".localized, JITPairing.isImported ? "Imported".localized : "Missing".localized)
-        row("JIT".localized, jitText)
-        row("This version".localized, versionText)
-
-        if model.signedIn || model.hasCertificate {
-            Toggle(isOn: $autoRefresh) {
-                Text("Refresh automatically")
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-            }
-            .tint(MuffinTheme.accentText)
-            if autoRefresh {
-                Toggle(isOn: $autoUpdate) {
-                    Text("Install updates automatically")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                }
-                .tint(MuffinTheme.accentText)
-            }
-            Button { confirm = .refresh } label: { Label("Refresh now", systemImage: "arrow.clockwise") }
-                .disabled(model.busy)
-            if let latest = model.latestVersion, latest != model.currentVersion {
-                Button { confirm = .update } label: { Label("Update to \(latest)", systemImage: "arrow.down.circle") }
-                    .disabled(model.busy)
-            }
-            Button { model.sheet = .versions } label: { Label("Choose a version", systemImage: "list.bullet.rectangle") }
-                .disabled(model.busy)
-        }
-        if model.signedIn {
-            Button(role: .destructive) { model.signOut() } label: {
-                Label("Sign out", systemImage: "person.crop.circle.badge.xmark")
-            }
-            .disabled(model.busy)
-        } else {
-            Button { model.sheet = .signIn } label: {
-                Label("Sign in with your Apple ID", systemImage: "person.crop.circle")
-            }
-            .disabled(model.busy)
-        }
-        if model.hasCertificate {
-            Button(role: .destructive) { model.removeCertificate() } label: {
-                Label("Remove your certificate", systemImage: "trash")
-            }
-            .disabled(model.busy)
-        } else {
-            Button { model.sheet = .certificate } label: {
-                Label("Use your own certificate", systemImage: "doc.badge.gearshape")
-            }
-            .disabled(model.busy)
-        }
-        Button { pickingIPA = true } label: { Label("Install a signed IPA", systemImage: "square.and.arrow.down") }
-            .disabled(model.busy)
+        if model.managed { managedContent } else { adoptContent }
 
         if let step = model.step {
             HStack(spacing: 8) {
@@ -363,15 +313,83 @@ struct MuffinInstallerSection: View {
                 .foregroundColor(MuffinTheme.cautionText)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        DisclosureGroup("Anisette server") {
-            TextField("Default server", text: $anisetteURL)
+        DisclosureGroup("Anisette server".localized) {
+            TextField("Default server".localized, text: $anisetteURL)
                 .textInputAutocapitalization(.never)
                 .disableAutocorrection(true)
                 .keyboardType(.URL)
-            Text("Apple's sign-in needs anisette data. Leave this empty for the default server, or enter your own.")
+            Text("Apple's sign-in needs anisette data. Leave this empty for the default server, or enter your own.".localized)
                 .font(.system(size: 12))
                 .foregroundColor(MuffinTheme.secondaryText)
         }
+    }
+
+    /// Shown only when MuffinInstaller installed this copy: the dashboard that manages, renews and updates it.
+    @ViewBuilder
+    private var managedContent: some View {
+        signatureRow
+        row("Installed with".localized, model.methodText)
+        if let id = model.appleID, model.signedIn {
+            row("Apple ID".localized, model.team.map { "\(id) (\($0))" } ?? id)
+        }
+        row("Pairing file".localized, JITPairing.isImported ? "Imported".localized : "Missing".localized)
+        row("JIT".localized, jitText)
+        row("This version".localized, versionText)
+
+        Toggle(isOn: $autoRefresh) {
+            Text("Refresh automatically")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+        }
+        .tint(MuffinTheme.accentText)
+        if autoRefresh {
+            Toggle(isOn: $autoUpdate) {
+                Text("Install updates automatically")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+            }
+            .tint(MuffinTheme.accentText)
+        }
+        Button { confirm = .refresh } label: { Label("Refresh now", systemImage: "arrow.clockwise") }
+            .disabled(model.busy)
+        if let latest = model.latestVersion, latest != model.currentVersion {
+            Button { confirm = .update } label: { Label("Update to \(latest)", systemImage: "arrow.down.circle") }
+                .disabled(model.busy)
+        }
+        Button { model.sheet = .versions } label: { Label("Choose a version", systemImage: "list.bullet.rectangle") }
+            .disabled(model.busy)
+        if model.signedIn {
+            Button(role: .destructive) { model.signOut() } label: {
+                Label("Sign out", systemImage: "person.crop.circle.badge.xmark")
+            }
+            .disabled(model.busy)
+        }
+        if model.hasCertificate {
+            Button(role: .destructive) { model.removeCertificate() } label: {
+                Label("Remove your certificate", systemImage: "trash")
+            }
+            .disabled(model.busy)
+        }
+    }
+
+    /// Shown when another method installed this copy: a short note and the one-time setup that hands the
+    /// install to MuffinInstaller. Once it succeeds, the managed dashboard above takes over.
+    @ViewBuilder
+    private var adoptContent: some View {
+        row("Installed with".localized, model.methodText)
+        signatureRow
+        Text("This copy of MuffinEMU was installed another way, so it isn't managed here. Install it with your own Apple ID or certificate to let MuffinInstaller keep it signed and up to date.".localized)
+            .font(.system(size: 13))
+            .foregroundColor(MuffinTheme.secondaryText)
+            .fixedSize(horizontal: false, vertical: true)
+        Button { model.sheet = .signIn } label: {
+            Label("Install with your Apple ID", systemImage: "person.crop.circle")
+        }
+        .disabled(model.busy)
+        Button { model.sheet = .certificate } label: {
+            Label("Use your own certificate", systemImage: "doc.badge.gearshape")
+        }
+        .disabled(model.busy)
+        Button { pickingIPA = true } label: { Label("Install a signed IPA", systemImage: "square.and.arrow.down") }
+            .disabled(model.busy)
     }
 
     private var jitText: String {
@@ -450,19 +468,20 @@ private struct InstallerSignInSheet: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .navigationTitle("Sign in")
+            .navigationTitle("Install with your Apple ID")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Sign in") {
-                        model.signIn(appleID: appleID.trimmingCharacters(in: .whitespaces), password: password)
+                    Button("Install") {
+                        model.adoptWithAppleID(appleID: appleID.trimmingCharacters(in: .whitespaces), password: password)
                     }
                     .disabled(appleID.isEmpty || password.isEmpty || model.busy)
                 }
             }
-            .onChange(of: model.signedIn) { signedIn in
-                if signedIn { dismiss() }
+            .onChange(of: model.busy) { busy in
+                // The install has started (it ends the app on success); close the sheet so its progress shows.
+                if busy { dismiss() }
             }
         }
         .navigationViewStyle(.stack)
@@ -650,7 +669,8 @@ enum MuffinInstallerAutoRefresh {
     }
 
     static func schedule() {
-        guard isPermitted, UserDefaults.standard.bool(forKey: MuffinInstaller.autoRefreshKey), MuffinInstaller.canSign else { return }
+        guard isPermitted, MuffinInstaller.isManaged,
+              UserDefaults.standard.bool(forKey: MuffinInstaller.autoRefreshKey), MuffinInstaller.canSign else { return }
         let request = BGProcessingTaskRequest(identifier: identifier)
         request.requiresNetworkConnectivity = true
         // Two days before the signature ends (a free Apple ID's lasts 7), and never sooner than an hour from now.

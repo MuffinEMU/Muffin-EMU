@@ -29,6 +29,10 @@ enum MuffinInstaller {
     static let autoUpdateKey = "muffin.installer.autoUpdate"
 
     static var method: String? { UserDefaults.standard.string(forKey: methodKey) }
+    /// True when THIS copy was installed by MuffinInstaller (signed with the Apple ID, a certificate, or a
+    /// pre-signed IPA through it). Only a managed copy shows the refresh/update/auto dashboard and renews
+    /// itself; a copy installed by SideStore, AltStore, TrollStore or a computer is managed by that, not here.
+    static var isManaged: Bool { method != nil }
     static var appleID: String? { UserDefaults.standard.string(forKey: appleIDKey) }
     static var isSignedIn: Bool { appleID.map { Keychain.password(for: $0) != nil } ?? false }
 
