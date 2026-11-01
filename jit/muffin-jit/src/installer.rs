@@ -22,6 +22,7 @@ use std::sync::{Arc, Once};
 use isideload::anisette::remote_v3::RemoteV3AnisetteProvider;
 use isideload::auth::apple_account::{AppleAccount, TwoFactorCallbackParams, TwoFactorCallbackResponse};
 use isideload::dev::developer_session::DeveloperSession;
+use isideload::dev::devices::DevicesApi;
 use isideload::sideload::builder::MaxCertsBehavior;
 use isideload::sideload::install::install_app_rsd;
 use isideload::sideload::{SideloaderBuilder, TeamSelection};

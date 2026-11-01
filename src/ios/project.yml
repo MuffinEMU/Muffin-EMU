@@ -106,6 +106,9 @@ targets:
       # On-device pairing (iOS 27+). Opens MuffinJITPairing.framework with dlopen, never links it.
       - path: JIT/JITOnDevicePairing.swift
       - path: JIT/JITStatusPill.swift
+      # MuffinInstaller: sign, refresh and update MuffinEMU with the person's own Apple ID (iOS 17.4+).
+      - path: JIT/MuffinInstaller.swift
+      - path: JIT/MuffinInstallerSection.swift
       - path: JIT/MuffinJITLauncher.h
       - path: JIT/MuffinJITLauncher.m
 

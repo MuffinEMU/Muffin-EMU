@@ -15,7 +15,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
     case display, externalDisplay, audio, overlay, notifications
     case library, coverArt, keys, wiiUMenu
     case account, network, premium
-    case files, backup, migration
+    case installer, files, backup, migration
     case deviceReport, diagnostics
 
     var id: String { rawValue }
@@ -51,6 +51,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         case .premium: return "Premium".localized
         case .files: return "Your Files".localized
         case .backup: return "Back up settings".localized
+        case .installer: return "MuffinInstaller"
         case .migration: return "Move to the new MuffinEMU".localized
         case .deviceReport: return "This Device".localized
         case .diagnostics: return "Diagnostics".localized
@@ -90,6 +91,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         case .premium: return "The pro app icons.".localized
         case .files: return "Where MuffinEMU keeps its files.".localized
         case .backup: return "Export or import your settings.".localized
+        case .installer: return "Sign, refresh and update MuffinEMU with your own Apple ID.".localized
         case .migration: return "Export everything, or import from the old MuffinEMU.".localized
         case .deviceReport: return "Copy a device report to send with a bug report.".localized
         case .diagnostics: return "The launch intro, launch log and controls diagnostic.".localized
@@ -128,6 +130,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         case .premium: return "supporter unlock purchase restore pro icons"
         case .files: return "storage folders paths location"
         case .backup: return "backup restore export import settings file"
+        case .installer: return "install installer sign signing refresh renew expire expiry certificate apple id update ipa sideload"
         case .migration: return "migration export move transfer new device saves games"
         case .deviceReport: return "device info ram chip hardware bug report problem help log crash share"
         case .diagnostics: return "logs crash report debug launch intro readout"
@@ -219,7 +222,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .screenAndSound: return [.display, .externalDisplay, .audio, .overlay, .notifications]
         case .library: return [.keys, .library, .coverArt]
         case .accountOnline: return [.account, .network, .consoleClock, .wiiUMenu]
-        case .storage: return [.files, .backup, .migration]
+        case .storage: return [.installer, .files, .backup, .migration]
         case .support: return [.deviceReport, .diagnostics]
         }
     }
@@ -349,6 +352,7 @@ struct SettingsView: View {
         case .premium: PremiumSettingsSection()
         case .files: FilesSettingsSection()
         case .backup: SettingsBackupSection()
+        case .installer: MuffinInstallerSection()
         case .migration: MigrationSettingsSection()
         case .deviceReport: DeviceReportSection()
         case .diagnostics: DiagnosticsSection()
