@@ -1904,3 +1904,5 @@
 "Up to 23 hours." = "Upp till 23 timmar.";
 "Up to 365 days." = "Upp till 365 dagar.";
 "Use this device's date and time" = "Använd den här enhetens datum och tid";
+"Smaller texture cache" = "Mindre texturcache";
+"Keeps up to 1 GB of converted textures per game instead of 2 GB. A game with more than that may load more slowly. Applies the next time a game starts." = "Sparar upp till 1 GB konverterade texturer per spel i stället för 2 GB. Ett spel med mer än så kan läsas in långsammare. Gäller nästa gång ett spel startar.";

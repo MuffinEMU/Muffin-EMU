@@ -101,6 +101,7 @@ enum SettingsIndex {
         stored("Override gamma", .graphics, OverrideGammaSetting.storageKey, OverrideGammaSetting.defaultValue, "dark bright"),
         row("Graphic Packs", .graphics, "mods resolution fps patches"),
         stored("Compile shaders in the background", .shaderCache, "muffin.shaders.asyncCompile", true, "async stutter"),
+        stored("Smaller texture cache", .shaderCache, "muffin.textureCache.smaller", false, "storage space disk astc textures"),
         row("Clear compiled shaders", .shaderCache, "delete free space"),
         row("Clear everything, including learned", .shaderCache, "delete clear all"),
         stored("Speed", .emulatedClock, TimebaseScale.storageKey, nil, "clock timing"),

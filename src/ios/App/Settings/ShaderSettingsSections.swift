@@ -6,10 +6,12 @@
 import SwiftUI
 
 /// Shader cache size across every game, when it last changed, and the two clear actions (compiled shaders
-/// only, or everything including learned ones), each behind a confirmation. Per game: the game's Game page and Game settings.
+/// only, or everything including learned ones), each behind a confirmation. Also the texture cache's size cap
+/// (Smaller texture cache, read by the bridge when a game starts). Per game: the game's Game page and Game settings.
 struct ShaderCacheSection: View {
     @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
     @AppStorage("muffin.shaders.asyncCompile") private var asyncShaderCompile = true
+    @AppStorage("muffin.textureCache.smaller") private var smallerTextureCache = false
     @State private var learnedCacheBytes: Int64 = 0
     @State private var compiledCacheBytes: Int64 = 0
     @State private var lastUpdated: Date?
@@ -29,6 +31,17 @@ struct ShaderCacheSection: View {
                 cemu_bridge_set_async_shader_compile(newValue)
             }
             PerGameOverrideNote(field: .preCompileShaders)
+            Toggle(isOn: $smallerTextureCache) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Smaller texture cache")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    Text("Keeps up to 1 GB of converted textures per game instead of 2 GB. A game with more than that may load more slowly. Applies the next time a game starts.")
+                        .font(.system(size: 12))
+                        .foregroundColor(MuffinTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .tint(MuffinTheme.accentText)
             SettingsRow(label: "Size on disk".localized, value: Self.formatBytes(learnedCacheBytes + compiledCacheBytes))
             SettingsRow(label: "Last updated".localized, value: ShaderCacheInfo.formatDate(lastUpdated))
             if SettingsMode.isAdvanced(raw: settingsModeRaw) {

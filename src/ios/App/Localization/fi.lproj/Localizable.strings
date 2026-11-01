@@ -1904,3 +1904,5 @@
 "Up to 23 hours." = "Enintään 23 tuntia.";
 "Up to 365 days." = "Enintään 365 päivää.";
 "Use this device's date and time" = "Käytä tämän laitteen päivää ja aikaa";
+"Smaller texture cache" = "Pienempi tekstuurivälimuisti";
+"Keeps up to 1 GB of converted textures per game instead of 2 GB. A game with more than that may load more slowly. Applies the next time a game starts." = "Säilyttää enintään 1 Gt muunnettuja tekstuureja peliä kohden 2 Gt:n sijaan. Peli, jolla niitä on enemmän, voi latautua hitaammin. Tulee voimaan, kun seuraava peli käynnistyy.";

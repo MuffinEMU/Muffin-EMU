@@ -1904,5 +1904,7 @@
  "The date and time games see. A change shows in the next game you start; to move a game's clock while it runs, use HOME > Console clock.": "वह तारीख और समय जो गेम देखते हैं। बदलाव अगले शुरू किए गए गेम में दिखता है; चलते गेम की घड़ी आगे बढ़ाने के लिए HOME > कंसोल की घड़ी इस्तेमाल करें।",
  "Up to 23 hours.": "ज़्यादा से ज़्यादा 23 घंटे।",
  "Up to 365 days.": "ज़्यादा से ज़्यादा 365 दिन।",
- "Use this device's date and time": "इस डिवाइस की तारीख और समय इस्तेमाल करें"
+ "Use this device's date and time": "इस डिवाइस की तारीख और समय इस्तेमाल करें",
+ "Smaller texture cache": "छोटा टेक्सचर कैश",
+ "Keeps up to 1 GB of converted textures per game instead of 2 GB. A game with more than that may load more slowly. Applies the next time a game starts.": "हर गेम के लिए 2 GB की जगह 1 GB तक बदले गए टेक्सचर रखता है। इससे ज़्यादा वाला गेम धीरे लोड हो सकता है। अगली बार कोई गेम शुरू होने पर लागू होता है।"
 }

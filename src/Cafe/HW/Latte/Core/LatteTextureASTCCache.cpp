@@ -6,6 +6,7 @@
 #include "Cafe/HW/Latte/Core/LatteTextureASTCCache.h"
 #include "Cafe/CafeSystem.h"
 #include "config/ActiveSettings.h"
+#include <atomic>
 #include <cstdio>
 #include <unistd.h>
 #include <mutex>
@@ -87,10 +88,12 @@ namespace
 		return cache;
 	}
 
-	// A cap on one generation, so a game with thousands of textures cannot fill the device: the two packs of a
-	// title stay near 1 GB together, the size the single pack used to stop at. 512 MB holds every track of a
-	// racing game at 1 byte per texel.
-	uint64 MaxBytes() { return 512ull * 1024 * 1024; }
+	// A cap on one generation, so a game with thousands of textures cannot fill the device. 1 GB per pack, the size
+	// the single pack used to stop at: a title under 1 GB never rotates and keeps every texture as it always did, and
+	// only a title past 1 GB (which used to stop adding) rotates, using up to 2 GB with both packs. Settings can lower
+	// it to 512 MB per pack (about 1 GB per title) for devices short on storage.
+	std::atomic<uint64> s_packLimitBytes{1024ull * 1024 * 1024};
+	uint64 MaxBytes() { return s_packLimitBytes.load(std::memory_order_relaxed); }
 
 	void ClosePack(Pack& p)
 	{
@@ -273,6 +276,12 @@ namespace
 		}
 		return true;
 	}
+}
+
+void LatteTextureASTCCache_SetPackLimitMB(uint32 megabytes)
+{
+	const uint64 mb = megabytes < 64 ? 64 : (megabytes > 4096 ? 4096 : megabytes);
+	s_packLimitBytes.store(mb * 1024 * 1024, std::memory_order_relaxed);
 }
 
 bool LatteTextureASTCCache_Lookup(const ASTCCacheKey& key, uint8* outputData, size_t outputSize)
