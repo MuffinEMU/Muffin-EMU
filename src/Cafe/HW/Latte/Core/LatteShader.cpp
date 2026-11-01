@@ -857,6 +857,21 @@ LatteDecompilerShader* LatteShader_CreateShaderFromDecompilerOutput(LatteDecompi
 
 std::atomic<bool> g_latteRelaxShaderMul{false};
 
+bool LatteShader_UseStrictMul()
+{
+	const auto profile = g_current_game_profile->GetAccurateShaderMul();
+	// Only a profile that names the option wins over Favour performance: True is also the default for every title.
+	if (profile == AccurateShaderMulOption::True && g_current_game_profile->IsAccurateShaderMulSetByProfile())
+		return true;
+	return !g_latteRelaxShaderMul.load(std::memory_order_relaxed) && profile != AccurateShaderMulOption::False;
+}
+
+bool LatteShader_UsesRelaxedMul()
+{
+	// A profile set to False is non-strict in every mode, so its shaders are the same either way.
+	return !LatteShader_UseStrictMul() && g_current_game_profile->GetAccurateShaderMul() != AccurateShaderMulOption::False;
+}
+
 void LatteShader_GetDecompilerOptions(LatteDecompilerOptions& options, LatteConst::ShaderType shaderType, bool geometryShaderEnabled)
 {
 	options.usesGeometryShader = geometryShaderEnabled;
@@ -869,8 +884,7 @@ void LatteShader_GetDecompilerOptions(LatteDecompilerOptions& options, LatteCons
 		options.spirvInstrinsics.hasRoundingModeRTEFloat32 = VulkanRenderer::GetInstance()->HasSPRIVRoundingModeRTE32();
 	}
 #endif
-	options.strictMul = !g_latteRelaxShaderMul.load(std::memory_order_relaxed)
-		&& g_current_game_profile->GetAccurateShaderMul() != AccurateShaderMulOption::False;
+	options.strictMul = LatteShader_UseStrictMul();
 }
 
 LatteDecompilerShader* LatteShader_CompileSeparableVertexShader2(uint64 baseHash, uint64& vsAuxHash, uint8* vertexShaderPtr, uint32 vertexShaderSize, bool usesGeometryShader, LatteFetchShader* fetchShader)

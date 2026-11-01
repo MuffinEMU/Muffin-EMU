@@ -31,6 +31,9 @@ public:
 	// In-memory only (never saved): pins the renderer for the title being launched, used when the profile's choice cannot start
 	void ForceGraphicsAPI(GraphicAPI api) { m_graphics_api = api; }
 	[[nodiscard]] const AccurateShaderMulOption& GetAccurateShaderMul() const { return m_accurateShaderMul; }
+	// True only when the title's profile file names accurateShaderMul itself. The option defaults to True for every
+	// title, so the value alone cannot tell "this game needs it" (Breath of the Wild) from "nobody said".
+	[[nodiscard]] bool IsAccurateShaderMulSetByProfile() const { return m_accurateShaderMulSetByProfile; }
 #ifdef ENABLE_METAL
 	[[nodiscard]] bool GetShaderFastMath() const { return m_shaderFastMath; }
 	[[nodiscard]] MetalBufferCacheMode GetBufferCacheMode() const { return m_metalBufferCacheMode; }
@@ -59,6 +62,7 @@ private:
 	// graphic settings
 	std::optional<GraphicAPI> m_graphics_api{};
 	AccurateShaderMulOption m_accurateShaderMul = AccurateShaderMulOption::True;
+	bool m_accurateShaderMulSetByProfile = false;
 #ifdef ENABLE_METAL
 	bool m_shaderFastMath = true;
 	MetalBufferCacheMode m_metalBufferCacheMode = MetalBufferCacheMode::Auto;

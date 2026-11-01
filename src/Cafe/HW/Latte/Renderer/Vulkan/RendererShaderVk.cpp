@@ -477,7 +477,7 @@ void RendererShaderVk::ShaderCacheLoading_begin(uint64 cacheTitleId)
 	uint32 spirvCacheMagic = GeneratePrecompiledCacheId();
 	// Favour performance compiles without the console's 0*x=0 rule (LatteShader_GetDecompilerOptions), which changes the SPIR-V. The cache id above only
 	// knows the per-game setting, so those shaders get a file of their own instead of being served to, or from, a strict session.
-	const bool relaxedMul = g_latteRelaxShaderMul.load(std::memory_order_relaxed) && g_current_game_profile->GetAccurateShaderMul() != AccurateShaderMulOption::False;
+	const bool relaxedMul = LatteShader_UsesRelaxedMul();
 	const std::string cacheFilename = fmt::format("{:016x}{}.bin", cacheTitleId, relaxedMul ? "_spirv_relaxed" : "_spirv");
 	const fs::path cachePath = ActiveSettings::GetCachePath("shaderCache/precompiled/{}", cacheFilename);
 	s_spirvCache = FileCache::Open(cachePath, true, spirvCacheMagic, true); // stamped per app version: replaced, not set aside
