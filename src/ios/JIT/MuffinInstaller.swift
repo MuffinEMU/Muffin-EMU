@@ -25,6 +25,8 @@ enum MuffinInstaller {
     static let teamKey = "muffin.installer.team"
     static let anisetteKey = "muffin.installer.anisetteURL"
     static let autoRefreshKey = "muffin.installer.autoRefresh"
+    /// With automatic refresh on: install a newer release instead of only re-signing this copy.
+    static let autoUpdateKey = "muffin.installer.autoUpdate"
 
     static var method: String? { UserDefaults.standard.string(forKey: methodKey) }
     static var appleID: String? { UserDefaults.standard.string(forKey: appleIDKey) }
@@ -312,6 +314,64 @@ enum MuffinInstaller {
             let status = fn(link, ipa.path, work.path, onStep, ctx, &err)
             guard status == 0 else { try takeError(err, status: status) }
         }
+    }
+
+    /// One published MuffinEMU release with its unsigned IPA.
+    struct Release: Identifiable, Hashable {
+        let tag: String
+        let version: String
+        let title: String
+        let published: Date?
+        let isPrerelease: Bool
+        let ipa: URL
+        var id: String { tag }
+    }
+
+    /// The releases on GitHub that carry MuffinEMU.ipa, newest first: numbered releases and the rolling
+    /// nightly. Empty when GitHub can't be reached.
+    static func releases() async -> [Release] {
+        guard let url = URL(string: "https://api.github.com/repos/MuffinEMU/Muffin-EMU/releases?per_page=40") else { return [] }
+        var request = URLRequest(url: url)
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        let fetched = try? await URLSession.shared.data(for: request)
+        guard let data = fetched?.0,
+              let list = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
+        let iso = ISO8601DateFormatter()
+        return list.compactMap { item in
+            guard let tag = item["tag_name"] as? String, (item["draft"] as? Bool) != true,
+                  !tag.hasPrefix("experimental"),
+                  let assets = item["assets"] as? [[String: Any]],
+                  let ipa = assets.first(where: { ($0["name"] as? String) == "MuffinEMU.ipa" }),
+                  let link = (ipa["browser_download_url"] as? String).flatMap(URL.init(string:)) else { return nil }
+            return Release(tag: tag,
+                           version: tag.hasPrefix("v") ? String(tag.dropFirst()) : tag,
+                           title: item["name"] as? String ?? tag,
+                           published: (item["published_at"] as? String).flatMap(iso.date(from:)),
+                           isPrerelease: item["prerelease"] as? Bool ?? false,
+                           ipa: link)
+        }
+    }
+
+    /// "10.10" is newer than "10.9": compares dot-separated numbers.
+    static func isNewer(_ a: String, than b: String) -> Bool {
+        let x = a.split(separator: ".").map { Int($0) ?? 0 }, y = b.split(separator: ".").map { Int($0) ?? 0 }
+        for i in 0..<max(x.count, y.count) {
+            let l = i < x.count ? x[i] : 0, r = i < y.count ? y[i] : 0
+            if l != r { return l > r }
+        }
+        return false
+    }
+
+    /// Downloads one release's MuffinEMU.ipa.
+    static func download(_ release: Release) async throws -> URL {
+        let (temp, response) = try await URLSession.shared.download(from: release.ipa)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+            throw Failure.failed("Couldn't download MuffinEMU \(release.version).")
+        }
+        let dest = FileManager.default.temporaryDirectory.appendingPathComponent("MuffinEMU-\(release.tag).ipa")
+        try? FileManager.default.removeItem(at: dest)
+        try FileManager.default.moveItem(at: temp, to: dest)
+        return dest
     }
 
     /// Downloads the latest release's MuffinEMU.ipa (the unsigned build signers use).

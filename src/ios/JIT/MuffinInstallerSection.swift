@@ -16,11 +16,13 @@ final class MuffinInstallerModel: ObservableObject {
     enum Sheet: Identifiable {
         case signIn
         case certificate
+        case versions
         case code(textedTo: String?)
         var id: String {
             switch self {
             case .signIn: return "signIn"
             case .certificate: return "certificate"
+            case .versions: return "versions"
             case .code: return "code"
             }
         }
@@ -32,6 +34,7 @@ final class MuffinInstallerModel: ObservableObject {
     @Published var signedIn = MuffinInstaller.isSignedIn
     @Published var hasCertificate = MuffinInstaller.hasCertificate
     @Published var latestVersion: String?
+    @Published var releases: [MuffinInstaller.Release] = []
     @Published var busy = false
     @Published var step: String?
     @Published var statusLine: String?
@@ -60,7 +63,10 @@ final class MuffinInstallerModel: ObservableObject {
         signedIn = MuffinInstaller.isSignedIn
         hasCertificate = MuffinInstaller.hasCertificate
         JITPillModel.shared.refresh()
-        Task { latestVersion = await MuffinInstaller.latestReleaseVersion() }
+        Task {
+            releases = await MuffinInstaller.releases()
+            latestVersion = releases.first(where: { !$0.isPrerelease })?.version
+        }
     }
 
     private var callbacks: MuffinInstaller.Callbacks {
@@ -183,6 +189,30 @@ final class MuffinInstallerModel: ObservableObject {
         refresh()
     }
 
+    /// Installs any release: newer (an update) or older (a downgrade), signed the way MuffinInstaller signs.
+    func install(_ release: MuffinInstaller.Release) {
+        guard !busy else { return }
+        sheet = nil
+        busy = true
+        step = String(format: "Downloading MuffinEMU %@…".localized, release.version)
+        errorLine = nil
+        statusLine = nil
+        Task {
+            do {
+                let ipa = try await MuffinInstaller.download(release)
+                busy = false
+                run(String(format: "Installing MuffinEMU %@…".localized, release.version)) { callbacks in
+                    try MuffinInstaller.resign(appPath: ipa, callbacks: callbacks)
+                    return String(format: "MuffinEMU %@ is installed.".localized, release.version)
+                }
+            } catch {
+                busy = false
+                step = nil
+                errorLine = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+        }
+    }
+
     func installSigned(_ picked: URL) {
         let scoped = picked.startAccessingSecurityScopedResource()
         defer { if scoped { picked.stopAccessingSecurityScopedResource() } }
@@ -205,6 +235,7 @@ struct MuffinInstallerSection: View {
     @StateObject private var model = MuffinInstallerModel()
     @ObservedObject private var pill = JITPillModel.shared
     @AppStorage(MuffinInstaller.autoRefreshKey) private var autoRefresh = false
+    @AppStorage(MuffinInstaller.autoUpdateKey) private var autoUpdate = true
     @AppStorage(MuffinInstaller.anisetteKey) private var anisetteURL = ""
     @Environment(\.scenePhase) private var scenePhase
     @State private var confirm: Confirm?
@@ -241,6 +272,7 @@ struct MuffinInstallerSection: View {
             switch sheet {
             case .signIn: InstallerSignInSheet(model: model)
             case .certificate: InstallerCertificateSheet(model: model)
+            case .versions: InstallerVersionsSheet(model: model)
             case .code(let textedTo): InstallerCodeSheet(model: model, textedTo: textedTo)
             }
         }
@@ -275,12 +307,21 @@ struct MuffinInstallerSection: View {
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
             .tint(MuffinTheme.accentText)
+            if autoRefresh {
+                Toggle(isOn: $autoUpdate) {
+                    Text("Install updates automatically")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                }
+                .tint(MuffinTheme.accentText)
+            }
             Button { confirm = .refresh } label: { Label("Refresh now", systemImage: "arrow.clockwise") }
                 .disabled(model.busy)
             if let latest = model.latestVersion, latest != model.currentVersion {
                 Button { confirm = .update } label: { Label("Update to \(latest)", systemImage: "arrow.down.circle") }
                     .disabled(model.busy)
             }
+            Button { model.sheet = .versions } label: { Label("Choose a version", systemImage: "list.bullet.rectangle") }
+                .disabled(model.busy)
         }
         if model.signedIn {
             Button(role: .destructive) { model.signOut() } label: {
@@ -494,6 +535,63 @@ private struct InstallerCertificateSheet: View {
     }
 }
 
+/// Every release with an IPA: install any of them, newer or older than this one.
+private struct InstallerVersionsSheet: View {
+    @ObservedObject var model: MuffinInstallerModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var chosen: MuffinInstaller.Release?
+
+    var body: some View {
+        NavigationView {
+            List {
+                if model.releases.isEmpty {
+                    Text("Couldn't load the list of releases. Check the connection and try again.")
+                        .foregroundColor(MuffinTheme.secondaryText)
+                }
+                ForEach(model.releases) { release in
+                    Button { chosen = release } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(release.isPrerelease ? release.title : "MuffinEMU " + release.version)
+                                    .foregroundColor(MuffinTheme.brownDarkest)
+                                if let date = release.published {
+                                    Text(DateFormatter.localizedString(from: date, dateStyle: .medium, timeStyle: .none))
+                                        .font(.system(size: 12))
+                                        .foregroundColor(MuffinTheme.secondaryText)
+                                }
+                            }
+                            Spacer()
+                            Text(badge(for: release))
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(MuffinTheme.secondaryText)
+                        }
+                    }
+                    .disabled(release.version == model.currentVersion)
+                }
+            }
+            .navigationTitle("Choose a version")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
+            .confirmationDialog(chosen.map { String(format: "Install MuffinEMU %@? MuffinEMU closes when it installs. Your games and saves stay.".localized, $0.version) } ?? "",
+                                isPresented: Binding(get: { chosen != nil }, set: { if !$0 { chosen = nil } }),
+                                titleVisibility: .visible) {
+                Button("Install") {
+                    if let release = chosen { model.install(release) }
+                    chosen = nil
+                }
+                Button("Cancel", role: .cancel) { chosen = nil }
+            }
+        }
+        .navigationViewStyle(.stack)
+    }
+
+    private func badge(for release: MuffinInstaller.Release) -> String {
+        if release.version == model.currentVersion { return "Installed".localized }
+        if release.isPrerelease { return "Nightly".localized }
+        return MuffinInstaller.isNewer(release.version, than: model.currentVersion) ? "Update".localized : "Older".localized
+    }
+}
+
 private struct InstallerCodeSheet: View {
     @ObservedObject var model: MuffinInstallerModel
     let textedTo: String?
@@ -565,12 +663,33 @@ enum MuffinInstallerAutoRefresh {
         BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: identifier)
     }
 
+    /// The newest numbered release's IPA, downloaded, when it's newer than this copy. Blocks (background thread).
+    private static func newerRelease() -> URL? {
+        let current = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+        let done = DispatchSemaphore(value: 0)
+        var result: URL?
+        Task {
+            if let latest = await MuffinInstaller.releases().first(where: { !$0.isPrerelease }),
+               MuffinInstaller.isNewer(latest.version, than: current) {
+                result = try? await MuffinInstaller.download(latest)
+            }
+            done.signal()
+        }
+        done.wait()
+        return result
+    }
+
     private static func handle(_ task: BGProcessingTask) {
         task.expirationHandler = { schedule() }
         let worker = Thread {
             let callbacks = MuffinInstaller.Callbacks(step: { _ in }, askCode: { _, reply in reply(nil) })
             do {
-                try MuffinInstaller.resign(appPath: Bundle.main.bundleURL, callbacks: callbacks)
+                var app = Bundle.main.bundleURL
+                if UserDefaults.standard.object(forKey: MuffinInstaller.autoUpdateKey) as? Bool ?? true,
+                   let newer = newerRelease() {
+                    app = newer
+                }
+                try MuffinInstaller.resign(appPath: app, callbacks: callbacks)
                 task.setTaskCompleted(success: true)
             } catch {
                 schedule()
