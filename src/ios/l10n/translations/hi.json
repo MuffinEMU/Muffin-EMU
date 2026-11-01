@@ -1981,5 +1981,9 @@
  "Installing MuffinEMU %@…": "MuffinEMU %@ इंस्टॉल हो रहा है…",
  "MuffinEMU %@ is installed.": "MuffinEMU %@ इंस्टॉल हो गया।",
  "Nightly": "Nightly",
- "Older": "पुराना"
+ "Older": "पुराना",
+ "Install with your Apple ID": "अपने Apple ID से इंस्टॉल करें",
+ "Installed with your Apple ID.": "आपके Apple ID से इंस्टॉल किया गया।",
+ "Installing with your Apple ID…": "आपके Apple ID से इंस्टॉल हो रहा है…",
+ "This copy of MuffinEMU was installed another way, so it isn't managed here. Install it with your own Apple ID or certificate to let MuffinInstaller keep it signed and up to date.": "MuffinEMU की यह कॉपी किसी और तरीके से इंस्टॉल की गई थी, इसलिए इसे यहाँ से मैनेज नहीं किया जाता। इसे अपने Apple ID या सर्टिफ़िकेट से इंस्टॉल करें, ताकि MuffinInstaller इसे साइन और अप-टू-डेट रख सके।"
 }

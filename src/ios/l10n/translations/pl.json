@@ -1981,5 +1981,9 @@
  "Installing MuffinEMU %@…": "Instalowanie MuffinEMU %@…",
  "MuffinEMU %@ is installed.": "MuffinEMU %@ jest zainstalowany.",
  "Nightly": "Nightly",
- "Older": "Starsza"
+ "Older": "Starsza",
+ "Install with your Apple ID": "Zainstaluj za pomocą Apple ID",
+ "Installed with your Apple ID.": "Zainstalowano z użyciem Twojego Apple ID.",
+ "Installing with your Apple ID…": "Instalowanie z użyciem Twojego Apple ID…",
+ "This copy of MuffinEMU was installed another way, so it isn't managed here. Install it with your own Apple ID or certificate to let MuffinInstaller keep it signed and up to date.": "Ta kopia MuffinEMU została zainstalowana w inny sposób, więc nie jest tu zarządzana. Zainstaluj ją za pomocą własnego Apple ID lub certyfikatu, aby MuffinInstaller utrzymywał ją podpisaną i aktualną."
 }

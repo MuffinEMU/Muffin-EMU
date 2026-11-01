@@ -1981,3 +1981,7 @@
 "MuffinEMU %@ is installed." = "MuffinEMU %@ je nainštalovaný.";
 "Nightly" = "Nightly";
 "Older" = "Staršia";
+"Install with your Apple ID" = "Nainštalovať s vaším Apple ID";
+"Installed with your Apple ID." = "Nainštalované s vaším Apple ID.";
+"Installing with your Apple ID…" = "Inštaluje sa s vaším Apple ID…";
+"This copy of MuffinEMU was installed another way, so it isn't managed here. Install it with your own Apple ID or certificate to let MuffinInstaller keep it signed and up to date." = "Táto kópia MuffinEMU bola nainštalovaná inak, preto sa tu nespravuje. Nainštalujte ju s vlastným Apple ID alebo certifikátom, aby ju MuffinInstaller udržiaval podpísanú a aktuálnu.";

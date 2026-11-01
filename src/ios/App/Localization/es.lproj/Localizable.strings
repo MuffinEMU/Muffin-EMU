@@ -1981,3 +1981,7 @@
 "MuffinEMU %@ is installed." = "MuffinEMU %@ está instalado.";
 "Nightly" = "Nightly";
 "Older" = "Anterior";
+"Install with your Apple ID" = "Instalar con tu Apple ID";
+"Installed with your Apple ID." = "Instalado con tu Apple ID.";
+"Installing with your Apple ID…" = "Instalando con tu Apple ID…";
+"This copy of MuffinEMU was installed another way, so it isn't managed here. Install it with your own Apple ID or certificate to let MuffinInstaller keep it signed and up to date." = "Esta copia de MuffinEMU se instaló de otra forma, así que no se gestiona aquí. Instálala con tu propio Apple ID o certificado para que MuffinInstaller la mantenga firmada y actualizada.";

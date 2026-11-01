@@ -1981,5 +1981,9 @@
  "Installing MuffinEMU %@…": "A MuffinEMU %@ telepítése…",
  "MuffinEMU %@ is installed.": "A MuffinEMU %@ telepítve.",
  "Nightly": "Nightly",
- "Older": "Régebbi"
+ "Older": "Régebbi",
+ "Install with your Apple ID": "Telepítés az Apple ID-jával",
+ "Installed with your Apple ID.": "Telepítve az Apple ID-jával.",
+ "Installing with your Apple ID…": "Telepítés az Apple ID-jával…",
+ "This copy of MuffinEMU was installed another way, so it isn't managed here. Install it with your own Apple ID or certificate to let MuffinInstaller keep it signed and up to date.": "A MuffinEMU ezen példányát más módon telepítették, ezért itt nem kezelhető. Telepítse a saját Apple ID-jával vagy tanúsítványával, hogy a MuffinInstaller aláírva és naprakészen tartsa."
 }

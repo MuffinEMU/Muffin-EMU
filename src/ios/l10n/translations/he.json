@@ -1981,5 +1981,9 @@
  "Installing MuffinEMU %@…": "מתקין את MuffinEMU %@…",
  "MuffinEMU %@ is installed.": "MuffinEMU %@ הותקן.",
  "Nightly": "Nightly",
- "Older": "ישנה יותר"
+ "Older": "ישנה יותר",
+ "Install with your Apple ID": "התקנה עם ה-Apple ID שלכם",
+ "Installed with your Apple ID.": "הותקן באמצעות ה-Apple ID שלכם.",
+ "Installing with your Apple ID…": "מתקין באמצעות ה-Apple ID שלכם…",
+ "This copy of MuffinEMU was installed another way, so it isn't managed here. Install it with your own Apple ID or certificate to let MuffinInstaller keep it signed and up to date.": "העותק הזה של MuffinEMU הותקן בדרך אחרת, ולכן הוא לא מנוהל כאן. התקינו אותו עם ה-Apple ID או האישור שלכם כדי ש-MuffinInstaller ישמור אותו חתום ומעודכן."
 }

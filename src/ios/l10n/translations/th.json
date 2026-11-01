@@ -1981,5 +1981,9 @@
  "Installing MuffinEMU %@…": "กำลังติดตั้ง MuffinEMU %@…",
  "MuffinEMU %@ is installed.": "ติดตั้ง MuffinEMU %@ แล้ว",
  "Nightly": "Nightly",
- "Older": "รุ่นเก่ากว่า"
+ "Older": "รุ่นเก่ากว่า",
+ "Install with your Apple ID": "ติดตั้งด้วย Apple ID ของคุณ",
+ "Installed with your Apple ID.": "ติดตั้งด้วย Apple ID ของคุณแล้ว",
+ "Installing with your Apple ID…": "กำลังติดตั้งด้วย Apple ID ของคุณ…",
+ "This copy of MuffinEMU was installed another way, so it isn't managed here. Install it with your own Apple ID or certificate to let MuffinInstaller keep it signed and up to date.": "MuffinEMU ชุดนี้ติดตั้งด้วยวิธีอื่น จึงไม่ได้จัดการที่นี่ ติดตั้งด้วย Apple ID หรือใบรับรองของคุณเองเพื่อให้ MuffinInstaller ดูแลการลงนามและอัปเดตให้"
 }
