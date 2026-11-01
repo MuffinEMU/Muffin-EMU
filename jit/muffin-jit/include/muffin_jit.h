@@ -33,6 +33,13 @@ typedef void (*MuffinJitProgress)(void *ctx, int32_t stage, const char *message)
 // PIN callback for on-device pairing: invoked with the setup code to show the user.
 typedef void (*MuffinJitPinCallback)(void *ctx, const char *pin);
 
+// Advertise callback for on-device pairing: called once, after the port is bound, with
+// the Bonjour service type, instance name, port and TXT records (`key=value` lines) to
+// publish through the system's mDNS (NetService). Raw multicast needs an entitlement
+// sideloaded apps can't have, so the app advertises, not the library.
+typedef void (*MuffinJitAdvertise)(void *ctx, const char *service_type, const char *name,
+                                   uint16_t port, const char *txt);
+
 // Frees a string returned through an out_err / out_* char pointer.
 void muffin_jit_string_free(char *s);
 
@@ -77,12 +84,15 @@ int32_t muffin_jit_enable(MuffinJitLink *link, int32_t target_pid, int32_t txm,
                           MuffinJitProgress cb, void *ctx, char **out_err);
 
 // On-device pairing (iOS 27+): advertise as a pairable host and accept one
-// device-initiated pairing. On success the pairing file bytes are written to
+// device-initiated pairing. Pass adv_cb to publish the service yourself (iOS apps
+// must); NULL makes the library advertise with its own mDNS. On success the pairing
+// file bytes are written to
 // *out_pairing / *out_pairing_len (free with muffin_jit_bytes_free). The PIN
 // callback is invoked with the code to show the user.
 int32_t muffin_jit_pair_on_device(const char *name, const char *model,
                                   uint32_t timeout_ms,
                                   MuffinJitPinCallback pin_cb, void *pin_ctx,
+                                  MuffinJitAdvertise adv_cb, void *adv_ctx,
                                   MuffinJitProgress cb, void *ctx,
                                   uint8_t **out_pairing, size_t *out_pairing_len,
                                   char **out_err);

@@ -28,6 +28,11 @@ final class BuiltInJITModel: ObservableObject {
     @Published var running = false
     @Published var statusLine: String?
     @Published var errorLine: String?
+    /// On-device pairing (iOS 27+): whether it's waiting, its current step, and the code
+    /// iOS asks for once the person taps MuffinEMU there.
+    @Published var pairing = false
+    @Published var pairingStep: String?
+    @Published var pairingCode: String?
 
     func refresh() {
         jitActive = JITStatus.isActive
@@ -65,7 +70,8 @@ final class BuiltInJITModel: ObservableObject {
             title: "Pairing file",
             state: pairingImported ? .ok : .warn,
             detail: pairingImported ? "A pairing file is imported."
-                : "Import a pairing file, or pair on this device (iOS 27)."))
+                : (JITOnDevicePairing.isAvailable ? "Pair on this device below, or import a pairing file."
+                    : "Import a pairing file made on a computer.")))
 
         let reachState: JITCheck.State = reachable == nil ? .checking : (reachable == true ? .ok : .warn)
         list.append(JITCheck(
@@ -102,6 +108,50 @@ final class BuiltInJITModel: ObservableObject {
             running = false
             refresh()
         }
+    }
+
+    /// Waits for iOS to pair with MuffinEMU, shows the code iOS asks for, and keeps the
+    /// pairing file. Only offered on iOS 27 and later.
+    func pairOnDevice() {
+        guard JITOnDevicePairing.isAvailable, !pairing, !running else { return }
+        pairing = true
+        pairingCode = nil
+        pairingStep = "Getting ready…"
+        errorLine = nil
+        statusLine = nil
+        let callbacks = JITOnDevicePairing.Callbacks(
+            code: { [weak self] code in self?.pairingCode = code },
+            step: { [weak self] step in self?.pairingStep = step })
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let result = Result { try JITOnDevicePairing.pair(callbacks: callbacks) }
+            await MainActor.run {
+                guard let self, self.pairing else { return }
+                self.pairing = false
+                self.pairingCode = nil
+                self.pairingStep = nil
+                switch result {
+                case .success(let data):
+                    do {
+                        try JITPairing.store(data)
+                        self.statusLine = "Paired. This device's pairing file is saved."
+                    } catch {
+                        self.errorLine = "Paired, but the pairing file couldn't be saved: \(error.localizedDescription)"
+                    }
+                case .failure(let error):
+                    if !(error is CancellationError) {
+                        self.errorLine = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                    }
+                }
+                self.refresh()
+            }
+        }
+    }
+
+    func cancelPairing() {
+        JITOnDevicePairing.cancel()
+        pairing = false
+        pairingCode = nil
+        pairingStep = nil
     }
 
     func importPairing(_ url: URL) {
@@ -153,14 +203,25 @@ struct BuiltInJITSection: View {
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                 }
             }
-            .disabled(model.running || model.jitActive)
+            .disabled(model.running || model.jitActive || model.pairing)
+
+            if JITOnDevicePairing.isAvailable {
+                if model.pairing {
+                    pairingRows
+                } else {
+                    Button("Pair on this device") { model.pairOnDevice() }
+                        .disabled(model.running)
+                }
+            }
 
             Button("Import pairing file") { importing = true }
-                .disabled(model.running)
+                .disabled(model.running || model.pairing)
         } header: {
             SettingsSectionHeader("Built-in JIT", icon: "bolt.fill", accent: .core)
         } footer: {
-            Text("MuffinEMU turns JIT on itself over the device's own debug tunnel, so games run with the fast recompiler. It needs LocalDevVPN (StosVPN) and a pairing file. On iOS 27 you can pair right on this device.")
+            Text(JITOnDevicePairing.isAvailable
+                 ? "MuffinEMU turns JIT on itself over the device's own debug tunnel, so games run with the fast recompiler. It needs LocalDevVPN (StosVPN) and a pairing file, which you can make right on this device."
+                 : "MuffinEMU turns JIT on itself over the device's own debug tunnel, so games run with the fast recompiler. It needs LocalDevVPN (StosVPN) and a pairing file.")
         }
         .onAppear(perform: model.refresh)
         .onChange(of: scenePhase) { phase in
@@ -169,6 +230,35 @@ struct BuiltInJITSection: View {
         .fileImporter(isPresented: $importing, allowedContentTypes: [.propertyList, .xml, .data]) { result in
             if case .success(let url) = result { model.importPairing(url) }
         }
+    }
+
+    /// While pairing on this device: what's happening, then the code to type into iOS.
+    @ViewBuilder
+    private var pairingRows: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let code = model.pairingCode {
+                Text("Type this code where iOS asks for it:")
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+                Text(code)
+                    .font(.system(size: 34, weight: .bold, design: .monospaced))
+                    .foregroundColor(MuffinTheme.accentText)
+                    .textSelection(.enabled)
+                    .accessibilityLabel(code.map { String($0) }.joined(separator: " "))
+            } else {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text(model.pairingStep ?? "Waiting for iOS…")
+                        .font(.system(size: 14, weight: .medium))
+                }
+                Text("iOS offers to pair with MuffinEMU. Tap it there, and the code to type appears here. This waits up to 3 minutes.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.vertical, 4)
+        Button("Cancel pairing", role: .cancel) { model.cancelPairing() }
     }
 
     private var statusRow: some View {

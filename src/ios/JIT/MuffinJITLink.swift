@@ -145,29 +145,5 @@ enum MuffinJIT {
         try check { muffin_jit_probe(deviceIP, rsdPort, timeoutMs, $0) }
     }
 
-    /// On-device pairing (iOS 27+). Advertises as a pairable host and accepts one
-    /// device-initiated pairing. `pin` is called with the setup code to show the user.
-    /// Returns the pairing file bytes to store securely.
-    static func pairOnDevice(name: String, model: String, timeoutMs: UInt32,
-                             pin: @escaping (String) -> Void,
-                             progress: ((Int32, String) -> Void)? = nil) throws -> Data {
-        final class PinBox { let onPin: (String) -> Void; init(_ f: @escaping (String) -> Void) { onPin = f } }
-        let pinTrampoline: @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<CChar>?) -> Void = { ctx, code in
-            guard let ctx else { return }
-            let box = Unmanaged<PinBox>.fromOpaque(ctx).takeUnretainedValue()
-            box.onPin(code.map { String(cString: $0) } ?? "")
-        }
-        let pinBox = PinBox(pin)
-        let pinCtx = Unmanaged.passRetained(pinBox).toOpaque()
-        defer { Unmanaged<PinBox>.fromOpaque(pinCtx).release() }
-
-        var outPtr: UnsafeMutablePointer<UInt8>?
-        var outLen: Int = 0
-        try checkProgress(progress) { cb, ctx, err in
-            muffin_jit_pair_on_device(name, model, timeoutMs, pinTrampoline, pinCtx, cb, ctx, &outPtr, &outLen, err)
-        }
-        guard let outPtr, outLen > 0 else { throw MuffinJITError.pairingInvalid("no pairing file was produced") }
-        defer { muffin_jit_bytes_free(outPtr, outLen) }
-        return Data(bytes: outPtr, count: outLen)
-    }
+    // On-device pairing runs in the app, not here: see JITOnDevicePairing.swift.
 }
