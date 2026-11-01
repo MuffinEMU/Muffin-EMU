@@ -1906,5 +1906,17 @@
  "Up to 365 days.": "En fazla 365 gün.",
  "Use this device's date and time": "Bu cihazın tarih ve saatini kullan",
  "Smaller texture cache": "Daha küçük doku önbelleği",
- "Keeps up to 1 GB of converted textures per game instead of 2 GB. A game with more than that may load more slowly. Applies the next time a game starts.": "Oyun başına 2 GB yerine en fazla 1 GB dönüştürülmüş doku tutar. Bundan fazlasını kullanan bir oyun daha yavaş yüklenebilir. Bir sonraki oyun başlatıldığında geçerli olur."
+ "Keeps up to 1 GB of converted textures per game instead of 2 GB. A game with more than that may load more slowly. Applies the next time a game starts.": "Oyun başına 2 GB yerine en fazla 1 GB dönüştürülmüş doku tutar. Bundan fazlasını kullanan bir oyun daha yavaş yüklenebilir. Bir sonraki oyun başlatıldığında geçerli olur.",
+ "Built-in JIT": "Yerleşik JIT",
+ "Cancel pairing": "Eşleştirmeyi iptal et",
+ "Import pairing file": "Eşleştirme dosyasını içe aktar",
+ "In sync from the next game you start. This game's clock can only move forward.": "Başlattığınız bir sonraki oyundan itibaren eşit. Bu oyunun saati yalnızca ileri alınabilir.",
+ "In sync with this device.": "Bu cihazla eşit.",
+ "Pair on this device": "Bu cihazda eşleştir",
+ "Sets the console clock back to this device's date and time.": "Konsol saatini bu cihazın tarih ve saatine geri getirir.",
+ "Show JIT status in the top bar": "JIT durumunu üst çubukta göster",
+ "Shows the JIT status and setup.": "JIT durumunu ve kurulumunu gösterir.",
+ "Sync to this device": "Bu cihazla eşitle",
+ "Type this code where iOS asks for it:": "Bu kodu iOS'un istediği yere yazın:",
+ "iOS offers to pair with MuffinEMU. Tap it there, and the code to type appears here. This waits up to 3 minutes.": "iOS, MuffinEMU ile eşleştirmeyi önerir. Oraya dokunun; yazmanız gereken kod burada görünür. En fazla 3 dakika beklenir."
 }

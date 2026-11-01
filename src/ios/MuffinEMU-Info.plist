@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Keys the generated Info.plist can't express; Xcode merges these with the INFOPLIST_KEY_ settings
+     in project.yml. NSBonjourServices: on-device pairing (iOS 27+) advertises MuffinEMU as a pairable
+     host for the device's own pairing (JIT/JITOnDevicePairing.swift); iOS refuses to publish a
+     Bonjour type the app doesn't list here. -->
+<plist version="1.0">
+<dict>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_remotepairing-pairable-host._tcp</string>
+	</array>
+</dict>
+</plist>

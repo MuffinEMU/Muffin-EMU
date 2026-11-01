@@ -44,6 +44,14 @@ struct ConsoleClockSection: View {
             .tint(MuffinTheme.accentText)
 
             if !followsRealTime {
+                Button {
+                    ConsoleClock.syncToDevice()
+                    followsRealTime = true
+                    chosen = ConsoleClock.now
+                } label: {
+                    Label("Sync to this device", systemImage: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                }
                 DatePicker("Date", selection: dateBinding, in: ConsoleClock.range, displayedComponents: .date)
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                     .tint(MuffinTheme.accentText)

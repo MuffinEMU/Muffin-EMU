@@ -89,6 +89,8 @@ enum SettingsIndex {
         stored("JIT enabler", .jit, JITEnabler.storageKey, JITEnabler.none.rawValue, "stikdebug stikjit"),
         stored("JIT enabler link", .jit, JITEnabler.customURLKey, "", "url custom"),
         row("Test it now", .jit, "test enabler"),
+        row("Built-in JIT", .jit, "pairing file pair localdevvpn stosvpn tunnel turn on"),
+        stored("Show JIT status in the top bar", .jit, "muffin.jit.showStatusPill", true, "pill bolt indicator"),
         stored("Renderer", .graphics, RendererAPI.storageKey, RendererAPI.defaultValue.rawValue, "metal vulkan"),
         stored("MoltenVK", .graphics, MoltenVKBuild.storageKey, MoltenVKBuild.defaultValue.rawValue, "vulkan"),
         stored("Resolution", .graphics, RenderScale.storageKey, RenderScale.deviceDefault.rawValue, "upscale render scale 1080p 720p"),

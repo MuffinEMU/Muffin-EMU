@@ -505,6 +505,11 @@ struct HomeMenuOverlay: View {
                         hint: "Moves the game's clock forward. Some games only check the date when they start.".localized,
                         action: { jumpClock(by: step.rawValue) })
         }
+        if !ConsoleClock.followsRealTime {
+            result.append(HomeMenuRow(id: "clock.sync", title: "Sync to this device".localized, symbol: "arrow.triangle.2.circlepath",
+                                      hint: "Sets the console clock back to this device's date and time.".localized,
+                                      action: { syncClock() }))
+        }
         result.append(HomeMenuRow(id: "clock.custom", title: "Custom amount".localized, symbol: "slider.horizontal.3",
                                   hint: "Choose a number of days and hours.".localized, showsChevron: true,
                                   action: { show(.clockCustom) }))
@@ -540,6 +545,14 @@ struct HomeMenuOverlay: View {
             HomeMenuRow(id: "back", title: "Back".localized, symbol: "chevron.left",
                         hint: "Returns to the console clock.".localized, showsChevron: false, action: { show(.clock) })
         ]
+    }
+
+    private func syncClock() {
+        switch ConsoleClock.syncToDevice() {
+        case .alreadyInSync, .now: clockResult = "In sync with this device.".localized
+        case .nextGame: clockResult = "In sync from the next game you start. This game's clock can only move forward.".localized
+        }
+        clockNow = ConsoleClock.now
     }
 
     private func jumpClock(by seconds: Int) {

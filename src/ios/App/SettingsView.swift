@@ -212,12 +212,13 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 
     var items: [SettingsItem] {
         switch self {
-        case .general: return [.language, .settingsMode, .changedSettings, .appearance, .premium, .about]
+        // Date & Time is also under General and Account and online, where people look for a clock.
+        case .general: return [.language, .settingsMode, .changedSettings, .appearance, .consoleClock, .premium, .about]
         case .emulation: return [.performance, .cpu, .jit, .graphics, .shaderCache, .emulatedClock, .consoleClock]
         case .controls: return [.onScreenControls, .motion, .emulatedDevices]
         case .screenAndSound: return [.display, .externalDisplay, .audio, .overlay, .notifications]
         case .library: return [.keys, .library, .coverArt]
-        case .accountOnline: return [.account, .network, .wiiUMenu]
+        case .accountOnline: return [.account, .network, .consoleClock, .wiiUMenu]
         case .storage: return [.files, .backup, .migration]
         case .support: return [.deviceReport, .diagnostics]
         }
@@ -321,7 +322,12 @@ struct SettingsView: View {
         case .about: AboutSettingsSection()
         case .performance: PerformanceSettingsSection()
         case .cpu: CPUSettingsSection()
-        case .jit: JITEnablerSection()
+        case .jit:
+            // Built-in JIT first; the hand-off enabler stays as an alternative below it.
+            Group {
+                BuiltInJITSection()
+                JITEnablerSection()
+            }
         case .graphics: GraphicsSettingsSection()
         case .shaderCache: ShaderCacheSection()
         case .emulatedClock: EmulatedClockSection()

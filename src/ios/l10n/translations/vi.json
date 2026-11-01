@@ -1906,5 +1906,17 @@
  "Up to 365 days.": "Tối đa 365 ngày.",
  "Use this device's date and time": "Dùng ngày và giờ của thiết bị này",
  "Smaller texture cache": "Bộ nhớ đệm kết cấu nhỏ hơn",
- "Keeps up to 1 GB of converted textures per game instead of 2 GB. A game with more than that may load more slowly. Applies the next time a game starts.": "Giữ tối đa 1 GB kết cấu đã chuyển đổi cho mỗi trò chơi thay vì 2 GB. Trò chơi cần nhiều hơn mức đó có thể tải chậm hơn. Có hiệu lực từ lần mở trò chơi tiếp theo."
+ "Keeps up to 1 GB of converted textures per game instead of 2 GB. A game with more than that may load more slowly. Applies the next time a game starts.": "Giữ tối đa 1 GB kết cấu đã chuyển đổi cho mỗi trò chơi thay vì 2 GB. Trò chơi cần nhiều hơn mức đó có thể tải chậm hơn. Có hiệu lực từ lần mở trò chơi tiếp theo.",
+ "Built-in JIT": "JIT tích hợp",
+ "Cancel pairing": "Hủy ghép đôi",
+ "Import pairing file": "Nhập tệp ghép đôi",
+ "In sync from the next game you start. This game's clock can only move forward.": "Đồng bộ từ trò chơi tiếp theo bạn mở. Đồng hồ của trò chơi này chỉ có thể tiến lên.",
+ "In sync with this device.": "Đã đồng bộ với thiết bị này.",
+ "Pair on this device": "Ghép đôi trên thiết bị này",
+ "Sets the console clock back to this device's date and time.": "Đưa đồng hồ máy về ngày và giờ của thiết bị này.",
+ "Show JIT status in the top bar": "Hiện trạng thái JIT trên thanh trên cùng",
+ "Shows the JIT status and setup.": "Hiện trạng thái và thiết lập JIT.",
+ "Sync to this device": "Đồng bộ với thiết bị này",
+ "Type this code where iOS asks for it:": "Nhập mã này ở nơi iOS yêu cầu:",
+ "iOS offers to pair with MuffinEMU. Tap it there, and the code to type appears here. This waits up to 3 minutes.": "iOS sẽ đề nghị ghép đôi với MuffinEMU. Chạm vào đó, và mã cần nhập sẽ hiện ở đây. Việc chờ kéo dài tối đa 3 phút."
 }

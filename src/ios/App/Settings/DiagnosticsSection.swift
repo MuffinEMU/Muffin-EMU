@@ -20,6 +20,13 @@ struct DeviceReportSection: View {
             + "\nthermal: " + ThermalMonitor.shared.description
             + " · heat " + HeatStatus.band.word
             + (HeatStatus.temperatureCelsius.map { String(format: " (battery %.0f C)", $0) } ?? " (no sensor reading)")
+            + Self.builtInJITLog
+    }
+
+    /// The last built-in JIT run, step by step, so a report shows where turning JIT on stopped.
+    private static var builtInJITLog: String {
+        guard let log = UserDefaults.standard.stringArray(forKey: JITCoordinator.lastLogKey), !log.isEmpty else { return "" }
+        return "\nbuilt-in JIT, last run:\n" + log.map { "  " + $0 }.joined(separator: "\n")
     }
 
     var body: some View {

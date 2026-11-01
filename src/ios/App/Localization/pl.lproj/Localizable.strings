@@ -1906,3 +1906,15 @@
 "Use this device's date and time" = "Używaj daty i godziny tego urządzenia";
 "Smaller texture cache" = "Mniejsza pamięć podręczna tekstur";
 "Keeps up to 1 GB of converted textures per game instead of 2 GB. A game with more than that may load more slowly. Applies the next time a game starts." = "Przechowuje do 1 GB przekonwertowanych tekstur na grę zamiast 2 GB. Gra, która potrzebuje więcej, może wczytywać się wolniej. Działa od następnego uruchomienia gry.";
+"Built-in JIT" = "Wbudowany JIT";
+"Cancel pairing" = "Anuluj parowanie";
+"Import pairing file" = "Importuj plik parowania";
+"In sync from the next game you start. This game's clock can only move forward." = "Zsynchronizowany od następnej uruchomionej gry. Zegar tej gry może się przesuwać tylko do przodu.";
+"In sync with this device." = "Zsynchronizowany z tym urządzeniem.";
+"Pair on this device" = "Sparuj na tym urządzeniu";
+"Sets the console clock back to this device's date and time." = "Przywraca zegar konsoli do daty i godziny tego urządzenia.";
+"Show JIT status in the top bar" = "Pokaż stan JIT na górnym pasku";
+"Shows the JIT status and setup." = "Pokazuje stan i konfigurację JIT.";
+"Sync to this device" = "Synchronizuj z tym urządzeniem";
+"Type this code where iOS asks for it:" = "Wpisz ten kod tam, gdzie poprosi o niego iOS:";
+"iOS offers to pair with MuffinEMU. Tap it there, and the code to type appears here. This waits up to 3 minutes." = "iOS zaproponuje sparowanie z MuffinEMU. Stuknij tam, a kod do wpisania pojawi się tutaj. Oczekiwanie trwa do 3 minut.";
