@@ -1969,5 +1969,15 @@
  "Verification code": "JIT/MuffinInstallerSection.swift:504",
  "Your certificate": "JIT/MuffinInstallerSection.swift:462",
  "Your certificate is removed from this device.": "JIT/MuffinInstallerSection.swift:180",
- "Your password is checked with Apple and kept in this device's Keychain, so MuffinInstaller can refresh MuffinEMU. It isn't sent anywhere else.": "JIT/MuffinInstallerSection.swift:396"
+ "Your password is checked with Apple and kept in this device's Keychain, so MuffinInstaller can refresh MuffinEMU. It isn't sent anywhere else.": "JIT/MuffinInstallerSection.swift:396",
+ "Choose a version": "JIT/MuffinInstallerSection.swift:323",
+ "Couldn't load the list of releases. Check the connection and try again.": "JIT/MuffinInstallerSection.swift:548",
+ "Downloading MuffinEMU %@…": "JIT/MuffinInstallerSection.swift:197",
+ "Install": "JIT/MuffinInstallerSection.swift:578",
+ "Install MuffinEMU %@? MuffinEMU closes when it installs. Your games and saves stay.": "JIT/MuffinInstallerSection.swift:575",
+ "Install updates automatically": "JIT/MuffinInstallerSection.swift:312",
+ "Installing MuffinEMU %@…": "JIT/MuffinInstallerSection.swift:204",
+ "MuffinEMU %@ is installed.": "JIT/MuffinInstallerSection.swift:206",
+ "Nightly": "JIT/MuffinInstallerSection.swift:590",
+ "Older": "JIT/MuffinInstallerSection.swift:591"
 }
