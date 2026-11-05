@@ -47,6 +47,10 @@ jobs:
       - name: Regenerate docs/apps.json
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          # Experiment branches are only in the private repo, so the "is this experiment still
+          # live" check reads them there.
+          EXPERIMENT_BRANCH_REPO: MuffinEMU/Muffin-EMU-Private
+          EXPERIMENT_BRANCH_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
         run: python3 ci/generate-sidestore-source.py --repo "$GITHUB_REPOSITORY" --out-dir docs
 
       - name: Verify it is valid and non-empty
