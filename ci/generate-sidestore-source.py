@@ -42,7 +42,7 @@ import os
 import plistlib, os, re, sys, urllib.request, urllib.error, urllib.parse, argparse
 
 PAGES = "https://muffinemu.github.io/MuffinEMU"
-BUNDLE_ID = "com.kiddreads.MuffinEMU"
+BUNDLE_ID = "com.void.muffinemu"
 # vX.Y, or vX.Y.Z for a point release. X.Y.Z sorts after X.Y (patch counts as 0 when absent).
 VERSION_TAG = re.compile(r"^v(\d+)\.(\d+)(?:\.(\d+))?$")
 
@@ -298,6 +298,11 @@ def nightly_version(rel, ipa):
     than a bug in it; the alternative is inventing a build counter this script has no
     honest source for.
     """
+    m = re.search(r"\*\*App version:\*\* ([0-9][0-9.]*)", rel.get("body") or "")
+    if m:
+        # The version stamped into the app. SideStore refuses an install whose app version differs
+        # from the listing, so once publish-nightly.sh records it, it is the only honest answer.
+        return m.group(1)
     date = nightly_asset_date(rel, ipa)[:10]
     y, m, d = (date.split("-") + ["0", "0", "0"])[:3]
     return f"{int(y or 0)}.{int(m or 0)}.{int(d or 0)}"
@@ -450,7 +455,7 @@ def build_source_shell(ident, name, subtitle, app_subtitle, extra_note, asset_na
         "apps": [{
             "name": "MuffinEMU",
             "bundleIdentifier": BUNDLE_ID,
-            "developerName": "MuffinEMU Official",
+            "developerName": "Void",
             "subtitle": app_subtitle,
             "localizedDescription": APP_DESCRIPTION,
             "iconURL": f"{PAGES}/icon.png",
@@ -492,8 +497,15 @@ def branch_is_live(repo, token, branch):
 
 
 def experimental_version(rel):
-    """YYYY.M.D.HHMM from when the release was published. Four parts, so it sorts above nightly's
-    three-part date and above every vX.Y, and two experiments the same day still order."""
+    """YYYY.M.D.HHMM. Four parts, so it sorts above nightly's three-part date and above every vX.Y,
+    and two experiments the same day still order.
+
+    The version stamped into the app wins, read from the "App version" line publish-experimental.sh
+    writes: SideStore refuses an install whose app version differs from the listing. Releases made
+    before that line existed fall back to when the release was published."""
+    m = re.search(r"\*\*App version:\*\* ([0-9][0-9.]*)", rel.get("body") or "")
+    if m:
+        return m.group(1)
     t = rel.get("published_at") or rel.get("created_at") or "1970-01-01T00:00:00Z"
     date, _, clock = t.partition("T")
     y, mo, d = (date.split("-") + ["0", "0", "0"])[:3]
@@ -597,11 +609,11 @@ def main():
 
 def run(repo, token, rels, out_dir):
     feeds = [
-        ("apps.json", "MuffinEMU.ipa", "com.kiddreads.MuffinEMU.source", "MuffinEMU",
+        ("apps.json", "MuffinEMU.ipa", "com.void.muffinemu.source", "MuffinEMU",
          "The Wii U, in your hands.",
          "Wii U, the way it should be.",
          ""),
-        ("trollstore.json", "MuffinEMU-fakesigned.ipa", "com.kiddreads.MuffinEMU.trollstore",
+        ("trollstore.json", "MuffinEMU-fakesigned.ipa", "com.void.muffinemu.trollstore",
          "MuffinEMU (TrollStore)",
          "The Wii U, in your hands. TrollStore edition.",
          "Wii U, the way it should be. TrollStore edition.",
@@ -610,13 +622,13 @@ def run(repo, token, rels, out_dir):
     ]
 
     nightlies = [
-        ("nightly.json", "MuffinEMU.ipa", "com.kiddreads.MuffinEMU.nightly",
+        ("nightly.json", "MuffinEMU.ipa", "com.void.muffinemu.nightly",
          "MuffinEMU Nightly",
          "The newest MuffinEMU build, rebuilt on every change.",
          "Wii U emulator - nightly build",
          NIGHTLY_NOTE),
         ("nightly-trollstore.json", "MuffinEMU-fakesigned.ipa",
-         "com.kiddreads.MuffinEMU.nightly.trollstore",
+         "com.void.muffinemu.nightly.trollstore",
          "MuffinEMU Nightly (TrollStore)",
          "The newest MuffinEMU build - TrollStore.",
          "Wii U emulator - nightly TrollStore build",
@@ -625,13 +637,13 @@ def run(repo, token, rels, out_dir):
     ]
 
     experimentals = [
-        ("experimental.json", "MuffinEMU.ipa", "com.kiddreads.MuffinEMU.experimental",
+        ("experimental.json", "MuffinEMU.ipa", "com.void.muffinemu.experimental",
          "MuffinEMU Experimental",
          "Unfinished test builds, for testers.",
          "Wii U emulator - experimental test builds",
          EXPERIMENTAL_NOTE),
         ("experimental-trollstore.json", "MuffinEMU-fakesigned.ipa",
-         "com.kiddreads.MuffinEMU.experimental.trollstore",
+         "com.void.muffinemu.experimental.trollstore",
          "MuffinEMU Experimental (TrollStore)",
          "Unfinished test builds - TrollStore.",
          "Wii U emulator - experimental TrollStore builds",

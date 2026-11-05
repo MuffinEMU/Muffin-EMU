@@ -1,0 +1,46 @@
+# MuffinEMU — code by the MuffinEMU Development Team.
+# Copyright (c) 2026 MuffinEMU Development Team.
+# SPDX-License-Identifier: MPL-2.0
+# This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
+# Closes issues and pull requests opened by GitHub accounts less than a week old, with a short note.
+# The owner, members and collaborators are never affected. Nothing is checked out or run from the
+# pull request, so pull_request_target is safe here. Delete this file to turn the guard off.
+name: New-account guard
+
+on:
+  issues:
+    types: [opened]
+  pull_request_target:
+    types: [opened]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  check-account-age:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const MIN_DAYS = 7;
+            const item = context.payload.issue || context.payload.pull_request;
+            const assoc = item.author_association;
+            if (['OWNER', 'MEMBER', 'COLLABORATOR'].includes(assoc)) return;
+            if (item.user.type === 'Bot') return;
+            const { data: user } = await github.rest.users.getByUsername({ username: item.user.login });
+            const ageDays = (Date.now() - new Date(user.created_at).getTime()) / 86400000;
+            core.info(`${item.user.login}: account ${ageDays.toFixed(1)} days old`);
+            if (ageDays >= MIN_DAYS) return;
+            const kind = context.payload.issue ? 'issues' : 'pull requests';
+            await github.rest.issues.createComment({
+              ...context.repo, issue_number: item.number,
+              body: `Thanks for this. For now, MuffinEMU closes ${kind} from GitHub accounts that are less than a week old. Please open it again once your account is a week old.`
+            });
+            if (context.payload.issue) {
+              await github.rest.issues.update({ ...context.repo, issue_number: item.number, state: 'closed', state_reason: 'not_planned' });
+            } else {
+              await github.rest.pulls.update({ ...context.repo, pull_number: item.number, state: 'closed' });
+            }
