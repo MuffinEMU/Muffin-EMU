@@ -531,7 +531,9 @@ def build_experimental(rels, repo, token, asset_name, ident, name, subtitle, app
         ipa = next((x for x in rel.get("assets", []) if x["name"] == asset_name), None)
         if not ipa:
             continue
-        if not branch_is_live(repo, token, branch):
+        # The branches live in the private repo; the public one only has main.
+        if not branch_is_live(os.environ.get("EXPERIMENT_BRANCH_REPO") or repo,
+                              os.environ.get("EXPERIMENT_BRANCH_TOKEN") or token, branch):
             continue
         chosen.append((rel, xname, branch, sha, ipa))
         if len(chosen) == EXPERIMENTAL_KEEP:
